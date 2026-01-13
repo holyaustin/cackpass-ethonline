@@ -38,8 +38,8 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
     <PrivyProvider
       appId={process.env.NEXT_PUBLIC_PRIVY_APP_ID!}
       config={{
-        // Supported login methods
-        loginMethods: ['email', 'wallet', 'google', 'twitter'],
+        // Social login methods with optional wallet
+        loginMethods: ['email', 'wallet', 'google', 'twitter', 'discord', 'github', 'apple'],
         
         // Embedded wallets configuration
         embeddedWallets: {
@@ -53,15 +53,19 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
           theme: 'light',
           accentColor: '#FF6B35',
           logo: '/logo.png',
-          showWalletLoginFirst: true,
+          showWalletLoginFirst: false,
+          loginMessage: 'Sign in to CACK-pass',
         },
         
         // Chain configuration
         defaultChain: liskSepolia,
         supportedChains: [liskSepolia, sepolia, mainnet],
         
-        // NOTE: The fiat onramp is handled through our custom component, not through Privy config
-        // The demo shows using a custom implementation, not Privy's built-in onramp
+        // Remove the invalid mfa properties entirely:
+        // mfa: {
+        //   noPromptOnSignup: false,    // ← REMOVE THIS LINE
+        //   noPromptOnLogin: false,     // ← REMOVE THIS LINE
+        // },
       }}
     >
       <QueryClientProvider client={queryClient}>
