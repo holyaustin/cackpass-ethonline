@@ -2,9 +2,15 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  swcMinify: true,
+  turbopack: {},
   images: {
-    domains: ['ipfs.io', 'gateway.pinata.cloud'],
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: '**',
+      },
+    ],
+   // domains: ['ipfs.io', 'gateway.pinata.cloud'],
   },
 }
 
