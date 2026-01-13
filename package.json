@@ -33,7 +33,7 @@
     "mongoose": "^9.1.2",
     "next": "16.1.1",
     "next-pwa": "^5.6.0",
-    "pinata-sdk": "^0.1.7",
+    "pinata": "^2.5.2",
     "qrcode": "^1.5.4",
     "react": "19.2.0",
     "react-dom": "19.2.0",
