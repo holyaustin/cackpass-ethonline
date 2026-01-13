@@ -1,15 +1,18 @@
 // app/api/payment/webhook/route.ts
 import { NextRequest, NextResponse } from 'next/server'
+import { ethers } from 'ethers'
 import crypto from 'crypto'
 import { connectDB } from '@/lib/database/connection'
-import { Order, TicketType, Event } from '@/lib/database/models'
-import { cackPassCore } from '@/lib/contracts/client'
-import { getSmartAccount } from '@/lib/services/biconomy'
+import { Order, TicketType, Event, User } from '@/lib/database/models'
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.text()
     const signature = request.headers.get('x-paystack-signature')
+    
+    if (!signature) {
+      return NextResponse.json({ error: 'Missing signature' }, { status: 400 })
+    }
     
     // Verify Paystack webhook signature
     const expectedSignature = crypto
@@ -39,7 +42,23 @@ export async function POST(request: NextRequest) {
       order.paymentData = event.data
       await order.save()
       
-      // Mint tickets
+      // Get user to find wallet address
+      const user = await User.findById(order.userId)
+      
+      if (!user?.walletAddress) {
+        // User doesn't have wallet, we need to handle this
+        console.warn(`User ${user?._id} doesn't have wallet address for minting`)
+        
+        // Send email/SMS notification that ticket will be minted when wallet is connected
+        await sendConfirmation(order, user)
+        
+        return NextResponse.json({ 
+          received: true,
+          message: 'Payment successful. User needs to connect wallet for minting.'
+        })
+      }
+      
+      // Get ticket type and event
       const ticketType = await TicketType.findById(order.ticketTypeId)
       const eventData = await Event.findById(order.eventId)
       
@@ -47,33 +66,19 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Ticket data not found' }, { status: 404 })
       }
       
-      // Gasless minting via Biconomy
-      const provider = new ethers.JsonRpcProvider(process.env.RPC_URL)
-      const signer = new ethers.Wallet(process.env.BACKEND_SIGNER_PRIVATE_KEY!, provider)
-      const smartAccount = await getSmartAccount(signer)
+      // Update ticket supply
+      ticketType.currentSupply += order.quantity
+      await ticketType.save()
       
-      // Generate mint approval
-      const approvalId = crypto.randomBytes(32).toString('hex')
-      const validUntil = Math.floor(Date.now() / 1000) + 3600
-      
-      const mintApproval = {
-        recipient: order.userId, // Should get wallet from user
-        eventId: eventData.onChainId,
-        ticketCategory: ticketType.onChainCategoryId,
-        amount: order.quantity,
-        price: ethers.parseEther(ticketType.price.toString()),
-        validUntil,
-        id: approvalId,
-      }
-      
-      // Sign and execute mint
-      // Implementation depends on your exact contract interface
-      
-      order.mintStatus = 'minted'
+      // Mark as minted (for now, we'll handle actual minting separately)
+      order.mintStatus = 'pending_mint' // Special status for pending blockchain mint
       await order.save()
       
-      // Send confirmation email/SMS
-      await sendConfirmation(order)
+      // Send confirmation
+      await sendConfirmation(order, user)
+      
+      // Note: Actual blockchain minting would be handled by a separate service/queue
+      // that processes pending_mint orders and calls the contract
     }
     
     return NextResponse.json({ received: true })
@@ -81,12 +86,15 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Webhook error:', error)
     return NextResponse.json(
-      { error: 'Webhook processing failed' },
+      { error: 'Webhook processing failed', details: (error as Error).message },
       { status: 500 }
     )
   }
 }
 
-async function sendConfirmation(order: any) {
+async function sendConfirmation(order: any, user: any) {
   // Implement email/SMS sending
+  console.log(`Sending confirmation to ${user?.email} for order ${order._id}`)
+  // Use your preferred email service (SendGrid, AWS SES, etc.)
+  // or SMS service (Twilio, etc.)
 }

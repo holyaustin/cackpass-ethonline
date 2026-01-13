@@ -1,8 +1,8 @@
 // app/api/scanner/verify/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { connectDB } from '@/lib/database/connection'
-import { CheckIn, Order, Event, User } from '@/lib/database/models'
-import { cackPassCore } from '@/lib/contracts/client'
+import { CheckIn, Event, User } from '@/lib/database/models'
+import { getCackPassCore } from '@/lib/contracts/client'
 import { PrivyClient } from '@privy-io/server-auth'
 
 const privy = new PrivyClient(
@@ -32,17 +32,24 @@ export async function POST(request: NextRequest) {
     
     const { ticketId, location } = await request.json()
     
-    // Verify ticket exists on-chain
-    const eventId = Math.floor(ticketId / 1e18)
-    const category = ticketId % 1e18
+    // Get contract instance
+    const cackPassCore = getCackPassCore()
     
-    const isUsed = await cackPassCore.isTicketUsed(ticketId)
-    if (isUsed) {
+    // Verify ticket exists on-chain
+    // Note: The contract doesn't have isTicketUsed method in the ABI we defined
+    // We need to check if the ticket exists by other means
+    
+    // For now, we'll check if the ticket has been checked in before
+    const existingCheckIn = await CheckIn.findOne({ ticketId })
+    if (existingCheckIn) {
       return NextResponse.json(
-        { error: 'Ticket already used' },
+        { error: 'Ticket already checked in' },
         { status: 400 }
       )
     }
+    
+    // Extract event ID from ticket ID (assuming format from contract)
+    const eventId = Math.floor(Number(ticketId) / 1e18)
     
     // Check if ticket is valid for event
     const event = await Event.findOne({ onChainId: eventId })
@@ -56,7 +63,8 @@ export async function POST(request: NextRequest) {
     // Record check-in
     const checkIn = new CheckIn({
       eventId: event._id,
-      ticketId,
+      ticketId: Number(ticketId),
+      userId: scanner._id, // The scanner is checking someone in
       scannerId: scanner._id,
       location,
       isVerified: true,
@@ -70,12 +78,13 @@ export async function POST(request: NextRequest) {
       ticketId,
       event: event.title,
       checkedInAt: new Date(),
+      checkInId: checkIn._id,
     })
     
   } catch (error) {
     console.error('Scan error:', error)
     return NextResponse.json(
-      { error: 'Verification failed' },
+      { error: 'Verification failed', details: (error as Error).message },
       { status: 500 }
     )
   }

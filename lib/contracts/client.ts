@@ -20,7 +20,7 @@ export function getContract<T extends ethers.Contract>(
   return new ethers.Contract(contractAddress, abi, provider) as T
 }
 
-// Type-safe contract instances
+// Type-safe contract instances - THESE ARE THE EXPORTED FUNCTIONS
 export const getCackPassCore = (signer?: ethers.Signer) => 
   getContract(process.env.NEXT_PUBLIC_CACKPASS_CORE_ADDRESS!, CackPassCoreABI, signer)
 
@@ -29,6 +29,9 @@ export const getTicketMarket = (signer?: ethers.Signer) =>
 
 export const getRoyaltyEngine = (signer?: ethers.Signer) => 
   getContract(process.env.NEXT_PUBLIC_ROYALTY_ENGINE_ADDRESS!, RoyaltyEngineABI, signer)
+
+// DEPRECATED: Remove old export to avoid confusion
+// export const cackPassCore = getCackPassCore() // Remove this line
 
 // Helper function to get signer from Privy wallet
 export async function getSignerFromWallet(wallet: any): Promise<ethers.Signer> {
