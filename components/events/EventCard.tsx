@@ -2,35 +2,12 @@
 'use client'
 
 import { useState } from 'react'
-import { Calendar, MapPin, Users, Ticket, Clock, Star } from 'lucide-react'
+import { Calendar, MapPin, Users, Ticket as TicketIcon, Clock, Star, Globe } from 'lucide-react'
 import { PurchaseModal } from '@/components/tickets/PurchaseModal'
+import type { EventData } from '@/types/events'
 
 interface EventCardProps {
-  event: {
-    id: string
-    title: string
-    description: string
-    venue: string
-    startDate: string
-    endDate: string
-    bannerImage: string
-    ticketTypes: {
-      id: string
-      name: string
-      price: number
-      category: string
-      maxSupply: number
-      currentSupply: number
-    }[]
-    organizer: {
-      name: string
-      avatar: string
-    }
-    isVirtual: boolean
-    category: string
-    rating: number
-    attendees: number
-  }
+  event: EventData
 }
 
 export function EventCard({ event }: EventCardProps) {
@@ -73,7 +50,7 @@ export function EventCard({ event }: EventCardProps) {
           
           {/* Category Badge */}
           <div className="absolute top-4 left-4">
-            <span className="px-3 py-1 bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm rounded-full text-sm font-medium">
+            <span className="px-3 py-1 bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm rounded-full text-sm font-medium capitalize">
               {event.category}
             </span>
           </div>
@@ -81,7 +58,8 @@ export function EventCard({ event }: EventCardProps) {
           {/* Virtual Badge */}
           {event.isVirtual && (
             <div className="absolute top-4 right-4">
-              <span className="px-3 py-1 bg-primary/90 backdrop-blur-sm text-white rounded-full text-sm font-medium">
+              <span className="px-3 py-1 bg-primary/90 backdrop-blur-sm text-white rounded-full text-sm font-medium flex items-center gap-1">
+                <Globe className="h-3 w-3" />
                 Virtual
               </span>
             </div>
@@ -90,7 +68,7 @@ export function EventCard({ event }: EventCardProps) {
           {/* Rating */}
           <div className="absolute bottom-4 left-4 flex items-center bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm px-3 py-1 rounded-full">
             <Star className="h-4 w-4 text-yellow-500 fill-current mr-1" />
-            <span className="font-semibold">{event.rating}</span>
+            <span className="font-semibold">{event.rating.toFixed(1)}</span>
           </div>
         </div>
 
@@ -119,21 +97,21 @@ export function EventCard({ event }: EventCardProps) {
           {/* Event Details */}
           <div className="space-y-3 mb-6">
             <div className="flex items-center text-gray-600 dark:text-gray-400">
-              <Calendar className="h-4 w-4 mr-2" />
+              <Calendar className="h-4 w-4 mr-2 flex-shrink-0" />
               <span className="text-sm">
                 {formatDate(event.startDate)} • {formatTime(event.startDate)}
               </span>
             </div>
             
             <div className="flex items-center text-gray-600 dark:text-gray-400">
-              <MapPin className="h-4 w-4 mr-2" />
-              <span className="text-sm">
+              <MapPin className="h-4 w-4 mr-2 flex-shrink-0" />
+              <span className="text-sm line-clamp-1">
                 {event.venue}
               </span>
             </div>
             
             <div className="flex items-center text-gray-600 dark:text-gray-400">
-              <Users className="h-4 w-4 mr-2" />
+              <Users className="h-4 w-4 mr-2 flex-shrink-0" />
               <span className="text-sm">
                 {event.attendees.toLocaleString()} attending
               </span>
@@ -144,7 +122,7 @@ export function EventCard({ event }: EventCardProps) {
           <div className="mb-6">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center">
-                <Ticket className="h-4 w-4 mr-2 text-gray-500" />
+                <TicketIcon className="h-4 w-4 mr-2 text-gray-500" />
                 <span className="text-sm font-medium">Available Tickets</span>
               </div>
               
@@ -155,6 +133,7 @@ export function EventCard({ event }: EventCardProps) {
                     const type = event.ticketTypes.find(t => t.id === e.target.value)
                     if (type) setSelectedTicketType(type)
                   }}
+                  value={selectedTicketType.id}
                 >
                   {event.ticketTypes.map((type) => (
                     <option key={type.id} value={type.id}>

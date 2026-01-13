@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@biconomy/account": "^4.5.7",
+    "@biconomy/bundler": "^3.1.4",
     "@biconomy/common": "^3.1.4",
     "@biconomy/paymaster": "^3.1.4",
     "@hookform/resolvers": "^5.2.2",
@@ -23,6 +24,7 @@
     "@radix-ui/react-toast": "^1.2.15",
     "@tanstack/react-table": "^8.21.3",
     "axios": "^1.13.2",
+    "crypto": "^1.0.1",
     "date-fns": "^4.1.0",
     "ethers": "^6.16.0",
     "flutterwave-node-v3": "^1.3.0",
@@ -36,6 +38,7 @@
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "react-hook-form": "^7.71.0",
+    "sonner": "^2.0.7",
     "zod": "^4.3.5"
   },
   "devDependencies": {
