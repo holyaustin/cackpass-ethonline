@@ -1,4 +1,5 @@
 // components/providers/AppProviders.tsx
+
 'use client'
 
 import { PrivyProvider } from '@privy-io/react-auth'
@@ -38,34 +39,53 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
     <PrivyProvider
       appId={process.env.NEXT_PUBLIC_PRIVY_APP_ID!}
       config={{
-        // Social login methods with optional wallet
-        loginMethods: ['email', 'wallet', 'google', 'twitter', 'discord', 'github', 'apple'],
+        // Configure only the six allowed login methods
+        loginMethods: [
+          'email',
+          'google',
+          'twitter',
+          // Note: Privy doesn't natively support TikTok and Instagram OAuth
+          // You'll need to use custom OAuth for these or use email-based login
+          // For now, we'll use email as fallback for TikTok/Instagram
+        ],
         
-        // Embedded wallets configuration
+        // Embedded wallets configuration - create automatically for all users
         embeddedWallets: {
-          ethereum: {
-            createOnLogin: 'users-without-wallets' as const,
-          },
+          createOnLogin: 'all-users' as const, // Create embedded wallet for all users
+          // Removed noPromptOnSignature to keep things simple
         },
         
         // Appearance configuration
         appearance: {
           theme: 'light',
-          accentColor: '#FF6B35',
-          logo: '/logo.png',
-          showWalletLoginFirst: false,
-          loginMessage: 'Sign in to CACK-pass',
+          accentColor: '#D95427', // Using your primary color
+          logo: '/logoosm.png',
+          showWalletLoginFirst: false, // Show social login first
+          loginMessage: 'Welcome to TicketPass',
         },
         
         // Chain configuration
         defaultChain: liskSepolia,
         supportedChains: [liskSepolia, sepolia, mainnet],
         
-        // Remove the invalid mfa properties entirely:
-        // mfa: {
-        //   noPromptOnSignup: false,    // ← REMOVE THIS LINE
-        //   noPromptOnLogin: false,     // ← REMOVE THIS LINE
-        // },
+        // OAuth configuration - only allowed methods
+        oauth: {
+          providers: ['google', 'twitter', 'apple'],
+          // Note: Privy doesn't support TikTok or Instagram natively
+        },
+        
+        // Remove MFA configuration completely
+        // No MFA prompts - keep things simple
+        
+        // Remove phone/SMS configuration
+        // smsLogin: { enabled: false }, // Remove this line
+        
+        // Remove other login methods not in our six
+        // telegramLogin: undefined,
+        // whatsAppLogin: undefined,
+        
+        // Additional configuration
+        defaultCountryCode: 'NG', // Default country code for phone numbers (only for email verification)
       }}
     >
       <QueryClientProvider client={queryClient}>

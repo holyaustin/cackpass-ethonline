@@ -4,7 +4,7 @@ import { Star, Quote, Award, Users, Calendar, TrendingUp } from 'lucide-react'
 export function SocialProof() {
   const testimonials = [
     {
-      quote: "CACK-pass eliminated our biggest pain point: gas fees for international attendees. Ticket sales increased by 300% after switching.",
+      quote: "TicketPass eliminated ticket fraud for our events. The smart digital tickets and anti-scalping features have been game-changers.",
       author: "Sarah Johnson",
       role: "Event Director, TechFest Africa",
       avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Sarah",
@@ -12,7 +12,7 @@ export function SocialProof() {
       event: "TechFest Lagos 2024",
     },
     {
-      quote: "The hybrid payment system allowed us to reach audiences in both crypto-native and traditional markets. Game-changer for African events.",
+      quote: "The instant ticket delivery and easy sharing features made our festival experience seamless for thousands of attendees.",
       author: "Marcus Okafor",
       role: "Music Festival Organizer",
       avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Marcus",
@@ -20,9 +20,9 @@ export function SocialProof() {
       event: "AfroBeats Festival",
     },
     {
-      quote: "As an artist, I love earning royalties from secondary sales. Transparency and automated payments are incredible.",
+      quote: "As a fan, I love collecting beautiful digital tickets that remind me of amazing concert memories. So much better than paper!",
       author: "Amina Bello",
-      role: "Musician & Performer",
+      role: "Music Enthusiast",
       avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Amina",
       rating: 5,
       event: "Lagos Concert Series",
@@ -30,77 +30,73 @@ export function SocialProof() {
   ]
 
   const partners = [
-    { name: "AfroTech", logo: "🤖", desc: "Tech Partner" },
-    { name: "Lisk", logo: "🔗", desc: "Blockchain Partner" },
+    { name: "AfroTech", logo: "🎤", desc: "Tech Partner" },
     { name: "Paystack", logo: "💳", desc: "Payment Partner" },
     { name: "Flutterwave", logo: "🌍", desc: "Payment Partner" },
-    { name: "Biconomy", logo: "⚡", desc: "Gas Sponsor" },
-    { name: "Privy", logo: "🔐", desc: "Auth Partner" },
+    { name: "Eventbrite", logo: "🎟️", desc: "Integration Partner" },
   ]
 
   const stats = [
-    { icon: <Users className="h-6 w-6" />, value: "50K+", label: "Tickets Sold" },
-    { icon: <Calendar className="h-6 w-6" />, value: "500+", label: "Events Hosted" },
-    { icon: <Star className="h-6 w-6" />, value: "4.9/5", label: "Rating" },
-    { icon: <TrendingUp className="h-6 w-6" />, value: "300%", label: "Growth" },
+    { icon: <Users className="h-5 w-5" />, value: "50K+", label: "Tickets Sold" },
+    { icon: <Calendar className="h-5 w-5" />, value: "500+", label: "Events Hosted" },
+    { icon: <Star className="h-5 w-5" />, value: "4.9/5", label: "Rating" },
+    { icon: <TrendingUp className="h-5 w-5" />, value: "300%", label: "Growth" },
   ]
 
   return (
-    <section className="py-24 bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-950">
-      <div className="container mx-auto px-4">
-        <div className="text-center mb-20">
-          <div className="inline-flex items-center gap-3 px-6 py-3 bg-gradient-to-r from-primary-500/10 to-accent-500/10 rounded-full backdrop-blur-sm mb-6">
-            <Award className="h-5 w-5 text-primary-500" />
-            <span className="text-sm font-medium bg-gradient-to-r from-primary-600 to-accent-600 bg-clip-text text-transparent">
-              Trusted by Industry Leaders
+    <section className="py-12 md:py-24 bg-background dark:bg-dark-background">
+      <div className="responsive-container">
+        <div className="text-center mb-8 md:mb-16">
+          <div className="inline-flex items-center gap-2 px-4 py-2 md:px-6 md:py-3 bg-primary/10 dark:bg-dark-primary/10 rounded-full mb-4 md:mb-6">
+            <Award className="h-4 w-4 md:h-5 md:w-5 text-primary dark:text-dark-primary" />
+            <span className="text-sm md:text-base font-medium text-primary dark:text-dark-primary">
+              Trusted by Event Professionals
             </span>
           </div>
-          <h2 className="text-4xl md:text-6xl font-bold mb-8 font-display">
+          <h2 className="text-responsive-md font-bold mb-4 md:mb-6 font-display">
             Loved by Organizers &{' '}
-            <span className="gradient-text">Attendees</span>
+            <span className="text-primary dark:text-dark-primary">Attendees</span>
           </h2>
-          <p className="text-xl text-gray-600 dark:text-gray-400 max-w-3xl mx-auto">
-            Join thousands of event organizers and attendees who trust CACK-pass 
-            for seamless, secure, and gasless ticketing experiences.
+          <p className="section-subtitle">
+            Join thousands of event organizers and attendees who trust TicketPass 
+            for seamless, secure ticketing experiences.
           </p>
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-20">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-6 mb-8 md:mb-16">
           {stats.map((stat, index) => (
-            <div key={index} className="glass-card p-6 rounded-2xl text-center">
-              <div className="w-12 h-12 bg-gradient-to-br from-primary-500 to-accent-500 rounded-xl flex items-center justify-center mx-auto mb-4">
-                <div className="text-white">
+            <div key={index} className="card p-4 md:p-6 text-center">
+              <div className="w-10 h-10 md:w-12 md:h-12 bg-primary/10 dark:bg-dark-primary/10 rounded-2xl flex items-center justify-center mx-auto mb-3 md:mb-4">
+                <div className="text-primary dark:text-dark-primary">
                   {stat.icon}
                 </div>
               </div>
-              <div className="text-3xl font-bold mb-2">{stat.value}</div>
-              <div className="text-gray-600 dark:text-gray-400">{stat.label}</div>
+              <div className="text-xl md:text-2xl font-bold mb-1 md:mb-2">{stat.value}</div>
+              <div className="text-text-light dark:text-dark-secondary text-sm md:text-base">{stat.label}</div>
             </div>
           ))}
         </div>
 
         {/* Testimonials */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-24">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-8 mb-12 md:mb-24">
           {testimonials.map((testimonial, index) => (
             <div
               key={index}
-              className="group relative"
+              className="group"
             >
-              <div className="absolute -inset-1 bg-gradient-to-r from-primary-500 to-accent-500 rounded-3xl blur opacity-20 group-hover:opacity-30 transition duration-1000" />
-              
-              <div className="relative glass-card p-8 rounded-3xl">
-                <Quote className="h-12 w-12 text-primary-500/20 absolute top-6 right-6" />
+              <div className="card p-6 md:p-8 h-full">
+                <Quote className="h-8 w-8 md:h-10 md:w-10 text-primary/20 dark:text-dark-primary/20 mb-4 md:mb-6" />
                 
-                <div className="flex items-center mb-6">
-                  <div className="flex mr-4">
+                <div className="flex items-center mb-4 md:mb-6">
+                  <div className="flex mr-3 md:mr-4">
                     {[...Array(testimonial.rating)].map((_, i) => (
-                      <Star key={i} className="h-5 w-5 text-yellow-500 fill-current" />
+                      <Star key={i} className="h-4 w-4 md:h-5 md:w-5 text-yellow-500 fill-current" />
                     ))}
                   </div>
                 </div>
                 
-                <p className="text-gray-700 dark:text-gray-300 mb-8 italic text-lg">
+                <p className="text-text-light dark:text-dark-secondary mb-6 md:mb-8 italic text-sm md:text-base">
                   "{testimonial.quote}"
                 </p>
                 
@@ -108,14 +104,14 @@ export function SocialProof() {
                   <img
                     src={testimonial.avatar}
                     alt={testimonial.author}
-                    className="w-12 h-12 rounded-full mr-4 ring-2 ring-primary-500/20"
+                    className="w-10 h-10 md:w-12 md:h-12 rounded-full mr-3 md:mr-4 ring-2 ring-primary/20 dark:ring-dark-primary/20"
                   />
                   <div>
-                    <div className="font-semibold">{testimonial.author}</div>
-                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                    <div className="font-semibold text-sm md:text-base">{testimonial.author}</div>
+                    <div className="text-text-light dark:text-dark-secondary text-xs md:text-sm">
                       {testimonial.role}
                     </div>
-                    <div className="text-xs text-primary-500 mt-1">{testimonial.event}</div>
+                    <div className="text-primary dark:text-dark-primary text-xs mt-1">{testimonial.event}</div>
                   </div>
                 </div>
               </div>
@@ -124,22 +120,20 @@ export function SocialProof() {
         </div>
 
         {/* Partners */}
-        <div className="text-center">
-          <h3 className="text-2xl font-semibold mb-12">
+        <div className="text-center mb-12 md:mb-16">
+          <h3 className="text-xl md:text-2xl font-semibold mb-6 md:mb-8">
             Backed by Amazing Partners
           </h3>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
             {partners.map((partner, index) => (
               <div
                 key={index}
                 className="group"
               >
-                <div className="glass-card p-6 rounded-2xl flex flex-col items-center justify-center hover:shadow-xl transition-all duration-300">
-                  <div className="text-4xl mb-3 transform group-hover:scale-110 transition-transform">
-                    {partner.logo}
-                  </div>
-                  <div className="font-bold text-gray-900 dark:text-white">{partner.name}</div>
-                  <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">{partner.desc}</div>
+                <div className="card p-4 md:p-6 rounded-2xl flex flex-col items-center justify-center">
+                  <div className="text-3xl md:text-4xl mb-2 md:mb-3">{partner.logo}</div>
+                  <div className="font-bold text-text dark:text-dark-text text-sm md:text-base">{partner.name}</div>
+                  <div className="text-text-light dark:text-dark-secondary text-xs md:text-sm mt-1">{partner.desc}</div>
                 </div>
               </div>
             ))}
@@ -147,25 +141,20 @@ export function SocialProof() {
         </div>
 
         {/* CTA Banner */}
-        <div className="mt-24 bg-gradient-to-r from-primary-600 via-accent-600 to-secondary-600 rounded-3xl p-8 md:p-12 text-white overflow-hidden">
-          <div className="relative">
-            <div className="absolute -top-20 -right-20 w-40 h-40 bg-white/10 rounded-full blur-3xl" />
-            <div className="absolute -bottom-20 -left-20 w-40 h-40 bg-white/10 rounded-full blur-3xl" />
-            
-            <div className="relative flex flex-col md:flex-row items-center justify-between">
-              <div className="mb-8 md:mb-0 md:mr-8">
-                <h3 className="text-2xl md:text-3xl font-bold mb-4">
-                  Ready to Transform Your Events?
-                </h3>
-                <p className="opacity-90">
-                  Join the revolution in event ticketing
-                </p>
-              </div>
-              
-              <button className="px-8 py-4 bg-white text-primary-600 rounded-xl font-bold hover:bg-gray-100 hover:scale-105 transform transition-all">
-                Start Free Trial
-              </button>
+        <div className="bg-primary dark:bg-dark-primary rounded-2xl md:rounded-3xl p-6 md:p-8 text-white">
+          <div className="flex flex-col md:flex-row items-center justify-between">
+            <div className="mb-6 md:mb-0 md:mr-8">
+              <h3 className="text-xl md:text-2xl font-bold mb-2 md:mb-4">
+                Ready to Transform Your Events?
+              </h3>
+              <p className="opacity-90 text-sm md:text-base">
+                Join the smart ticketing revolution
+              </p>
             </div>
+            
+            <button className="px-6 py-3 md:px-8 md:py-4 bg-white text-primary dark:text-dark-primary rounded-xl font-bold hover:bg-gray-100 transition-colors w-full md:w-auto">
+              Start Free Trial
+            </button>
           </div>
         </div>
       </div>

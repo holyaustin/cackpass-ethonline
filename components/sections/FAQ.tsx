@@ -10,76 +10,64 @@ export function FAQ() {
 
   const faqs = [
     {
-      question: 'How does gasless ticketing actually work?',
-      answer: 'We use Biconomy meta-transactions and account abstraction to cover gas fees on your behalf. When you mint a ticket, our relayer pays the gas fees, and you never need to hold any cryptocurrency for transaction costs. The NFT ticket is minted directly to your embedded wallet without any gas fees.',
+      question: 'How does TicketPass work?',
+      answer: 'TicketPass provides smart digital tickets for events. Organizers create events and issue digital tickets, while attendees purchase them instantly through our platform. Each ticket is a digital collectible that can be easily accessed and shared.',
       category: 'general',
-      keywords: ['gasless', 'meta-transactions', 'Biconomy'],
+      keywords: ['basics', 'how it works'],
     },
     {
       question: 'What payment methods do you accept?',
-      answer: 'We accept multiple payment methods: Crypto (ETH, USDC, USDT), Paystack (Nigerian cards and bank transfers), Flutterwave (Pan-African payments), USSD codes for Nigerian banks, and traditional card payments via Stripe for international users.',
+      answer: 'We accept multiple payment methods: Credit/debit cards, Paystack (Nigerian cards and bank transfers), Flutterwave (Pan-African payments), USSD codes for Nigerian banks, and mobile money where available.',
       category: 'payments',
-      keywords: ['crypto', 'paystack', 'flutterwave', 'ussd'],
+      keywords: ['cards', 'paystack', 'flutterwave', 'ussd'],
     },
     {
       question: 'How do I verify ticket authenticity?',
-      answer: 'Every ticket is an NFT on the blockchain with a unique token ID. You can verify authenticity by checking on-chain ownership via our verification tool or using our QR code scanner app. Organizers can scan tickets to instantly verify validity and prevent fraud.',
+      answer: 'Every digital ticket has a unique verification code and QR code. Organizers can scan tickets using our app to instantly verify authenticity and prevent fraud.',
       category: 'verification',
-      keywords: ['NFT', 'blockchain', 'verification', 'QR'],
+      keywords: ['verification', 'QR code', 'security'],
     },
     {
-      question: 'Can I resell my tickets on your platform?',
-      answer: 'Yes! You can securely resell tickets on our built-in secondary marketplace. Original organizers earn royalties (configurable from 0-50%) on secondary sales. Resale prices can be capped by event organizers to prevent scalping.',
+      question: 'Can I resell tickets I purchased?',
+      answer: 'Yes! You can securely resell tickets on our platform. Original organizers can set resale rules and price caps to ensure fair pricing for all fans.',
       category: 'resale',
-      keywords: ['resale', 'marketplace', 'royalties'],
+      keywords: ['resale', 'marketplace', 'transfer'],
     },
     {
-      question: 'How long does ticket minting take?',
-      answer: 'Ticket minting is near-instant. For crypto payments, minting happens within seconds once the transaction is confirmed. For fiat payments, minting occurs immediately after payment confirmation from our payment providers. All tickets are gasless regardless of payment method.',
-      category: 'technical',
-      keywords: ['minting', 'instant', 'gasless'],
+      question: 'How long does ticket delivery take?',
+      answer: 'Ticket delivery is instant. As soon as your payment is confirmed, your digital ticket is available in your account and sent to your email.',
+      category: 'delivery',
+      keywords: ['delivery', 'instant', 'email'],
     },
     {
       question: 'Do you offer refunds for purchased tickets?',
-      answer: 'Refund policies are set by individual event organizers. Most events offer refunds up to 48 hours before the event. You can check the specific refund policy on each event page before purchasing. Platform fees are refundable within 30 days.',
+      answer: 'Refund policies are set by individual event organizers. Most events offer refunds up to 48 hours before the event. Check the specific refund policy on each event page.',
       category: 'refunds',
       keywords: ['refunds', 'policy', 'organizer'],
     },
     {
       question: 'How do I become an event organizer?',
-      answer: 'Sign up for a free account, verify your identity, and you can start creating events immediately. We offer different tiers: Free (up to 3 events), Professional (unlimited events), and Enterprise (custom solutions). No technical knowledge required.',
+      answer: 'Sign up for a free account, complete your profile verification, and you can start creating events immediately. We offer different plans based on your needs.',
       category: 'organizers',
       keywords: ['organizer', 'create', 'events'],
     },
     {
       question: 'Is my personal and payment data secure?',
-      answer: 'Yes, we use industry-standard encryption (AES-256) for all data. Personal information is stored securely in compliance with GDPR and CCPA. Payment information is processed by PCI-DSS compliant providers. We never store your crypto private keys.',
+      answer: 'Yes, we use industry-standard encryption for all data. Personal information is stored securely in compliance with data protection regulations. Payment information is processed by PCI-DSS compliant providers.',
       category: 'security',
-      keywords: ['security', 'encryption', 'GDPR', 'privacy'],
+      keywords: ['security', 'encryption', 'privacy'],
     },
     {
       question: 'Do you support international events?',
-      answer: 'Absolutely! CACK-pass supports events worldwide. We handle currency conversion, multiple time zones, and international payment methods. Our platform supports 30+ languages and works in 150+ countries.',
+      answer: 'Absolutely! TicketPass supports events worldwide. We handle multiple currencies, time zones, and international payment methods.',
       category: 'international',
       keywords: ['international', 'global', 'currencies'],
     },
     {
-      question: 'What blockchain do you use?',
-      answer: 'We currently operate on Lisk Sepolia testnet for development and will launch on Lisk Mainnet. We also support Ethereum and Polygon for maximum compatibility. All tickets are interoperable ERC-1155 NFTs.',
-      category: 'technical',
-      keywords: ['blockchain', 'Lisk', 'Ethereum', 'Polygon'],
-    },
-    {
-      question: 'Can I integrate CACK-pass with my existing website?',
-      answer: 'Yes! We offer API access for Professional and Enterprise plans. You can embed ticket widgets, use webhooks for real-time updates, and even white-label the entire platform for Enterprise customers.',
-      category: 'integration',
-      keywords: ['API', 'integration', 'widgets', 'white-label'],
-    },
-    {
-      question: 'How do attendees check in at events?',
-      answer: 'Attendees can check in using QR codes displayed in their mobile wallet. Organizers use our scanner app (available for iOS and Android) to scan tickets. We also support offline check-in and bulk check-in options.',
-      category: 'checkin',
-      keywords: ['check-in', 'QR', 'scanner', 'mobile'],
+      question: 'Can I use TicketPass on my mobile phone?',
+      answer: 'Yes! Our platform is fully responsive and works perfectly on mobile devices. You can also download our mobile app for iOS and Android for the best experience.',
+      category: 'mobile',
+      keywords: ['mobile', 'app', 'responsive'],
     },
   ]
 
@@ -87,7 +75,6 @@ export function FAQ() {
     { id: 'all', name: 'All Questions', icon: '❓' },
     { id: 'general', name: 'General', icon: '📱' },
     { id: 'payments', name: 'Payments', icon: '💳' },
-    { id: 'technical', name: 'Technical', icon: '⚙️' },
     { id: 'organizers', name: 'For Organizers', icon: '🎪' },
     { id: 'security', name: 'Security', icon: '🔒' },
   ]
@@ -97,71 +84,69 @@ export function FAQ() {
   )
 
   return (
-    <section className="py-24 bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-950">
-      <div className="container mx-auto px-4">
-        <div className="text-center mb-20">
-          <h2 className="text-4xl md:text-6xl font-bold mb-8 font-display">
+    <section className="py-12 md:py-24 bg-background dark:bg-dark-background">
+      <div className="responsive-container">
+        <div className="text-center mb-8 md:mb-16">
+          <h2 className="text-responsive-md font-bold mb-4 md:mb-6 font-display">
             Frequently Asked{' '}
-            <span className="gradient-text">Questions</span>
+            <span className="text-primary dark:text-dark-primary">Questions</span>
           </h2>
-          <p className="text-xl text-gray-600 dark:text-gray-400 max-w-3xl mx-auto">
-            Find answers to common questions about CACK-pass gasless ticketing
+          <p className="section-subtitle">
+            Find answers to common questions about TicketPass smart ticketing
           </p>
         </div>
 
         {/* Category Filter */}
-        <div className="flex flex-wrap justify-center gap-3 mb-16">
+        <div className="flex flex-wrap justify-center gap-2 md:gap-3 mb-8 md:mb-16">
           {categories.map((category) => (
             <button
               key={category.id}
               onClick={() => setSelectedCategory(category.id)}
-              className={`px-6 py-3 rounded-xl font-bold transition-all flex items-center gap-2 ${
+              className={`px-4 py-2 md:px-6 md:py-3 rounded-xl font-bold transition-all flex items-center gap-2 text-sm md:text-base ${
                 selectedCategory === category.id
-                  ? 'bg-gradient-to-r from-primary-600 to-accent-600 text-white shadow-lg'
-                  : 'glass-card text-gray-700 dark:text-gray-300 hover:shadow-lg'
+                  ? 'bg-primary text-white dark:bg-dark-primary dark:text-white shadow-sm'
+                  : 'card text-text dark:text-dark-text hover:shadow-sm'
               }`}
             >
-              <span className="text-lg">{category.icon}</span>
+              <span>{category.icon}</span>
               {category.name}
             </button>
           ))}
         </div>
 
         {/* FAQ Accordion */}
-        <div className="max-w-4xl mx-auto mb-24">
-          <div className="space-y-4">
+        <div className="max-w-4xl mx-auto mb-12 md:mb-24">
+          <div className="space-y-3 md:space-y-4">
             {filteredFaqs.map((faq, index) => (
               <div
                 key={index}
                 className="group"
               >
-                <div className="absolute -inset-0.5 bg-gradient-to-r from-primary-500 to-accent-500 rounded-3xl blur opacity-0 group-hover:opacity-10 transition duration-500" />
-                
-                <div className="relative glass-card rounded-3xl overflow-hidden">
+                <div className="card rounded-2xl overflow-hidden">
                   <button
                     onClick={() => setOpenIndex(openIndex === index ? null : index)}
-                    className="w-full px-8 py-6 text-left flex items-center justify-between hover:bg-gray-50/50 dark:hover:bg-gray-800/50 transition-colors"
+                    className="w-full px-4 py-4 md:px-6 md:py-6 text-left flex items-center justify-between hover:bg-background/50 dark:hover:bg-dark-background/50 transition-colors"
                   >
-                    <div className="flex items-center gap-6">
-                      <div className="w-12 h-12 bg-gradient-to-r from-primary-500/10 to-accent-500/10 rounded-2xl flex items-center justify-center">
-                        <HelpCircle className="h-6 w-6 text-primary-500" />
+                    <div className="flex items-center gap-3 md:gap-4">
+                      <div className="w-10 h-10 md:w-12 md:h-12 bg-primary/10 dark:bg-dark-primary/10 rounded-2xl flex items-center justify-center flex-shrink-0">
+                        <HelpCircle className="h-4 w-4 md:h-5 md:w-5 text-primary dark:text-dark-primary" />
                       </div>
-                      <h3 className="text-lg font-semibold">{faq.question}</h3>
+                      <h3 className="text-base md:text-lg font-semibold text-left">{faq.question}</h3>
                     </div>
                     <ChevronDown
-                      className={`h-5 w-5 text-gray-400 transition-transform ${
+                      className={`h-4 w-4 md:h-5 md:w-5 text-text-light dark:text-dark-secondary transition-transform flex-shrink-0 ${
                         openIndex === index ? 'rotate-180' : ''
                       }`}
                     />
                   </button>
                   
                   {openIndex === index && (
-                    <div className="px-8 pb-6">
-                      <div className="pl-18">
-                        <p className="text-gray-600 dark:text-gray-400 mb-4">{faq.answer}</p>
+                    <div className="px-4 pb-4 md:px-6 md:pb-6">
+                      <div className="pl-0 md:pl-14">
+                        <p className="text-text-light dark:text-dark-secondary mb-3 md:mb-4 text-sm md:text-base">{faq.answer}</p>
                         <div className="flex flex-wrap gap-2">
                           {faq.keywords.map((keyword, i) => (
-                            <span key={i} className="px-3 py-1 bg-primary-500/10 text-primary-600 dark:text-primary-400 rounded-full text-sm">
+                            <span key={i} className="px-2 py-1 bg-primary/10 text-primary dark:bg-dark-primary/10 dark:text-dark-primary rounded-full text-xs">
                               {keyword}
                             </span>
                           ))}
@@ -176,70 +161,65 @@ export function FAQ() {
         </div>
 
         {/* Support Section */}
-        <div className="bg-gradient-to-r from-primary-600 via-accent-600 to-secondary-600 rounded-3xl p-8 md:p-12 text-white overflow-hidden">
-          <div className="relative">
-            <div className="absolute -top-20 -right-20 w-60 h-60 bg-white/10 rounded-full blur-3xl" />
-            <div className="absolute -bottom-20 -left-20 w-60 h-60 bg-white/10 rounded-full blur-3xl" />
+        <div className="bg-primary dark:bg-dark-primary rounded-2xl md:rounded-3xl p-6 md:p-8 text-white">
+          <div className="flex flex-col md:flex-row items-center justify-between">
+            <div className="mb-6 md:mb-0 md:mr-8">
+              <h3 className="text-lg md:text-xl font-bold mb-2 md:mb-4">
+                Still have questions?
+              </h3>
+              <p className="opacity-90 text-sm md:text-base">
+                Our support team is here to help 24/7
+              </p>
+            </div>
             
-            <div className="relative flex flex-col md:flex-row items-center justify-between">
-              <div className="mb-8 md:mb-0 md:mr-8">
-                <h3 className="text-2xl md:text-3xl font-bold mb-4">
-                  Still have questions?
-                </h3>
-                <p className="opacity-90">
-                  Our support team is here to help 24/7
-                </p>
-              </div>
-              
-              <div className="flex flex-col sm:flex-row gap-4">
-                <button className="px-6 py-3 bg-white text-primary-600 rounded-xl font-bold hover:bg-gray-100 flex items-center justify-center gap-3">
-                  <MessageSquare className="h-5 w-5" />
-                  Live Chat
-                </button>
-                <button className="px-6 py-3 border-2 border-white text-white rounded-xl font-bold hover:bg-white/10 flex items-center justify-center gap-3">
-                  <Phone className="h-5 w-5" />
-                  Call Support
-                </button>
-                <button className="px-6 py-3 border-2 border-white text-white rounded-xl font-bold hover:bg-white/10 flex items-center justify-center gap-3">
-                  <Mail className="h-5 w-5" />
-                  Email Us
-                </button>
-              </div>
+            <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+              <button className="px-4 py-3 md:px-6 md:py-3 bg-white text-primary dark:text-dark-primary rounded-xl font-bold hover:bg-gray-100 transition-colors flex items-center justify-center gap-2 w-full sm:w-auto">
+                <MessageSquare className="h-4 w-4 md:h-5 md:w-5" />
+                <span className="text-sm md:text-base">Live Chat</span>
+              </button>
+              <button className="px-4 py-3 md:px-6 md:py-3 border-2 border-white text-white rounded-xl font-bold hover:bg-white/10 transition-colors flex items-center justify-center gap-2 w-full sm:w-auto">
+                <Phone className="h-4 w-4 md:h-5 md:w-5" />
+                <span className="text-sm md:text-base">Call Support</span>
+              </button>
+              <button className="px-4 py-3 md:px-6 md:py-3 border-2 border-white text-white rounded-xl font-bold hover:bg-white/10 transition-colors flex items-center justify-center gap-2 w-full sm:w-auto">
+                <Mail className="h-4 w-4 md:h-5 md:w-5" />
+                <span className="text-sm md:text-base">Email Us</span>
+              </button>
             </div>
           </div>
         </div>
 
         {/* Quick Links */}
-        <div className="mt-20 grid grid-cols-1 md:grid-cols-3 gap-8">
-          <div className="glass-card p-6 rounded-2xl text-center">
-            <Globe className="h-12 w-12 text-primary-500 mx-auto mb-4" />
-            <h4 className="text-xl font-bold mb-2">Documentation</h4>
-            <p className="text-gray-600 dark:text-gray-400 mb-4">
-              Comprehensive guides and API documentation
+        <div className="mt-12 md:mt-20 grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-8">
+          <div className="card p-4 md:p-6 text-center">
+            <Globe className="h-8 w-8 md:h-10 md:w-10 text-primary dark:text-dark-primary mx-auto mb-3 md:mb-4" />
+            <h4 className="text-base md:text-lg font-bold mb-2">Documentation</h4>
+            <p className="text-text-light dark:text-dark-secondary mb-3 md:mb-4 text-sm md:text-base">
+              Comprehensive guides and tutorials
             </p>
-            <button className="text-primary-600 hover:text-primary-700 font-medium">
+            <button className="text-primary hover:text-primary-dark dark:text-dark-primary dark:hover:text-dark-primary-dark font-medium text-sm md:text-base">
               Read Docs →
             </button>
           </div>
           
-          <div className="glass-card p-6 rounded-2xl text-center">
-            <MessageSquare className="h-12 w-12 text-primary-500 mx-auto mb-4" />
-            <h4 className="text-xl font-bold mb-2">Community</h4>
-            <p className="text-gray-600 dark:text-gray-400 mb-4">
-              Join our Discord community of organizers
+          <div className="card p-4 md:p-6 text-center">
+            <MessageSquare className="h-8 w-8 md:h-10 md:w-10 text-primary dark:text-dark-primary mx-auto mb-3 md:mb-4" />
+            <h4 className="text-base md:text-lg font-bold mb-2">Community</h4>
+            <p className="text-text-light dark:text-dark-secondary mb-3 md:mb-4 text-sm md:text-base">
+              Join our community of organizers
             </p>
-            <button className="text-primary-600 hover:text-primary-700 font-medium">
+            <button className="text-primary hover:text-primary-dark dark:text-dark-primary dark:hover:text-dark-primary-dark font-medium text-sm md:text-base">
               Join Community →
             </button>
           </div>
           
-          <div className="glass-card p-6 rounded-2xl text-center">
-            <HelpCircle className="h-12 w-12 text-primary-500 mx-auto mb-4" />
-            <h4 className="text-xl font-bold mb-2">Help Center</h4>
-            <p className="text-gray-600 dark:text-gray-400 mb-4">
+          <div className="card p-4 md:p-6 text-center">
+            <HelpCircle className="h-8 w-8 md:h-10 md:w-10 text-primary dark:text-dark-primary mx-auto mb-3 md:mb-4" />
+            <h4 className="text-base md:text-lg font-bold mb-2">Help Center</h4>
+            <p className="text-text-light dark:text-dark-secondary mb-3 md:mb-4 text-sm md:text-base">
               Browse help articles and tutorials
             </p>
-            <button className="text-primary-600 hover:text-primary-700 font-medium">
+            <button className="text-primary hover:text-primary-dark dark:text-dark-primary dark:hover:text-dark-primary-dark font-medium text-sm md:text-base">
               Visit Help Center →
             </button>
           </div>

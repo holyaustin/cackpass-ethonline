@@ -6,7 +6,7 @@ import { usePrivy } from '@privy-io/react-auth'
 import { Ticket, Calendar, DollarSign, Users, Wallet, CreditCard, TrendingUp, Globe } from 'lucide-react'
 import { TicketCard } from '@/components/tickets/TicketCard'
 import { FundWallet } from '@/components/wallet/FundWallet'
-import { ConnectWallet } from '@/components/wallet/ConnectWallet'
+import { ConnectButton } from '@/components/wallet/ConnectButton'
 
 interface DashboardStats {
   totalTickets: number
@@ -140,7 +140,7 @@ export default function DashboardPage() {
           <p className="text-gray-600 dark:text-gray-400 mb-8 max-w-md">
             Sign in with your email or social account to access your dashboard and manage tickets
           </p>
-          <ConnectWallet />
+          <ConnectButton />
         </div>
       </div>
     )
@@ -170,7 +170,7 @@ export default function DashboardPage() {
               <CreditCard className="h-5 w-5" />
               Fund Wallet
             </button>
-            <ConnectWallet />
+            <ConnectButton />
           </div>
         </div>
 

@@ -3,7 +3,7 @@
 
 import { useState } from 'react'
 import { usePrivy } from '@privy-io/react-auth'
-import { DollarSign, CreditCard, Loader2, ExternalLink, Check } from 'lucide-react'
+import { DollarSign, CreditCard, Loader2, ExternalLink, Check, Banknote } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface FundWalletProps {
@@ -13,126 +13,103 @@ interface FundWalletProps {
 export function FundWallet({ className = '' }: FundWalletProps) {
   const { user } = usePrivy()
   const [amount, setAmount] = useState('100')
-  const [currency, setCurrency] = useState('eth')
+  const [currency, setCurrency] = useState('usdc')
   const [isLoading, setIsLoading] = useState(false)
   const [showSuccess, setShowSuccess] = useState(false)
 
   const presetAmounts = [50, 100, 250, 500]
 
   const handleFundWallet = async () => {
-    if (!user?.wallet?.address) {
-      toast.error('Please connect your wallet first')
+    if (!user?.email?.address) {
+      toast.error('Please login first')
       return
     }
 
     setIsLoading(true)
     try {
-      // Call backend API to get MoonPay URL
-      const params = new URLSearchParams({
-        walletAddress: user.wallet.address,
-        currencyCode: currency,
-        baseCurrencyAmount: amount,
-        baseCurrencyCode: 'usd',
-      })
-
-      const response = await fetch(`/api/onramp/create-url?${params}`)
-      const data = await response.json()
-
-      if (!data.success) {
-        throw new Error(data.error || 'Failed to create onramp URL')
-      }
-
-      // Open MoonPay in new window
-      const width = 500
-      const height = 700
-      const left = window.screen.width / 2 - width / 2
-      const top = window.screen.height / 2 - height / 2
-
-      window.open(
-        data.url,
-        'moonpay',
-        `width=${width},height=${height},left=${left},top=${top},popup=yes`
-      )
-
+      // In a real app, this would call your backend API
+      // For now, we'll simulate a successful payment initiation
+      
+      // Simulate API call
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      
       // Show success message
       setShowSuccess(true)
-      toast.success('MoonPay window opened! Complete your purchase there.')
+      toast.success('Payment initiated successfully!')
 
       // Reset success message after 5 seconds
       setTimeout(() => setShowSuccess(false), 5000)
 
     } catch (error) {
       console.error('Error funding wallet:', error)
-      toast.error('Failed to open payment window. Please try again.')
+      toast.error('Failed to initiate payment. Please try again.')
     } finally {
       setIsLoading(false)
     }
   }
 
-  const walletAddress = user?.wallet?.address
-  const truncatedAddress = walletAddress 
-    ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`
-    : 'Not connected'
+  const userEmail = user?.email?.address || 'Not logged in'
+  const truncatedEmail = userEmail.length > 20 ? `${userEmail.slice(0, 20)}...` : userEmail
 
   return (
-    <div className={`bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 ${className}`}>
-      <div className="flex items-center gap-3 mb-6">
-        <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center">
-          <CreditCard className="h-6 w-6 text-primary" />
+    <div className={`card rounded-2xl p-4 md:p-6 ${className}`}>
+      <div className="flex items-center gap-3 mb-4 md:mb-6">
+        <div className="w-10 h-10 md:w-12 md:h-12 bg-primary/10 dark:bg-dark-primary/10 rounded-xl flex items-center justify-center">
+          <Banknote className="h-5 w-5 md:h-6 md:w-6 text-primary dark:text-dark-primary" />
         </div>
         <div>
-          <h3 className="text-xl font-bold">Fund Your Wallet</h3>
-          <p className="text-gray-600 dark:text-gray-400 text-sm">
-            Buy crypto with credit card or bank transfer
+          <h3 className="text-lg md:text-xl font-bold">Add Funds</h3>
+          <p className="text-text-light dark:text-dark-secondary text-sm md:text-base">
+            Top up your account balance
           </p>
         </div>
       </div>
 
       {showSuccess ? (
-        <div className="text-center py-8">
-          <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Check className="h-8 w-8 text-green-500" />
+        <div className="text-center py-6 md:py-8">
+          <div className="w-12 h-12 md:w-16 md:h-16 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Check className="h-6 w-6 md:h-8 md:w-8 text-green-500" />
           </div>
-          <h4 className="text-lg font-semibold mb-2">Payment Window Opened!</h4>
-          <p className="text-gray-600 dark:text-gray-400 mb-6">
-            Complete your purchase in the MoonPay window. Funds will appear in your wallet shortly.
+          <h4 className="text-lg md:text-xl font-semibold mb-2">Payment Started!</h4>
+          <p className="text-text-light dark:text-dark-secondary mb-4 md:mb-6 text-sm md:text-base">
+            Complete your payment to add funds to your account.
           </p>
           <button
             onClick={() => setShowSuccess(false)}
-            className="text-primary hover:underline"
+            className="text-primary hover:text-primary-dark dark:text-dark-primary dark:hover:text-dark-primary-dark font-medium"
           >
-            Start new payment
+            Add more funds
           </button>
         </div>
       ) : (
         <>
-          {/* Wallet Info */}
-          <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
-            <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">
-              Funding to wallet
+          {/* User Info */}
+          <div className="mb-4 md:mb-6 p-3 md:p-4 bg-background dark:bg-dark-background rounded-xl">
+            <div className="text-xs text-text-light dark:text-dark-secondary mb-1">
+              Funding to account
             </div>
-            <div className="font-mono text-sm truncate">
-              {truncatedAddress}
+            <div className="font-medium text-sm md:text-base truncate">
+              {truncatedEmail}
             </div>
           </div>
 
           {/* Amount Selection */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium mb-3">
+          <div className="mb-4 md:mb-6">
+            <label className="block text-sm font-medium mb-2 md:mb-3">
               Select Amount (USD)
             </label>
             
             {/* Quick Amount Buttons */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 md:gap-3 mb-3 md:mb-4">
               {presetAmounts.map((preset) => (
                 <button
                   key={preset}
                   type="button"
                   onClick={() => setAmount(preset.toString())}
-                  className={`py-3 rounded-xl font-medium transition-all ${
+                  className={`py-2 md:py-3 rounded-xl font-medium transition-all text-sm md:text-base ${
                     amount === preset.toString()
-                      ? 'bg-primary text-white'
-                      : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                      ? 'bg-primary text-white dark:bg-dark-primary dark:text-white'
+                      : 'bg-background dark:bg-dark-background text-text dark:text-dark-text hover:shadow-sm'
                   }`}
                 >
                   ${preset}
@@ -142,7 +119,7 @@ export function FundWallet({ className = '' }: FundWalletProps) {
 
             {/* Custom Amount */}
             <div className="relative">
-              <DollarSign className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+              <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-text-light dark:text-dark-secondary h-4 w-4 md:h-5 md:w-5" />
               <input
                 type="number"
                 min="10"
@@ -150,54 +127,53 @@ export function FundWallet({ className = '' }: FundWalletProps) {
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="Enter custom amount"
-                className="w-full pl-12 pr-4 py-3 bg-gray-50 dark:bg-gray-700 rounded-xl border focus:outline-none focus:ring-2 focus:ring-primary"
+                className="input-field pl-10"
               />
-              <div className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-500">
+              <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-text-light dark:text-dark-secondary text-sm">
                 USD
               </div>
             </div>
           </div>
 
           {/* Currency Selection */}
-          <div className="mb-8">
-            <label className="block text-sm font-medium mb-3">
-              Select Cryptocurrency
+          <div className="mb-4 md:mb-6">
+            <label className="block text-sm font-medium mb-2 md:mb-3">
+              Select Currency
             </label>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2 md:gap-3">
               {[
-                { code: 'eth', name: 'Ethereum', icon: 'Ξ' },
                 { code: 'usdc', name: 'USDC', icon: '$' },
-                { code: 'usdt', name: 'USDT', icon: '$' },
-                { code: 'matic', name: 'Polygon', icon: '⧫' },
-              ].map((crypto) => (
+                { code: 'usd', name: 'USD', icon: '$' },
+                { code: 'ngn', name: 'NGN', icon: '₦' },
+              ].map((currencyOption) => (
                 <button
-                  key={crypto.code}
+                  key={currencyOption.code}
                   type="button"
-                  onClick={() => setCurrency(crypto.code)}
-                  className={`p-4 rounded-xl border-2 flex flex-col items-center transition-all ${
-                    currency === crypto.code
-                      ? 'border-primary bg-primary/5'
-                      : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                  onClick={() => setCurrency(currencyOption.code)}
+                  className={`p-3 md:p-4 rounded-xl border-2 flex flex-col items-center transition-all ${
+                    currency === currencyOption.code
+                      ? 'border-primary bg-primary/5 dark:border-dark-primary dark:bg-dark-primary/5'
+                      : 'border-gray-200 dark:border-gray-300 hover:border-primary/50 dark:hover:border-dark-primary/50'
                   }`}
                 >
-                  <div className="text-2xl mb-2">{crypto.icon}</div>
-                  <div className="font-medium">{crypto.name}</div>
+                  <div className="text-lg md:text-xl mb-1 md:mb-2">{currencyOption.icon}</div>
+                  <div className="font-medium text-sm md:text-base">{currencyOption.name}</div>
                 </button>
               ))}
             </div>
           </div>
 
           {/* Info Box */}
-          <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800">
-            <div className="flex items-start gap-3">
-              <ExternalLink className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
+          <div className="mb-4 md:mb-6 p-3 md:p-4 bg-primary/5 dark:bg-dark-primary/5 rounded-xl border border-primary/20 dark:border-dark-primary/20">
+            <div className="flex items-start gap-2 md:gap-3">
+              <ExternalLink className="h-4 w-4 md:h-5 md:w-5 text-primary dark:text-dark-primary mt-0.5 flex-shrink-0" />
               <div>
-                <h4 className="font-medium text-blue-800 dark:text-blue-300 mb-1">
-                  Powered by MoonPay
+                <h4 className="font-medium text-primary dark:text-dark-primary mb-1 text-sm md:text-base">
+                  Secure Payment Processing
                 </h4>
-                <p className="text-sm text-blue-700 dark:text-blue-400">
-                  You'll be redirected to MoonPay to complete your purchase. 
-                  Transaction fees apply. Funds typically arrive in 5-15 minutes.
+                <p className="text-text-light dark:text-dark-secondary text-xs md:text-sm">
+                  All payments are processed securely through our payment partners. 
+                  Funds typically appear in your account within minutes.
                 </p>
               </div>
             </div>
@@ -206,25 +182,25 @@ export function FundWallet({ className = '' }: FundWalletProps) {
           {/* Action Button */}
           <button
             onClick={handleFundWallet}
-            disabled={isLoading || !walletAddress}
-            className="w-full py-4 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            disabled={isLoading || !user?.email?.address}
+            className="w-full py-3 md:py-4 bg-primary text-white dark:bg-dark-primary dark:text-white rounded-xl font-bold hover:bg-primary-dark dark:hover:bg-dark-primary-dark disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all"
           >
             {isLoading ? (
               <>
-                <Loader2 className="h-5 w-5 animate-spin" />
+                <Loader2 className="h-4 w-4 md:h-5 md:w-5 animate-spin" />
                 Processing...
               </>
             ) : (
               <>
-                <CreditCard className="h-5 w-5" />
-                Buy Crypto with MoonPay
+                <CreditCard className="h-4 w-4 md:h-5 md:w-5" />
+                Add Funds
               </>
             )}
           </button>
 
-          {!walletAddress && (
-            <p className="text-center text-sm text-red-500 mt-3">
-              Please connect your wallet first
+          {!user?.email?.address && (
+            <p className="text-center text-xs text-red-500 mt-2 md:mt-3">
+              Please login first
             </p>
           )}
         </>

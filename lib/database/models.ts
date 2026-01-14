@@ -1,15 +1,33 @@
-// lib/database/models.ts
 import mongoose from 'mongoose'
 
-// User Schema
+// User Schema with simplified fields
 const UserSchema = new mongoose.Schema({
   privyId: { type: String, unique: true, required: true },
   walletAddress: { type: String, unique: true, sparse: true },
-  email: { type: String, unique: true, sparse: true },
-  phone: { type: String, unique: true, sparse: true },
-  name: String,
-  avatar: String,
-  role: { type: String, enum: ['user', 'organizer', 'admin'], default: 'user' },
+  loginMethod: { 
+    type: String, 
+    enum: ['email', 'google', 'twitter', 'tiktok', 'instagram'],
+    required: true 
+  },
+  username: { type: String },
+  organizer: { type: Boolean, default: false },
+  admin: { type: Boolean, default: false },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
+})
+
+// User Profile Schema
+const UserProfileSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
+  walletAddress: { type: String, unique: true, sparse: true }, // Added walletAddress to profile
+  fullName: { type: String, default: '' },
+  bio: { type: String, default: '' },
+  location: { type: String, default: '' },
+  country: { type: String, default: '' },
+  dateOfBirth: { type: Date },
+  interests: [{ type: String }],
+  profilePicture: { type: String, default: '' },
+  isProfileComplete: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 })
@@ -27,11 +45,11 @@ const EventSchema = new mongoose.Schema({
   },
   startDate: { type: Date, required: true },
   endDate: { type: Date, required: true },
-  bannerImage: String, // IPFS hash
-  metadataURI: String, // IPFS hash
+  bannerImage: String,
+  metadataURI: String,
   isActive: { type: Boolean, default: true },
   isFree: { type: Boolean, default: false },
-  onChainId: Number, // Event ID from contract
+  onChainId: Number,
   createdAt: { type: Date, default: Date.now },
 })
 
@@ -45,10 +63,10 @@ const TicketTypeSchema = new mongoose.Schema({
     enum: ['GeneralAdmission', 'ReservedSeating', 'VIPPremium', 'Others'],
     default: 'GeneralAdmission'
   },
-  price: { type: Number, default: 0 }, // in wei for crypto, in smallest unit for fiat
+  price: { type: Number, default: 0 },
   maxSupply: { type: Number, required: true },
   currentSupply: { type: Number, default: 0 },
-  metadataURI: String, // IPFS hash
+  metadataURI: String,
   isActive: { type: Boolean, default: true },
   onChainCategoryId: Number,
 })
@@ -78,7 +96,7 @@ const OrderSchema = new mongoose.Schema({
     default: 'pending' 
   },
   transactionHash: String,
-  ticketIds: [Number], // Array of on-chain ticket IDs
+  ticketIds: [Number],
   createdAt: { type: Date, default: Date.now },
 })
 
@@ -89,7 +107,7 @@ const WhitelistSchema = new mongoose.Schema({
   participants: [{
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     address: String,
-    proof: [String], // Merkle proof
+    proof: [String],
     registeredAt: { type: Date, default: Date.now },
   }],
   isActive: { type: Boolean, default: true },
@@ -99,9 +117,9 @@ const WhitelistSchema = new mongoose.Schema({
 // Market Listing Schema
 const MarketListingSchema = new mongoose.Schema({
   sellerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  ticketId: { type: Number, required: true }, // On-chain ticket ID
+  ticketId: { type: Number, required: true },
   quantity: { type: Number, required: true },
-  price: { type: Number, required: true }, // in wei
+  price: { type: Number, required: true },
   expiresAt: { type: Date, required: true },
   isActive: { type: Boolean, default: true },
   onChainListingId: Number,
@@ -109,6 +127,7 @@ const MarketListingSchema = new mongoose.Schema({
 })
 
 export const User = mongoose.models.User || mongoose.model('User', UserSchema)
+export const UserProfile = mongoose.models.UserProfile || mongoose.model('UserProfile', UserProfileSchema)
 export const Event = mongoose.models.Event || mongoose.model('Event', EventSchema)
 export const TicketType = mongoose.models.TicketType || mongoose.model('TicketType', TicketTypeSchema)
 export const Order = mongoose.models.Order || mongoose.model('Order', OrderSchema)

@@ -10,10 +10,10 @@ import { Toaster } from 'sonner'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'CACK-pass - Gasless Event Ticketing',
-  description: 'Buy, sell, and manage event tickets with zero gas fees. Powered by blockchain for security and transparency.',
+  title: 'TicketPass - Smart Event Ticketing',
+  description: 'Buy, sell, and manage event tickets with smart digital passes that create lasting memories.',
   manifest: '/manifest.json',
-  themeColor: '#FF6B35',
+  themeColor: '#D95427',
 }
 
 export default function RootLayout({
@@ -25,10 +25,10 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <head>
         <link rel="icon" href="/favicon.ico" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="theme-color" content="#FF6B35" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+        <meta name="theme-color" content="#D95427" />
       </head>
-      <body className={`${inter.className} bg-white dark:bg-gray-900`}>
+      <body className={`${inter.className} bg-background text-text dark:bg-dark-background dark:text-dark-text`}>
         <AppProviders>
           <Header />
           <main className="min-h-screen">
@@ -36,9 +36,9 @@ export default function RootLayout({
           </main>
           <Footer />
           <Toaster 
-            position="bottom-right"
+            position="top-center"
             toastOptions={{
-              className: 'bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700',
+              className: 'bg-surface dark:bg-dark-surface text-text dark:text-dark-text border border-gray-200 dark:border-gray-300',
             }}
           />
         </AppProviders>
