@@ -6,35 +6,29 @@ export default {
     './components/**/*.{js,ts,jsx,tsx,mdx}',
     './app/**/*.{js,ts,jsx,tsx,mdx}',
   ],
-  darkMode: 'class',
+  darkMode: 'class', // This enables class-based dark mode
   theme: {
     extend: {
       colors: {
-        // Theme 1: Warm & Balanced (Light Mode)
+        // Theme 1: Warm & Balanced (Default/Light Mode)
         primary: {
-          DEFAULT: '#D95427', // Burnt Orange
-          dark: '#BF4519',
+          DEFAULT: 'var(--color-primary)',
+          dark: 'var(--color-primary-dark)',
         },
         secondary: {
-          DEFAULT: '#3D6A66', // Muted Teal
-          dark: '#2E514D',
+          DEFAULT: 'var(--color-secondary)',
+          dark: 'var(--color-secondary-dark)',
         },
-        background: '#F7F3E9', // Cream Shell
-        surface: '#FFFFFF', // Pure White
+        accent: {
+          DEFAULT: 'var(--color-accent)',
+          dark: 'var(--color-accent-dark)',
+        },
+        background: 'var(--color-background)',
+        surface: 'var(--color-surface)',
         text: {
-          DEFAULT: '#2E2D27', // Deep Charcoal
-          light: '#5C5B54',
+          DEFAULT: 'var(--color-text)',
+          light: 'var(--color-text-light)',
         },
-        
-        // Theme 2: Professional Tech (Dark Mode)
-        dark: {
-          primary: '#3D6A66', // Deep Teal
-          secondary: '#5C5B54', // Slate Grey
-          accent: '#D95427', // Burnt Orange
-          background: '#F2F2F0', // Soft Grey
-          text: '#1A1A18', // Near Black
-          surface: '#FFFFFF',
-        }
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],

@@ -4,7 +4,7 @@ import { Star, Quote, Award, Users, Calendar, TrendingUp } from 'lucide-react'
 export function SocialProof() {
   const testimonials = [
     {
-      quote: "TicketPass eliminated ticket fraud for our events. The smart digital tickets and anti-scalping features have been game-changers.",
+      quote: "CACK-pass eliminated ticket fraud for our events. The smart digital tickets and anti-scalping features have been game-changers.",
       author: "Sarah Johnson",
       role: "Event Director, TechFest Africa",
       avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Sarah",
@@ -58,7 +58,7 @@ export function SocialProof() {
             <span className="text-primary dark:text-dark-primary">Attendees</span>
           </h2>
           <p className="section-subtitle">
-            Join thousands of event organizers and attendees who trust TicketPass 
+            Join thousands of event organizers and attendees who trust CACK-pass 
             for seamless, secure ticketing experiences.
           </p>
         </div>

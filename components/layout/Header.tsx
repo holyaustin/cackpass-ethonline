@@ -97,17 +97,19 @@ export function Header() {
         <div className="flex items-center justify-between h-16 md:h-20">
           {/* Logo */}
           <Link href="/" className="flex items-center space-x-3">
-            <div className="relative w-10 h-10 md:w-12 md:h-12">
-              <Image
-                src="/logoosm.png"
-                alt="TicketPass"
-                fill
-                className="object-contain"
-                priority
-              />
-            </div>
+<div className="relative w-10 h-10 md:w-12 md:h-12">
+  <Image
+    src="/logoosm.png"
+    alt="CACK-pass logo"
+    fill
+    className="object-contain"
+    priority
+    //sizes="(max-width: 768px) 40px, 48px"
+    sizes="(max-width: 640px) 40px, (max-width: 768px) 44px, (max-width: 1024px) 48px, 56px"
+  />
+</div>
             <span className="text-xl md:text-2xl font-bold text-text dark:text-dark-text">
-              Ticket<span className="text-primary dark:text-dark-primary">Pass</span>
+              CACK-<span className="text-primary dark:text-dark-primary">pass</span>
             </span>
           </Link>
 

@@ -73,7 +73,7 @@ export function Features() {
             <span className="text-primary dark:text-dark-primary">Everyone</span>
           </h2>
           <p className="section-subtitle">
-            Whether you're attending events or organizing them, TicketPass provides 
+            Whether you're attending events or organizing them, CACK-pass provides 
             the perfect solution with smart features.
           </p>
         </div>
@@ -140,7 +140,7 @@ export function Features() {
                 Experience Smart Ticketing
               </h3>
               <p className="text-white/90 mb-6 md:mb-8 text-sm md:text-base">
-                See how TicketPass transforms event management with digital tickets, 
+                See how CACK-pass transforms event management with digital tickets, 
                 instant delivery, and smart features.
               </p>
               <div className="flex flex-col sm:flex-row gap-4">

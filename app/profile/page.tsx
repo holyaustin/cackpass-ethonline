@@ -1,11 +1,11 @@
-// app/profile/page.tsx
+//app/profile/page.tsx
 
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { usePrivy } from '@privy-io/react-auth'
 import { useRouter } from 'next/navigation'
-import { User, Mail, MapPin, Calendar, Upload, Save, Globe } from 'lucide-react'
+import { User, Mail, MapPin, Calendar, Upload, Save, Globe, Loader2, AlertCircle } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface ProfileData {
@@ -18,7 +18,62 @@ interface ProfileData {
   profilePicture: string
 }
 
-export default function ProfilePage() {
+// Error boundary component
+function ProfileErrorBoundary({ children }: { children: React.ReactNode }) {
+  const [hasError, setHasError] = useState(false)
+  const [error, setError] = useState<Error | null>(null)
+
+  useEffect(() => {
+    const handleError = (event: ErrorEvent) => {
+      setHasError(true)
+      setError(event.error)
+    }
+
+    window.addEventListener('error', handleError)
+    return () => window.removeEventListener('error', handleError)
+  }, [])
+
+  if (hasError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center p-8">
+          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <h3 className="text-xl font-bold mb-2">Something went wrong</h3>
+          <p className="text-gray-600 dark:text-gray-400 mb-4">
+            {error?.message || 'An unexpected error occurred'}
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            className="btn-primary"
+          >
+            Reload Page
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return <>{children}</>
+}
+
+// Loading component
+function ProfileLoading() {
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="text-center">
+        <div className="relative">
+          <div className="h-16 w-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <div className="absolute inset-0 flex items-center justify-center">
+            <User className="h-8 w-8 text-primary animate-pulse" />
+          </div>
+        </div>
+        <p className="text-text-light dark:text-dark-secondary">Loading profile...</p>
+      </div>
+    </div>
+  )
+}
+
+function ProfileContent() {
   const { user, authenticated, ready } = usePrivy()
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(true)
@@ -34,6 +89,7 @@ export default function ProfilePage() {
   })
   const [tempInterest, setTempInterest] = useState('')
   const [userData, setUserData] = useState<any>(null)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (ready && !authenticated) {
@@ -46,78 +102,80 @@ export default function ProfilePage() {
   const fetchProfileData = async () => {
     try {
       setIsLoading(true)
+      setError(null)
       
-      // Get auth token from Privy
-      const authToken = await getAuthToken()
+      // Get auth token from header
+      const token = await getAuthToken()
       
-      // Check if user already has a profile
-      const response = await fetch('/api/user/profile', {
+      if (!token) {
+        throw new Error('No authentication token found')
+      }
+      
+      // Check user status
+      const response = await fetch('/api/auth/user', {
         headers: {
-          'Authorization': `Bearer ${authToken}`,
+          'Authorization': `Bearer ${token}`,
         },
       })
 
-      if (response.ok) {
-        const data = await response.json()
-        
-        // Format date for input field
-        let formattedDate = ''
-        if (data.profile?.dateOfBirth) {
-          const date = new Date(data.profile.dateOfBirth)
-          formattedDate = date.toISOString().split('T')[0]
-        }
-        
-        setProfileData({
-          fullName: data.profile?.fullName || '',
-          bio: data.profile?.bio || '',
-          location: data.profile?.location || '',
-          country: data.profile?.country || '',
-          dateOfBirth: formattedDate,
-          interests: data.profile?.interests || [],
-          profilePicture: data.profile?.profilePicture || '',
-        })
-        
-        setUserData(data.user)
-        
-        // If profile is already complete, redirect to dashboard
-        if (data.profile?.isProfileComplete) {
-          router.push('/dashboard')
-        }
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to fetch profile')
       }
-    } catch (error) {
-      console.error('Error fetching profile:', error)
+
+      const data = await response.json()
+      
+      // If user has wallet and profile complete, redirect to dashboard
+      if (data.hasWallet && !data.needsProfileCompletion) {
+        router.push('/dashboard')
+        return
+      }
+      
+      // Format date for input field
+      let formattedDate = ''
+      if (data.profile?.dateOfBirth) {
+        const date = new Date(data.profile.dateOfBirth)
+        formattedDate = date.toISOString().split('T')[0]
+      }
+      
+      setProfileData({
+        fullName: data.profile?.fullName || '',
+        bio: data.profile?.bio || '',
+        location: data.profile?.location || '',
+        country: data.profile?.country || '',
+        dateOfBirth: formattedDate,
+        interests: data.profile?.interests || [],
+        profilePicture: data.profile?.profilePicture || '',
+      })
+      
+      setUserData(data.user)
+      
+    } catch (err) {
+      console.error('Error fetching profile:', err)
+      setError(err instanceof Error ? err.message : 'Failed to load profile')
+      toast.error('Failed to load profile data')
     } finally {
       setIsLoading(false)
     }
   }
 
-  // Helper function to get auth token from Privy
+  // Helper function to get auth token
   const getAuthToken = async (): Promise<string> => {
-    // Check localStorage first
-    const token = localStorage.getItem('privy_token')
-    if (token) return token
-    
-    // If not in localStorage, try to get from Privy session
-    // Note: In a real app, you might need to handle this differently
-    // based on how you're storing the token
-    throw new Error('No authentication token found. Please login again.')
+    // This is a simplified version. In production, get token from Privy context
+    // or HttpOnly cookies set by your backend
+    const token = localStorage.getItem('privy:auth_token')
+    if (!token) {
+      throw new Error('Please login again')
+    }
+    return token
   }
 
   const getUserIdentifier = () => {
     if (!user) return 'Guest'
     
-    // Try to get name from various sources based on Privy user object
-    if (user.google?.name) {
-      return user.google.name
-    }
-    
-    if (user.twitter?.username) {
-      return `@${user.twitter.username}`
-    }
-    
-    if (user.email?.address) {
-      return user.email.address.split('@')[0]
-    }
+    if (user.google?.name) return user.google.name
+    if (user.twitter?.username) return `@${user.twitter.username}`
+    if (user.email?.address) return user.email.address.split('@')[0]
     
     return 'User'
   }
@@ -129,7 +187,7 @@ export default function ProfilePage() {
     if (user.google?.email) return 'Google'
     if (user.twitter?.username) return 'Twitter (X)'
     
-    return 'Email' // Default fallback
+    return 'Email'
   }
 
   const getLoginMethodIcon = () => {
@@ -166,7 +224,7 @@ export default function ProfilePage() {
     }))
   }
 
-  const handleProfilePictureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleProfilePictureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
 
@@ -180,14 +238,20 @@ export default function ProfilePage() {
       return
     }
 
-    const reader = new FileReader()
-    reader.onloadend = () => {
-      setProfileData(prev => ({
-        ...prev,
-        profilePicture: reader.result as string
-      }))
+    try {
+      // Convert to base64 for preview
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setProfileData(prev => ({
+          ...prev,
+          profilePicture: reader.result as string
+        }))
+      }
+      reader.readAsDataURL(file)
+    } catch (err) {
+      console.error('Error uploading image:', err)
+      toast.error('Failed to upload image')
     }
-    reader.readAsDataURL(file)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -205,13 +269,13 @@ export default function ProfilePage() {
 
     setIsSaving(true)
     try {
-      const authToken = await getAuthToken()
+      const token = await getAuthToken()
       
-      const response = await fetch('/api/user/profile', {
+      const response = await fetch('/api/auth/user', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`,
+          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({
           profile: profileData,
@@ -225,21 +289,38 @@ export default function ProfilePage() {
       }
 
       toast.success('Profile saved successfully!')
-      router.push('/dashboard')
-    } catch (error) {
-      console.error('Error saving profile:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to save profile. Please try again.')
+      
+      // Redirect to dashboard after successful save
+      setTimeout(() => {
+        router.push('/dashboard')
+      }, 1000)
+      
+    } catch (err) {
+      console.error('Error saving profile:', err)
+      const errorMessage = err instanceof Error ? err.message : 'Failed to save profile. Please try again.'
+      toast.error(errorMessage)
     } finally {
       setIsSaving(false)
     }
   }
 
   if (!ready || isLoading) {
+    return <ProfileLoading />
+  }
+
+  if (error) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-text-light dark:text-dark-secondary">Loading profile...</p>
+        <div className="text-center p-8">
+          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <h3 className="text-xl font-bold mb-2">Error Loading Profile</h3>
+          <p className="text-gray-600 dark:text-gray-400 mb-4">{error}</p>
+          <button
+            onClick={fetchProfileData}
+            className="btn-primary"
+          >
+            Try Again
+          </button>
         </div>
       </div>
     )
@@ -317,6 +398,7 @@ export default function ProfilePage() {
                       required
                       className="input-field pl-10"
                       placeholder="Enter your full name"
+                      disabled={isSaving}
                     />
                   </div>
                 </div>
@@ -332,6 +414,7 @@ export default function ProfilePage() {
                     className="input-field"
                     placeholder="Tell us a bit about yourself..."
                     maxLength={500}
+                    disabled={isSaving}
                   />
                   <p className="text-xs text-text-light dark:text-dark-secondary mt-1 text-right">
                     {profileData.bio.length}/500 characters
@@ -351,6 +434,7 @@ export default function ProfilePage() {
                         onChange={(e) => handleInputChange('location', e.target.value)}
                         className="input-field pl-10"
                         placeholder="e.g., Lagos"
+                        disabled={isSaving}
                       />
                     </div>
                   </div>
@@ -367,6 +451,7 @@ export default function ProfilePage() {
                         onChange={(e) => handleInputChange('country', e.target.value)}
                         className="input-field pl-10"
                         placeholder="e.g., Nigeria"
+                        disabled={isSaving}
                       />
                     </div>
                   </div>
@@ -384,6 +469,7 @@ export default function ProfilePage() {
                       onChange={(e) => handleInputChange('dateOfBirth', e.target.value)}
                       className="input-field pl-10"
                       max={new Date().toISOString().split('T')[0]}
+                      disabled={isSaving}
                     />
                   </div>
                 </div>
@@ -406,11 +492,12 @@ export default function ProfilePage() {
                   className="input-field flex-1"
                   placeholder="E.g., Music, Sports, Technology, Art..."
                   maxLength={30}
+                  disabled={isSaving}
                 />
                 <button
                   type="button"
                   onClick={handleAddInterest}
-                  disabled={!tempInterest.trim()}
+                  disabled={!tempInterest.trim() || isSaving}
                   className="btn-primary px-4 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Add
@@ -428,8 +515,9 @@ export default function ProfilePage() {
                     <button
                       type="button"
                       onClick={() => handleRemoveInterest(interest)}
-                      className="hover:text-primary-dark dark:hover:text-dark-primary-dark text-lg"
+                      className="hover:text-primary-dark dark:hover:text-dark-primary-dark text-lg disabled:opacity-50"
                       aria-label={`Remove ${interest}`}
+                      disabled={isSaving}
                     >
                       ×
                     </button>
@@ -489,7 +577,7 @@ export default function ProfilePage() {
               <button
                 type="button"
                 onClick={() => router.push('/dashboard')}
-                className="flex-1 py-3 border border-gray-200 dark:border-gray-300 text-text dark:text-dark-text rounded-xl hover:bg-background dark:hover:bg-dark-background transition-colors"
+                className="flex-1 py-3 border border-gray-200 dark:border-gray-300 text-text dark:text-dark-text rounded-xl hover:bg-background dark:hover:bg-dark-background transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={isSaving}
               >
                 Skip for now
@@ -501,7 +589,7 @@ export default function ProfilePage() {
               >
                 {isSaving ? (
                   <>
-                    <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <Loader2 className="h-4 w-4 animate-spin" />
                     Saving...
                   </>
                 ) : (
@@ -520,5 +608,15 @@ export default function ProfilePage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function ProfilePage() {
+  return (
+    <ProfileErrorBoundary>
+      <Suspense fallback={<ProfileLoading />}>
+        <ProfileContent />
+      </Suspense>
+    </ProfileErrorBoundary>
   )
 }

@@ -1,5 +1,5 @@
 // app/layout.tsx
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
 import { Header } from '@/components/layout/Header'
@@ -10,10 +10,36 @@ import { Toaster } from 'sonner'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'TicketPass - Smart Event Ticketing',
+  title: 'CACK-pass - Event Ticketing Platform',
   description: 'Buy, sell, and manage event tickets with smart digital passes that create lasting memories.',
   manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'CACK-pass',
+  },
+  formatDetection: {
+    telephone: false,
+  },
+  openGraph: {
+    type: 'website',
+    siteName: 'CACK-pass',
+    title: 'CACK-pass - Event Ticketing Platform',
+    description: 'Buy, sell, and manage event tickets with smart digital passes that create lasting memories.',
+  },
+  twitter: {
+    card: 'summary',
+    title: 'CACK-pass - Event Ticketing Platform',
+    description: 'Buy, sell, and manage event tickets with smart digital passes that create lasting memories.',
+  },
+}
+
+export const viewport: Viewport = {
   themeColor: '#D95427',
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  viewportFit: 'cover',
 }
 
 export default function RootLayout({
@@ -25,8 +51,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <head>
         <link rel="icon" href="/favicon.ico" />
-        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-        <meta name="theme-color" content="#D95427" />
+        {/* Remove the meta viewport and theme-color tags since they're now in viewport export */}
       </head>
       <body className={`${inter.className} bg-background text-text dark:bg-dark-background dark:text-dark-text`}>
         <AppProviders>

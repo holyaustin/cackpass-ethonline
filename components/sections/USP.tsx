@@ -53,7 +53,7 @@ export function USP() {
         <div className="text-center mb-8 md:mb-16">
           <h2 className="text-responsive-md font-bold mb-4 md:mb-6 font-display">
             Why Choose{' '}
-            <span className="text-primary dark:text-dark-primary">TicketPass?</span>
+            <span className="text-primary dark:text-dark-primary">CACK-pass?</span>
           </h2>
           <p className="section-subtitle">
             We're reimagining event ticketing with smart technology that puts 

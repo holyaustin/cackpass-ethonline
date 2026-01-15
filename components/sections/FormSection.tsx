@@ -93,10 +93,10 @@ export function FormSection() {
                   <div>
                     <h4 className="text-lg md:text-xl font-semibold mb-1 md:mb-2">Email Us</h4>
                     <a 
-                      href="mailto:support@ticketpass.com"
+                      href="mailto:support@CACK-pass.com"
                       className="text-text-light dark:text-dark-secondary hover:text-primary dark:hover:text-dark-primary transition-colors text-base md:text-lg"
                     >
-                      support@ticketpass.com
+                      support@CACK-pass.com
                     </a>
                     <p className="text-sm text-text-light/70 dark:text-dark-secondary/70 mt-1">
                       Response within 24 hours

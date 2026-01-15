@@ -39,53 +39,27 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
     <PrivyProvider
       appId={process.env.NEXT_PUBLIC_PRIVY_APP_ID!}
       config={{
-        // Configure only the six allowed login methods
-        loginMethods: [
-          'email',
-          'google',
-          'twitter',
-          // Note: Privy doesn't natively support TikTok and Instagram OAuth
-          // You'll need to use custom OAuth for these or use email-based login
-          // For now, we'll use email as fallback for TikTok/Instagram
-        ],
+        // Configure login methods
+        loginMethods: ['email', 'google', 'twitter'],
         
-        // Embedded wallets configuration - create automatically for all users
-        embeddedWallets: {
-          createOnLogin: 'all-users' as const, // Create embedded wallet for all users
-          // Removed noPromptOnSignature to keep things simple
+        // FIXED: Embedded wallets configuration
+         embeddedWallets: {
+          ethereum: {
+            createOnLogin: "users-without-wallets" as const,
+           
+          },
         },
         
-        // Appearance configuration
+        // Appearance
         appearance: {
           theme: 'light',
-          accentColor: '#D95427', // Using your primary color
+          accentColor: '#D95427',
           logo: '/logoosm.png',
-          showWalletLoginFirst: false, // Show social login first
-          loginMessage: 'Welcome to TicketPass',
         },
         
-        // Chain configuration
+        // Default chain
         defaultChain: liskSepolia,
         supportedChains: [liskSepolia, sepolia, mainnet],
-        
-        // OAuth configuration - only allowed methods
-        oauth: {
-          providers: ['google', 'twitter', 'apple'],
-          // Note: Privy doesn't support TikTok or Instagram natively
-        },
-        
-        // Remove MFA configuration completely
-        // No MFA prompts - keep things simple
-        
-        // Remove phone/SMS configuration
-        // smsLogin: { enabled: false }, // Remove this line
-        
-        // Remove other login methods not in our six
-        // telegramLogin: undefined,
-        // whatsAppLogin: undefined,
-        
-        // Additional configuration
-        defaultCountryCode: 'NG', // Default country code for phone numbers (only for email verification)
       }}
     >
       <QueryClientProvider client={queryClient}>

@@ -1,12 +1,15 @@
 // app/(main)/dashboard/page.tsx - Updated version
+
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { usePrivy } from '@privy-io/react-auth'
 import { Ticket, Calendar, DollarSign, Users, Wallet, CreditCard, TrendingUp, Globe } from 'lucide-react'
 import { TicketCard } from '@/components/tickets/TicketCard'
 import { FundWallet } from '@/components/wallet/FundWallet'
 import { ConnectButton } from '@/components/wallet/ConnectButton'
+import { LoadingSpinner, SkeletonLoader } from '@/components/common/LoadingSpinner'
+import { ErrorBoundary } from '@/components/common/ErrorBoundary'
 
 interface DashboardStats {
   totalTickets: number
@@ -32,7 +35,7 @@ interface TicketData {
   eventImage?: string
 }
 
-export default function DashboardPage() {
+function DashboardContent() {
   const { user, authenticated, ready } = usePrivy()
   const [tickets, setTickets] = useState<TicketData[]>([])
   const [stats, setStats] = useState<DashboardStats>({
@@ -48,18 +51,20 @@ export default function DashboardPage() {
   })
   const [isLoading, setIsLoading] = useState(true)
   const [showFundModal, setShowFundModal] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (authenticated && ready) {
       fetchDashboardData()
       // Start polling for wallet balance updates
-      const interval = setInterval(fetchWalletBalance, 30000) // Update every 30 seconds
+      const interval = setInterval(fetchWalletBalance, 30000)
       return () => clearInterval(interval)
     }
   }, [authenticated, ready])
 
   const fetchDashboardData = async () => {
     setIsLoading(true)
+    setError(null)
     try {
       // Mock data - replace with actual API calls
       const mockTickets: TicketData[] = [
@@ -106,6 +111,7 @@ export default function DashboardPage() {
       }))
     } catch (error) {
       console.error('Failed to fetch dashboard data:', error)
+      setError('Failed to load dashboard data. Please try again.')
     } finally {
       setIsLoading(false)
     }
@@ -114,12 +120,11 @@ export default function DashboardPage() {
   const fetchWalletBalance = async () => {
     try {
       // In a real app, you would fetch these from your backend
-      // This is mock data that simulates real-time balance updates
       const mockBalance = {
         usdc: '1250.75',
         eth: '0.85',
-        usd: '1250.75', // 1 USDC ≈ 1 USD
-        ngn: '1875000', // Assuming 1 USD ≈ 1500 NGN
+        usd: '1250.75',
+        ngn: '1875000',
       }
       
       setStats(prev => ({
@@ -129,6 +134,14 @@ export default function DashboardPage() {
     } catch (error) {
       console.error('Failed to fetch wallet balance:', error)
     }
+  }
+
+  if (!ready) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <LoadingSpinner size="lg" text="Loading dashboard..." />
+      </div>
+    )
   }
 
   if (!authenticated) {
@@ -148,6 +161,23 @@ export default function DashboardPage() {
 
   const userEmail = user?.email?.address?.split('@')[0] || 'User'
 
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center p-8">
+          <h2 className="text-2xl font-bold mb-4">Error Loading Dashboard</h2>
+          <p className="text-gray-600 dark:text-gray-400 mb-6">{error}</p>
+          <button
+            onClick={fetchDashboardData}
+            className="btn-primary"
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-primary-50 dark:from-gray-950 dark:to-gray-900">
       <div className="container mx-auto px-4 py-8">
@@ -166,6 +196,7 @@ export default function DashboardPage() {
             <button
               onClick={() => setShowFundModal(true)}
               className="btn-primary flex items-center gap-2"
+              disabled={isLoading}
             >
               <CreditCard className="h-5 w-5" />
               Fund Wallet
@@ -176,59 +207,73 @@ export default function DashboardPage() {
 
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <div className="glass-card p-6 rounded-3xl">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-500 dark:text-gray-400">USDC Balance</p>
-                <p className="text-2xl md:text-3xl font-bold mt-2">{stats.walletBalance.usdc} USDC</p>
-                <div className="flex gap-2 mt-2 text-sm">
-                  <span className="text-gray-600 dark:text-gray-400">≈ ${stats.walletBalance.usd}</span>
-                  <span className="text-gray-600 dark:text-gray-400">≈ ₦{stats.walletBalance.ngn}</span>
+          {isLoading ? (
+            Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="glass-card p-6 rounded-3xl">
+                <div className="animate-pulse">
+                  <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/2 mb-4"></div>
+                  <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded mb-2"></div>
+                  <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4"></div>
                 </div>
               </div>
-              <Wallet className="h-10 w-10 text-primary-500" />
-            </div>
-          </div>
+            ))
+          ) : (
+            <>
+              <div className="glass-card p-6 rounded-3xl">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-gray-500 dark:text-gray-400">USDC Balance</p>
+                    <p className="text-2xl md:text-3xl font-bold mt-2">{stats.walletBalance.usdc} USDC</p>
+                    <div className="flex gap-2 mt-2 text-sm">
+                      <span className="text-gray-600 dark:text-gray-400">≈ ${stats.walletBalance.usd}</span>
+                      <span className="text-gray-600 dark:text-gray-400">≈ ₦{stats.walletBalance.ngn}</span>
+                    </div>
+                  </div>
+                  <Wallet className="h-10 w-10 text-primary-500" />
+                </div>
+              </div>
 
-          <div className="glass-card p-6 rounded-3xl">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-500 dark:text-gray-400">ETH Balance</p>
-                <p className="text-2xl md:text-3xl font-bold mt-2">{stats.walletBalance.eth} ETH</p>
-                <div className="mt-2 text-sm text-green-500 flex items-center">
-                  <TrendingUp className="h-4 w-4 mr-1" />
-                  ≈ $2,125 USD
+              <div className="glass-card p-6 rounded-3xl">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-gray-500 dark:text-gray-400">ETH Balance</p>
+                    <p className="text-2xl md:text-3xl font-bold mt-2">{stats.walletBalance.eth} ETH</p>
+                    <div className="mt-2 text-sm text-green-500 flex items-center">
+                      <TrendingUp className="h-4 w-4 mr-1" />
+                      ≈ $2,125 USD
+                    </div>
+                  </div>
+                  <Globe className="h-10 w-10 text-secondary-500" />
                 </div>
               </div>
-              <Globe className="h-10 w-10 text-secondary-500" />
-            </div>
-          </div>
 
-          <div className="glass-card p-6 rounded-3xl">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-500 dark:text-gray-400">Total Tickets</p>
-                <p className="text-2xl md:text-3xl font-bold mt-2">{stats.totalTickets}</p>
-                <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                  {stats.upcomingEvents} upcoming
+              <div className="glass-card p-6 rounded-3xl">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-gray-500 dark:text-gray-400">Total Tickets</p>
+                    <p className="text-2xl md:text-3xl font-bold mt-2">{stats.totalTickets}</p>
+                    <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                      {stats.upcomingEvents} upcoming
+                    </div>
+                  </div>
+                  <Ticket className="h-10 w-10 text-accent-500" />
                 </div>
               </div>
-              <Ticket className="h-10 w-10 text-accent-500" />
-            </div>
-          </div>
 
-          <div className="glass-card p-6 rounded-3xl">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-500 dark:text-gray-400">Total Spent</p>
-                <p className="text-2xl md:text-3xl font-bold mt-2">${stats.totalSpent}</p>
-                <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                  All events
+              <div className="glasscard p-6 rounded-3xl">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-gray-500 dark:text-gray-400">Total Spent</p>
+                    <p className="text-2xl md:text-3xl font-bold mt-2">${stats.totalSpent}</p>
+                    <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                      All events
+                    </div>
+                  </div>
+                  <DollarSign className="h-10 w-10 text-green-500" />
                 </div>
               </div>
-              <DollarSign className="h-10 w-10 text-green-500" />
-            </div>
-          </div>
+            </>
+          )}
         </div>
 
         {/* Main Content Grid */}
@@ -238,7 +283,10 @@ export default function DashboardPage() {
             <div className="glass-card rounded-3xl p-6">
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-2xl font-bold">Your Tickets</h2>
-                <button className="btn-primary px-4 py-2">
+                <button 
+                  className="btn-primary px-4 py-2 disabled:opacity-50"
+                  disabled={isLoading || tickets.length === 0}
+                >
                   View All
                 </button>
               </div>
@@ -337,29 +385,33 @@ export default function DashboardPage() {
             {/* Recent Transactions */}
             <div className="glass-card rounded-3xl p-6">
               <h3 className="text-lg font-bold mb-4">Recent Transactions</h3>
-              <div className="space-y-4">
-                {[
-                  { type: 'Received', amount: '0.5 ETH', from: 'Ticket Sale', time: '2 hours ago', usd: '$1,250' },
-                  { type: 'Sent', amount: '0.1 ETH', to: 'Event Payment', time: '1 day ago', usd: '$250' },
-                  { type: 'Received', amount: '250 USDC', from: 'Ticket Resale', time: '3 days ago', usd: '$250' },
-                ].map((tx, index) => (
-                  <div key={index} className="flex items-center justify-between">
-                    <div>
-                      <div className="font-medium">{tx.type}</div>
-                      <div className="text-sm text-gray-500">
-                        {tx.type === 'Received' ? `From: ${tx.from}` : `To: ${tx.to}`}
+              {isLoading ? (
+                <SkeletonLoader count={3} />
+              ) : (
+                <div className="space-y-4">
+                  {[
+                    { type: 'Received', amount: '0.5 ETH', from: 'Ticket Sale', time: '2 hours ago', usd: '$1,250' },
+                    { type: 'Sent', amount: '0.1 ETH', to: 'Event Payment', time: '1 day ago', usd: '$250' },
+                    { type: 'Received', amount: '250 USDC', from: 'Ticket Resale', time: '3 days ago', usd: '$250' },
+                  ].map((tx, index) => (
+                    <div key={index} className="flex items-center justify-between">
+                      <div>
+                        <div className="font-medium">{tx.type}</div>
+                        <div className="text-sm text-gray-500">
+                          {tx.type === 'Received' ? `From: ${tx.from}` : `To: ${tx.to}`}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className={`font-medium ${tx.type === 'Received' ? 'text-green-500' : 'text-red-500'}`}>
+                          {tx.type === 'Received' ? '+' : '-'}{tx.amount}
+                        </div>
+                        <div className="text-sm text-gray-500">{tx.usd}</div>
+                        <div className="text-xs text-gray-500">{tx.time}</div>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <div className={`font-medium ${tx.type === 'Received' ? 'text-green-500' : 'text-red-500'}`}>
-                        {tx.type === 'Received' ? '+' : '-'}{tx.amount}
-                      </div>
-                      <div className="text-sm text-gray-500">{tx.usd}</div>
-                      <div className="text-xs text-gray-500">{tx.time}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -375,6 +427,7 @@ export default function DashboardPage() {
               <button
                 onClick={() => setShowFundModal(false)}
                 className="w-full mt-6 py-3 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700"
+                disabled={isLoading}
               >
                 Close
               </button>
@@ -383,5 +436,15 @@ export default function DashboardPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function DashboardPage() {
+  return (
+    <ErrorBoundary>
+      <Suspense fallback={<LoadingSpinner size="lg" text="Loading dashboard..." fullScreen />}>
+        <DashboardContent />
+      </Suspense>
+    </ErrorBoundary>
   )
 }

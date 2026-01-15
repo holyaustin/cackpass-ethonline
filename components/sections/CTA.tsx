@@ -34,7 +34,7 @@ export function CTA() {
             </h2>
             
             <p className="section-subtitle">
-              Join thousands of organizers and attendees who trust TicketPass for 
+              Join thousands of organizers and attendees who trust CACK-pass for 
               seamless event experiences.
             </p>
           </div>

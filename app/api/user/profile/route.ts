@@ -1,3 +1,4 @@
+// app/api/user/profile/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { connectDB } from '@/lib/database/connection'
 import { User, UserProfile } from '@/lib/database/models'
@@ -8,27 +9,7 @@ const privy = new PrivyClient(
   process.env.PRIVY_APP_SECRET!
 )
 
-// Helper function to determine login method from Privy user
-function getLoginMethodFromPrivyUser(privyUser: any): string {
-  if (privyUser.email?.address) return 'email'
-  if (privyUser.google?.email) return 'google'
-  if (privyUser.twitter?.username) return 'twitter'
-  // Note: TikTok and Instagram are not natively supported by Privy
-  // For now, we'll default to 'email' if using custom auth
-  return 'email' // Default fallback
-}
-
-// Helper function to get username from Privy user
-function getUsernameFromPrivyUser(privyUser: any): string {
-  if (privyUser.email?.address) {
-    return privyUser.email.address.split('@')[0]
-  }
-  if (privyUser.google?.name) return privyUser.google.name
-  if (privyUser.twitter?.username) return `@${privyUser.twitter.username}`
-  if (privyUser.google?.email) return privyUser.google.email.split('@')[0]
-  return 'user'
-}
-
+// GET - Fetch user profile
 export async function GET(request: NextRequest) {
   try {
     const authToken = request.headers.get('authorization')?.split(' ')[1]
@@ -41,79 +22,18 @@ export async function GET(request: NextRequest) {
     await connectDB()
     
     // Find user by privyId
-    let user = await User.findOne({ privyId: verifiedClaims.userId })
-    
+    const user = await User.findOne({ privyId: verifiedClaims.userId })
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
-    // Get user profile
-    const profile = await UserProfile.findOne({ userId: user._id })
-
-    return NextResponse.json({
-      success: true,
-      profile: profile || null,
-      user: {
-        id: user._id,
-        walletAddress: user.walletAddress,
-        loginMethod: user.loginMethod,
-        username: user.username,
-        organizer: user.organizer,
-        admin: user.admin,
-      }
-    })
+    // Get or create user profile
+    let profile = await UserProfile.findOne({ userId: user._id })
     
-  } catch (error) {
-    console.error('Profile fetch error:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch profile' },
-      { status: 500 }
-    )
-  }
-}
-
-export async function POST(request: NextRequest) {
-  try {
-    const authToken = request.headers.get('authorization')?.split(' ')[1]
-    if (!authToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const verifiedClaims = await privy.verifyAuthToken(authToken)
-    
-    await connectDB()
-    
-    // Find or create user
-    let user = await User.findOne({ privyId: verifiedClaims.userId })
-    
-    if (!user) {
-      // Get user info from Privy
-      const privyUser = await privy.getUser(verifiedClaims.userId)
-      
-      // Determine login method and username
-      const loginMethod = getLoginMethodFromPrivyUser(privyUser)
-      const username = getUsernameFromPrivyUser(privyUser)
-      
-      // Get embedded wallet address (created automatically by Privy)
-      const walletAddress = privyUser.wallet?.address || null
-      
-      user = new User({
-        privyId: verifiedClaims.userId,
-        walletAddress: walletAddress,
-        loginMethod: loginMethod,
-        username: username,
-        organizer: false,
-        admin: false,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      })
-      
-      await user.save()
-      
-      // Create empty profile for new user
-      const userProfile = new UserProfile({
+    if (!profile) {
+      profile = new UserProfile({
         userId: user._id,
-        walletAddress: walletAddress, // Store wallet address in profile too
+        walletAddress: user.walletAddress,
         fullName: '',
         bio: '',
         location: '',
@@ -125,55 +45,109 @@ export async function POST(request: NextRequest) {
         createdAt: new Date(),
         updatedAt: new Date(),
       })
-      
-      await userProfile.save()
+      await profile.save()
+    }
+
+    return NextResponse.json({
+      success: true,
+      profile: {
+        fullName: profile.fullName,
+        bio: profile.bio,
+        location: profile.location,
+        country: profile.country,
+        dateOfBirth: profile.dateOfBirth,
+        interests: profile.interests,
+        profilePicture: profile.profilePicture,
+        isProfileComplete: profile.isProfileComplete,
+        walletAddress: profile.walletAddress || user.walletAddress,
+      },
+      user: {
+        id: user._id,
+        email: user.email,
+        walletAddress: user.walletAddress,
+        loginMethod: user.loginMethod,
+        username: user.username,
+        organizer: user.organizer,
+        admin: user.admin,
+      }
+    })
+    
+  } catch (error) {
+    console.error('Profile fetch error:', error)
+    return NextResponse.json(
+      { 
+        success: false,
+        error: 'Failed to fetch profile',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
+      { status: 500 }
+    )
+  }
+}
+
+// POST - Create or update user profile
+export async function POST(request: NextRequest) {
+  try {
+    const authToken = request.headers.get('authorization')?.split(' ')[1]
+    if (!authToken) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const verifiedClaims = await privy.verifyAuthToken(authToken)
+    
+    await connectDB()
+    
+    // Find user
+    const user = await User.findOne({ privyId: verifiedClaims.userId })
+    if (!user) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
     
-    // Parse profile data from request
+    // Parse profile data
     const body = await request.json()
-    const { profile } = body
+    const { fullName, bio, location, country, dateOfBirth, interests, profilePicture } = body
     
-    // Find user profile
-    let userProfile = await UserProfile.findOne({ userId: user._id })
+    // Find existing profile or create new
+    let profile = await UserProfile.findOne({ userId: user._id })
     
-    if (!userProfile) {
-      userProfile = new UserProfile({
+    if (!profile) {
+      profile = new UserProfile({
         userId: user._id,
-        walletAddress: user.walletAddress, // Copy wallet address from user
-        fullName: profile.fullName || '',
-        bio: profile.bio || '',
-        location: profile.location || '',
-        country: profile.country || '',
-        dateOfBirth: profile.dateOfBirth ? new Date(profile.dateOfBirth) : null,
-        interests: profile.interests || [],
-        profilePicture: profile.profilePicture || '',
-        isProfileComplete: !!(profile.fullName && profile.profilePicture),
+        walletAddress: user.walletAddress,
+        fullName: fullName || '',
+        bio: bio || '',
+        location: location || '',
+        country: country || '',
+        dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
+        interests: interests || [],
+        profilePicture: profilePicture || '',
+        isProfileComplete: !!(fullName && profilePicture),
         createdAt: new Date(),
         updatedAt: new Date(),
       })
     } else {
       // Update existing profile
-      userProfile.fullName = profile.fullName || userProfile.fullName
-      userProfile.bio = profile.bio || userProfile.bio
-      userProfile.location = profile.location || userProfile.location
-      userProfile.country = profile.country || userProfile.country
-      userProfile.dateOfBirth = profile.dateOfBirth ? new Date(profile.dateOfBirth) : userProfile.dateOfBirth
-      userProfile.interests = profile.interests || userProfile.interests
-      userProfile.profilePicture = profile.profilePicture || userProfile.profilePicture
-      userProfile.isProfileComplete = !!(profile.fullName && profile.profilePicture)
-      userProfile.updatedAt = new Date()
+      profile.fullName = fullName || profile.fullName
+      profile.bio = bio || profile.bio
+      profile.location = location || profile.location
+      profile.country = country || profile.country
+      profile.dateOfBirth = dateOfBirth ? new Date(dateOfBirth) : profile.dateOfBirth
+      profile.interests = interests || profile.interests
+      profile.profilePicture = profilePicture || profile.profilePicture
+      profile.isProfileComplete = !!(fullName && profilePicture)
+      profile.updatedAt = new Date()
       
-      // Ensure wallet address is synced
-      if (user.walletAddress && !userProfile.walletAddress) {
-        userProfile.walletAddress = user.walletAddress
+      // Sync wallet address
+      if (user.walletAddress && !profile.walletAddress) {
+        profile.walletAddress = user.walletAddress
       }
     }
     
-    await userProfile.save()
+    await profile.save()
     
-    // Update user's username if provided in profile (optional)
-    if (profile.fullName && profile.fullName !== user.username) {
-      user.username = profile.fullName
+    // Update user's username if full name is provided
+    if (fullName && fullName !== user.username) {
+      user.username = fullName
       user.updatedAt = new Date()
       await user.save()
     }
@@ -181,22 +155,27 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       message: 'Profile saved successfully',
-      profile: userProfile,
-      user: {
-        id: user._id,
-        walletAddress: user.walletAddress,
-        loginMethod: user.loginMethod,
-        username: user.username,
-        organizer: user.organizer,
-        admin: user.admin,
+      profile: {
+        fullName: profile.fullName,
+        bio: profile.bio,
+        location: profile.location,
+        country: profile.country,
+        dateOfBirth: profile.dateOfBirth,
+        interests: profile.interests,
+        profilePicture: profile.profilePicture,
+        isProfileComplete: profile.isProfileComplete,
       },
-      requiresProfileCompletion: !userProfile.isProfileComplete,
+      requiresProfileCompletion: !profile.isProfileComplete,
     })
     
   } catch (error) {
     console.error('Profile save error:', error)
     return NextResponse.json(
-      { error: 'Failed to save profile', details: error instanceof Error ? error.message : 'Unknown error' },
+      { 
+        success: false,
+        error: 'Failed to save profile',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     )
   }

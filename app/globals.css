@@ -1,28 +1,25 @@
 /* app/globals.css */
 @import 'tailwindcss';
 
+/* Define custom properties at root level for light theme */
 @theme {
-  /* Theme 1: Warm & Balanced (Light) */
+  /* Theme 1: Warm & Balanced (Default/Light) */
   --color-primary: #D95427;
   --color-primary-dark: #BF4519;
   --color-secondary: #3D6A66;
   --color-secondary-dark: #2E514D;
+  --color-accent: #D95427;
+  --color-accent-dark: #BF4519;
   --color-background: #F7F3E9;
   --color-surface: #FFFFFF;
   --color-text: #2E2D27;
   --color-text-light: #5C5B54;
   
-  /* Theme 2: Professional Tech (Dark) */
-  .dark {
-    --color-primary: #3D6A66;
-    --color-primary-dark: #2E514D;
-    --color-secondary: #5C5B54;
-    --color-secondary-dark: #454440;
-    --color-accent: #D95427;
-    --color-background: #F2F2F0;
-    --color-text: #1A1A18;
-    --color-surface: #FFFFFF;
-  }
+  /* Gradient colors for light theme */
+  --gradient-primary: linear-gradient(135deg, #D95427 0%, #E67E22 100%);
+  --gradient-secondary: linear-gradient(135deg, #3D6A66 0%, #4A7C77 100%);
+  --gradient-background: linear-gradient(135deg, #F7F3E9 0%, #F0EBDE 50%, #F7F3E9 100%);
+  --gradient-card: linear-gradient(145deg, #FFFFFF 0%, #FDFCF8 100%);
   
   --animate-float: float 6s ease-in-out infinite;
   --animate-slide-up: slide-up 0.3s ease-out;
@@ -56,18 +53,66 @@
       opacity: 1;
     }
   }
+  
+  /* Subtle grain texture */
+  --texture-grain: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.05'/%3E%3C/svg%3E");
 }
 
-/* Base styles */
+/* Override custom properties for dark theme */
+.dark {
+  /* Theme 2: Professional Tech (Dark Mode) */
+  --color-primary: #3D6A66;
+  --color-primary-dark: #2E514D;
+  --color-secondary: #5C5B54;
+  --color-secondary-dark: #454440;
+  --color-accent: #D95427;
+  --color-accent-dark: #BF4519;
+  --color-background: #0F172A;
+  --color-surface: #1E293B;
+  --color-text: #F1F5F9;
+  --color-text-light: #94A3B8;
+  
+  /* Gradient colors for dark theme */
+  --gradient-primary: linear-gradient(135deg, #3D6A66 0%, #2DD4BF 100%);
+  --gradient-secondary: linear-gradient(135deg, #5C5B54 0%, #78716C 100%);
+  --gradient-background: linear-gradient(135deg, #0F172A 0%, #1E293B 50%, #0F172A 100%);
+  --gradient-card: linear-gradient(145deg, #1E293B 0%, #334155 100%);
+  
+  /* Dark mode grain texture */
+  --texture-grain: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.03'/%3E%3C/svg%3E");
+}
+
+/* Base styles with enhanced backgrounds */
 @layer base {
   * {
-    @apply border-gray-200 dark:border-gray-300;
+    border-color: color-mix(in srgb, var(--color-text) 20%, transparent);
   }
   
   body {
-    @apply antialiased bg-background text-text dark:bg-dark-background dark:text-dark-text;
+    @apply antialiased;
+    background: var(--gradient-background);
+    background-attachment: fixed;
+    background-size: cover;
+    position: relative;
+    color: var(--color-text);
     font-feature-settings: 'rlig' 1, 'calt' 1;
     -webkit-tap-highlight-color: transparent;
+    min-height: 100vh;
+  }
+  
+  /* Subtle texture overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-image: var(--texture-grain);
+    background-size: 400px;
+    pointer-events: none;
+    z-index: -1;
+    opacity: 0.5;
   }
   
   html {
@@ -83,34 +128,306 @@
   }
 }
 
-/* Component styles */
+/* Component styles with enhanced gradients */
 @layer components {
+  /* Enhanced card with gradient borders and glow */
   .card {
-    @apply bg-surface dark:bg-dark-surface rounded-2xl shadow-sm border border-gray-100 dark:border-gray-300;
+    background: var(--gradient-card);
+    border-radius: 1.5rem;
+    box-shadow: 
+      0 4px 20px -2px rgba(0, 0, 0, 0.1),
+      0 2px 8px -2px rgba(0, 0, 0, 0.06);
+    border: 1px solid color-mix(in srgb, var(--color-text) 10%, transparent);
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s ease;
   }
   
+  .card:hover {
+    transform: translateY(-4px);
+    box-shadow: 
+      0 12px 32px -4px rgba(0, 0, 0, 0.15),
+      0 4px 16px -2px rgba(0, 0, 0, 0.08);
+  }
+  
+  /* Card with accent border */
+  .card-accent {
+    background: var(--gradient-card);
+    border-radius: 1.5rem;
+    box-shadow: 
+      0 4px 20px -2px rgba(0, 0, 0, 0.1),
+      0 2px 8px -2px rgba(0, 0, 0, 0.06);
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .card-accent::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: var(--gradient-primary);
+  }
+  
+  /* Enhanced buttons with gradients */
   .btn-primary {
-    @apply px-6 py-3 bg-primary text-white font-semibold rounded-xl hover:bg-primary-dark active:scale-95 transform transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 dark:bg-dark-primary dark:hover:bg-dark-primary-dark;
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+    padding-top: 0.875rem;
+    padding-bottom: 0.875rem;
+    font-weight: 600;
+    border-radius: 0.875rem;
+    transition: all 0.3s ease;
+    outline: none;
+    background: var(--gradient-primary);
+    color: white;
+    border: none;
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .btn-primary::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0));
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+  
+  .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px -4px rgba(217, 84, 39, 0.4);
+  }
+  
+  .btn-primary:hover::after {
+    opacity: 1;
+  }
+  
+  .btn-primary:active {
+    transform: translateY(0);
+  }
+  
+  .btn-primary:focus {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
   }
   
   .btn-secondary {
-    @apply px-6 py-3 bg-secondary text-white font-semibold rounded-xl hover:bg-secondary-dark active:scale-95 transform transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-secondary focus:ring-offset-2 dark:bg-dark-secondary dark:hover:bg-dark-secondary-dark;
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+    padding-top: 0.875rem;
+    padding-bottom: 0.875rem;
+    font-weight: 600;
+    border-radius: 0.875rem;
+    transition: all 0.3s ease;
+    outline: none;
+    background: var(--gradient-secondary);
+    color: white;
+    border: none;
+    position: relative;
+    overflow: hidden;
   }
   
+  .btn-secondary::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0));
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+  
+  .btn-secondary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px -4px rgba(61, 106, 102, 0.4);
+  }
+  
+  .btn-secondary:hover::after {
+    opacity: 1;
+  }
+  
+  .btn-secondary:active {
+    transform: translateY(0);
+  }
+  
+  .btn-secondary:focus {
+    outline: 2px solid var(--color-secondary);
+    outline-offset: 2px;
+  }
+  
+  /* Enhanced outline button */
   .btn-outline {
-    @apply px-6 py-3 bg-transparent border-2 border-primary text-primary font-semibold rounded-xl hover:bg-primary/10 active:scale-95 transform transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 dark:border-dark-accent dark:text-dark-accent dark:hover:bg-dark-accent/10;
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+    padding-top: 0.875rem;
+    padding-bottom: 0.875rem;
+    font-weight: 600;
+    border-radius: 0.875rem;
+    transition: all 0.3s ease;
+    outline: none;
+    background: transparent;
+    border: 2px solid var(--color-primary);
+    color: var(--color-primary);
+    position: relative;
+    overflow: hidden;
   }
   
+  .btn-outline::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--gradient-primary);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    z-index: -1;
+  }
+  
+  .btn-outline:hover {
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px -4px rgba(217, 84, 39, 0.3);
+  }
+  
+  .btn-outline:hover::before {
+    opacity: 1;
+  }
+  
+  .btn-outline:active {
+    transform: translateY(0);
+  }
+  
+  .btn-outline:focus {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+  
+  .dark .btn-outline {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+  }
+  
+  .dark .btn-outline::before {
+    background: var(--gradient-primary);
+  }
+  
+  /* Enhanced input field */
   .input-field {
-    @apply w-full px-4 py-3 bg-surface dark:bg-dark-surface border border-gray-200 dark:border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent dark:focus:ring-dark-primary;
+    width: 100%;
+    padding-left: 1rem;
+    padding-right: 1rem;
+    padding-top: 0.875rem;
+    padding-bottom: 0.875rem;
+    border-radius: 0.875rem;
+    outline: none;
+    border: 1px solid color-mix(in srgb, var(--color-text) 20%, transparent);
+    background: var(--gradient-card);
+    color: var(--color-text);
+    transition: all 0.3s ease;
   }
   
+  .input-field:focus {
+    border-color: transparent;
+    outline: none;
+    box-shadow: 
+      0 0 0 2px var(--color-primary),
+      0 4px 12px -2px rgba(217, 84, 39, 0.2);
+  }
+  
+  /* Section styles */
   .section-title {
-    @apply text-3xl md:text-4xl font-bold text-center mb-8 md:mb-12 text-text dark:text-dark-text;
+    font-size: 2.5rem;
+    font-weight: 800;
+    text-align: center;
+    margin-bottom: 2rem;
+    color: var(--color-text);
+    position: relative;
+    display: inline-block;
+  }
+  
+  .section-title::after {
+    content: '';
+    position: absolute;
+    bottom: -0.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 4rem;
+    height: 0.25rem;
+    background: var(--gradient-primary);
+    border-radius: 0.125rem;
+  }
+  
+  @media (min-width: 768px) {
+    .section-title {
+      font-size: 3.5rem;
+      margin-bottom: 3rem;
+    }
   }
   
   .section-subtitle {
-    @apply text-lg md:text-xl text-center text-text-light dark:text-dark-secondary max-w-2xl mx-auto mb-12;
+    font-size: 1.25rem;
+    text-align: center;
+    color: var(--color-text-light);
+    max-width: 42rem;
+    margin-left: auto;
+    margin-right: auto;
+    margin-bottom: 3rem;
+    line-height: 1.7;
+  }
+  
+  @media (min-width: 768px) {
+    .section-subtitle {
+      font-size: 1.375rem;
+    }
+  }
+  
+  /* Hero section background */
+  .hero-gradient {
+    background: radial-gradient(
+      circle at 50% 0%,
+      color-mix(in srgb, var(--color-primary) 15%, transparent) 0%,
+      transparent 50%
+    ),
+    var(--gradient-background);
+  }
+  
+  /* Feature card gradient */
+  .feature-card {
+    background: var(--gradient-card);
+    border-radius: 1.5rem;
+    padding: 2rem;
+    border: 1px solid color-mix(in srgb, var(--color-text) 10%, transparent);
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .feature-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: var(--gradient-secondary);
+  }
+  
+  .feature-card:hover {
+    transform: translateY(-8px);
+    box-shadow: 
+      0 20px 40px -12px rgba(0, 0, 0, 0.15),
+      0 8px 24px -8px rgba(0, 0, 0, 0.1);
   }
 }
 
@@ -143,13 +460,78 @@
     min-width: 44px;
   }
   
-  /* Responsive spacing */
-  .responsive-padding {
-    @apply px-4 sm:px-6 md:px-8;
+  /* Gradient text */
+  .gradient-text {
+    background: var(--gradient-primary);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
   }
   
+  .gradient-text-secondary {
+    background: var(--gradient-secondary);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  
+  /* Responsive spacing */
+  .responsive-padding {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+  
+  @media (min-width: 640px) {
+    .responsive-padding {
+      padding-left: 1.5rem;
+      padding-right: 1.5rem;
+    }
+  }
+  
+  @media (min-width: 768px) {
+    .responsive-padding {
+      padding-left: 2rem;
+      padding-right: 2rem;
+    }
+  }
+  
+  /* Responsive container */
   .responsive-container {
-    @apply w-full max-w-7xl mx-auto responsive-padding;
+    width: 100%;
+    max-width: 80rem;
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+  
+  @media (min-width: 640px) {
+    .responsive-container {
+      padding-left: 1.5rem;
+      padding-right: 1.5rem;
+    }
+  }
+  
+  @media (min-width: 768px) {
+    .responsive-container {
+      padding-left: 2rem;
+      padding-right: 2rem;
+    }
+  }
+  
+  /* Glass morphism effect */
+  .glass {
+    background: color-mix(in srgb, var(--color-surface) 85%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid color-mix(in srgb, var(--color-text) 10%, transparent);
+  }
+  
+  .glass-dark {
+    background: color-mix(in srgb, rgba(30, 41, 59, 0.8), transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
   }
   
   /* Hide scrollbar but keep functionality */
@@ -173,25 +555,61 @@
   
   /* Responsive typography */
   .text-responsive-lg {
-    @apply text-3xl sm:text-4xl md:text-5xl;
+    font-size: 2rem;
+  }
+  
+  @media (min-width: 640px) {
+    .text-responsive-lg {
+      font-size: 2.5rem;
+    }
+  }
+  
+  @media (min-width: 768px) {
+    .text-responsive-lg {
+      font-size: 3.5rem;
+    }
   }
   
   .text-responsive-md {
-    @apply text-xl sm:text-2xl md:text-3xl;
+    font-size: 1.5rem;
+  }
+  
+  @media (min-width: 640px) {
+    .text-responsive-md {
+      font-size: 1.75rem;
+    }
+  }
+  
+  @media (min-width: 768px) {
+    .text-responsive-md {
+      font-size: 2.25rem;
+    }
   }
   
   /* Animation classes */
   .animate-on-scroll {
-    animation: slide-up 0.6s ease-out forwards;
+    animation: var(--animate-slide-up);
   }
   
   /* Mobile-first visibility */
   .mobile-only {
-    @apply block md:hidden;
+    display: block;
+  }
+  
+  @media (min-width: 768px) {
+    .mobile-only {
+      display: none;
+    }
   }
   
   .desktop-only {
-    @apply hidden md:block;
+    display: none;
+  }
+  
+  @media (min-width: 768px) {
+    .desktop-only {
+      display: block;
+    }
   }
 }
 
@@ -203,15 +621,55 @@
   }
   
   .custom-scrollbar::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 10px;
+    height: 10px;
   }
   
   .custom-scrollbar::-webkit-scrollbar-track {
-    @apply bg-gray-100 dark:bg-gray-200 rounded-full;
+    background: color-mix(in srgb, var(--color-text) 8%, transparent);
+    border-radius: 9999px;
   }
   
   .custom-scrollbar::-webkit-scrollbar-thumb {
-    @apply bg-primary rounded-full hover:bg-primary-dark dark:bg-dark-primary dark:hover:bg-dark-primary-dark;
+    background: var(--gradient-primary);
+    border-radius: 9999px;
+    border: 2px solid var(--gradient-card);
   }
+  
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: var(--gradient-secondary);
+  }
+}
+
+/* Additional decorative elements */
+.orb-decoration {
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(40px);
+  opacity: 0.4;
+  z-index: -1;
+}
+
+.orb-1 {
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, var(--color-primary) 0%, transparent 70%);
+  top: -200px;
+  right: -100px;
+}
+
+.orb-2 {
+  width: 300px;
+  height: 300px;
+  background: radial-gradient(circle, var(--color-secondary) 0%, transparent 70%);
+  bottom: -150px;
+  left: -100px;
+}
+
+.dark .orb-1 {
+  opacity: 0.3;
+}
+
+.dark .orb-2 {
+  opacity: 0.2;
 }

@@ -10,8 +10,8 @@ export function FAQ() {
 
   const faqs = [
     {
-      question: 'How does TicketPass work?',
-      answer: 'TicketPass provides smart digital tickets for events. Organizers create events and issue digital tickets, while attendees purchase them instantly through our platform. Each ticket is a digital collectible that can be easily accessed and shared.',
+      question: 'How does CACK-pass work?',
+      answer: 'CACK-pass provides smart digital tickets for events. Organizers create events and issue digital tickets, while attendees purchase them instantly through our platform. Each ticket is a digital collectible that can be easily accessed and shared.',
       category: 'general',
       keywords: ['basics', 'how it works'],
     },
@@ -59,12 +59,12 @@ export function FAQ() {
     },
     {
       question: 'Do you support international events?',
-      answer: 'Absolutely! TicketPass supports events worldwide. We handle multiple currencies, time zones, and international payment methods.',
+      answer: 'Absolutely! CACK-pass supports events worldwide. We handle multiple currencies, time zones, and international payment methods.',
       category: 'international',
       keywords: ['international', 'global', 'currencies'],
     },
     {
-      question: 'Can I use TicketPass on my mobile phone?',
+      question: 'Can I use CACK-pass on my mobile phone?',
       answer: 'Yes! Our platform is fully responsive and works perfectly on mobile devices. You can also download our mobile app for iOS and Android for the best experience.',
       category: 'mobile',
       keywords: ['mobile', 'app', 'responsive'],
@@ -92,7 +92,7 @@ export function FAQ() {
             <span className="text-primary dark:text-dark-primary">Questions</span>
           </h2>
           <p className="section-subtitle">
-            Find answers to common questions about TicketPass smart ticketing
+            Find answers to common questions about CACK-pass smart ticketing
           </p>
         </div>
 

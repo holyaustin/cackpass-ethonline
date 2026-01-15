@@ -1,0 +1,28 @@
+5. Mock Data Cleanup Plan
+Files with Mock Data to Update:
+
+/app/(main)/dashboard/page.tsx - Mock tickets and wallet balance
+
+/app/events/page.tsx - Mock events data
+
+/app/api/auth/user/route.ts - No mock data found ✓
+
+/app/api/tickets/purchase/route.ts - Mock crypto payment logic
+
+/components/tickets/TicketCard.tsx - Sample ticket data in component
+
+Approach:
+
+Create API service files (/lib/api/) that will replace mock data
+
+Use environment variables to toggle mock data in development
+
+For now, we'll keep mock data but flag it clearly
+
+Create /lib/api/constants.ts:
+
+# Check these files:
+- tailwind.config.ts
+- tailwind.config.js
+- postcss.config.js
+- package.json (Tailwind version)

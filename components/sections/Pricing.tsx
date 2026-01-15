@@ -239,7 +239,7 @@ export function Pricing() {
                 <h3 className="text-lg md:text-xl font-bold">30-Day Money Back Guarantee</h3>
               </div>
               <p className="text-text-light dark:text-dark-secondary text-sm md:text-base">
-                Try TicketPass risk-free. If you're not satisfied, get a full refund within 30 days.
+                Try CACK-pass risk-free. If you're not satisfied, get a full refund within 30 days.
               </p>
             </div>
             

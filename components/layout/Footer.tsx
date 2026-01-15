@@ -15,7 +15,7 @@ export function Footer() {
                 <div className="relative w-12 h-12">
                   <Image
                     src="/logoosm.png"
-                    alt="TicketPass"
+                    alt="CACK-pass"
                     fill
                     className="object-contain"
                   />
@@ -77,7 +77,7 @@ export function Footer() {
               <ul className="space-y-3 md:space-y-4">
                 <li className="flex items-center space-x-2 text-text-light dark:text-dark-secondary text-sm md:text-base">
                   <Mail className="h-4 w-4" />
-                  <a href="mailto:support@ticketpass.com" className="hover:text-primary dark:hover:text-dark-primary transition-colors">support@ticketpass.com</a>
+                  <a href="mailto:support@CACK-pass.com" className="hover:text-primary dark:hover:text-dark-primary transition-colors">support@CACK-pass.com</a>
                 </li>
                 <li className="flex items-center space-x-2 text-text-light dark:text-dark-secondary text-sm md:text-base">
                   <Phone className="h-4 w-4" />
@@ -93,7 +93,7 @@ export function Footer() {
           </div>
 
           <div className="border-t border-gray-100 dark:border-gray-300 mt-8 md:mt-12 pt-8 text-center">
-            <p className="text-text-light dark:text-dark-secondary text-sm">&copy; {new Date().getFullYear()} TicketPass. All rights reserved.</p>
+            <p className="text-text-light dark:text-dark-secondary text-sm">&copy; {new Date().getFullYear()} CACK-pass. All rights reserved.</p>
             <p className="text-text-light/70 dark:text-dark-secondary/70 text-xs mt-2">
               Built with ❤️ for memorable event experiences
             </p>
