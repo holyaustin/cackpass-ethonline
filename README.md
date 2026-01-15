@@ -1,36 +1,226 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# CACK-pass 🎟️  
+**Web3 Event Ticketing Platform**
 
-## Getting Started
-
-First, run the development server:
+## 🚀 Quick Start
 
 ```bash
+git clone https://github.com/CACK-pass/frontend
+cd cack-pass
+npm install
+cp .env.example .env.local
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 🛠️ Tech Stack
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Layer | Technology |
+|-------|------------|
+| **Framework** | Next.js 16 (App Router) |
+| **Language** | TypeScript |
+| **Auth** | Privy.io (Embedded Wallets) |
+| **Blockchain** | Lisk Sepolia (EVM) |
+| **Smart Contracts** | Solidity 0.8.30 |
+| **Gas Abstraction** | Biconomy |
+| **Database** | MongoDB + Mongoose |
+| **Storage** | IPFS (Pinata) |
+| **Styling** | Tailwind CSS |
+| **State** | TanStack Query |
+| **UI** | Lucide React, Sonner |
 
-## Learn More
+## ✅ Core Features
 
-To learn more about Next.js, take a look at the following resources:
+- ✓ **Gasless** ticket minting & transfers
+- ✓ **Anti-scalping** controls with price caps
+- ✓ **Social login** (Email/Google/Twitter)
+- ✓ **Digital collectible tickets** (NFTs on IPFS)
+- ✓ **Secondary marketplace** with creator royalties
+- ✓ **Mobile-first PWA** with QR verification
+- ✓ **Multi-currency** (Crypto + Paystack)
+- ✓ **Real-time analytics** for organizers
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 📜 Smart Contracts
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```solidity
+CackPassCore.sol     # Main ticketing logic
+TicketMarket.sol     # Secondary market
+RoyaltyEngine.sol    # Royalty distribution (0-50%)
+```
 
-## Deploy on Vercel
+**Deployed on Lisk Sepolia**  
+Addresses in `/lib/contracts/client.ts`
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## ⚙️ Environment Setup
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### 1. Copy environment file:
+```bash
+cp .env.example .env.local
+```
+
+### 2. Fill `.env.local`:
+```env
+# Required
+NEXT_PUBLIC_PRIVY_APP_ID=your_app_id
+PRIVY_APP_SECRET=your_secret
+MONGODB_URI=mongodb://localhost:27017/cackpass
+PINATA_JWT=your_pinata_jwt
+NEXT_PUBLIC_RPC_URL=https://rpc.sepolia-api.lisk.com
+
+# Optional (for payments)
+MOONPAY_SECRET_KEY=your_moonpay_key
+PAYSTACK_SECRET_KEY=your_paystack_key
+
+# Smart contracts (get from deployment)
+NEXT_PUBLIC_CACKPASS_CORE_ADDRESS=0x...
+NEXT_PUBLIC_TICKET_MARKET_ADDRESS=0x...
+```
+
+### 3. Get API keys:
+- [Privy Dashboard](https://dashboard.privy.io)
+- [Pinata API Keys](https://app.pinata.cloud/developers)
+- [MongoDB Atlas](https://www.mongodb.com/cloud/atlas) (or run local)
+
+## 📦 Scripts
+
+```bash
+npm run dev          # Start dev server (localhost:3000)
+npm run build        # Production build
+npm run start        # Run production build
+npm run seed         # Seed database with admin + sample data
+npm run lint         # ESLint + TypeScript check
+npm run type-check   # TypeScript only
+```
+
+## 📁 Project Structure
+
+```
+cack-pass/
+├── app/                    # Next.js 14 App Router
+│   ├── api/               # API routes (auth, events, tickets)
+│   ├── (main)/           # Main layout group
+│   ├── events/           # Events listing
+│   ├── organizer/        # Organizer portal
+│   └── profile/          # Profile completion
+├── components/           # Reusable components
+│   ├── events/          # EventCard, PurchaseModal
+│   ├── layout/          # Header, Footer
+│   ├── wallet/          # ConnectButton, FundWallet
+│   └── providers/       # AppProviders (Privy, QueryClient)
+├── lib/                 # Core utilities
+│   ├── contracts/       # ABIs + client (ethers.js)
+│   ├── database/        # MongoDB models + connection
+│   └── services/        # Biconomy, IPFS services
+├── types/               # TypeScript definitions
+└── public/              # Static assets
+```
+
+## 🔌 API Routes
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| `GET` | `/api/auth/user` | Get authenticated user |
+| `POST` | `/api/events/create` | Create event (gasless) |
+| `POST` | `/api/tickets/purchase` | Purchase ticket |
+| `POST` | `/api/scanner/verify` | Verify ticket QR code |
+| `GET/POST` | `/api/user/profile` | Get/update user profile |
+| `GET` | `/api/ipfs/signed-url` | Get signed upload URL |
+| `GET` | `/api/onramp/create-url` | Generate MoonPay URL |
+
+### Example: Create Event
+```typescript
+POST /api/events/create
+Body: {
+  title: "TechFest 2024",
+  description: "...",
+  startDate: "2024-06-15T10:00:00Z",
+  ticketTypes: [{ name: "VIP", price: 150, maxSupply: 100 }]
+}
+```
+
+## 🧪 Development
+
+### Database Models
+- **User** - Auth data (Privy ID, wallet, login method)
+- **UserProfile** - Personal data (bio, interests, profile pic)
+- **Event** - Event details + on-chain ID
+- **TicketType** - Ticket categories + pricing
+- **Order** - Purchase records
+- **CheckIn** - Ticket verification logs
+
+### Adding a Feature
+1. Create component in `/components/[category]/`
+2. Add TypeScript interface in `/types/`
+3. Create API route if needed in `/app/api/[endpoint]/`
+4. Update environment variables if new service
+
+### Testing
+```bash
+# Run in development mode
+npm run dev
+
+# Check types
+npm run type-check
+
+# Lint code
+npm run lint
+```
+
+## 🤝 Contributing
+
+1. **Fork** the repo
+2. **Branch:** `git checkout -b feature/your-feature`
+3. **Commit:** Use conventional commits
+4. **Test:** Verify your changes work
+5. **PR:** Submit pull request with description
+
+### Guidelines
+- TypeScript required for new code
+- Follow existing code style
+- Update documentation if needed
+- Add tests for significant changes
+
+## 🐛 Common Issues
+
+### Privy auth not working?
+- Check `NEXT_PUBLIC_PRIVY_APP_ID` is set
+- Clear browser localStorage
+- Verify app is configured in Privy dashboard
+
+### MongoDB connection error?
+- Ensure MongoDB is running: `mongod`
+- Check `MONGODB_URI` format
+- Try connecting via `mongosh`
+
+### IPFS upload failing?
+- Verify Pinata JWT is valid
+- Check file size (<5MB)
+- Test with small image first
+
+### Gasless transactions failing?
+- Verify contract addresses
+- Check signer has test ETH
+- Review Biconomy dashboard
+
+## 📚 Resources
+
+- [Next.js Docs](https://nextjs.org/docs)
+- [Privy Docs](https://docs.privy.io/)
+- [Solidity Docs](https://docs.soliditylang.org/)
+- [Lisk Sepolia](https://lisk.com/documentation/)
+- [Tailwind CSS](https://tailwindcss.com/docs)
+
+## 📄 License
+
+**MIT License** © 2024 CACK-pass  
+See [LICENSE](LICENSE) for details.
+
+---
+
+**Need help?**  
+- Open an issue on GitHub  
+- Check the code comments  
+- Review the detailed README.md
+
+**Built for developers, by developers.**  
+*Zero gas, maximum memories.*
