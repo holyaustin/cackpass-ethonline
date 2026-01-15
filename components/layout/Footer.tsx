@@ -12,12 +12,14 @@ export function Footer() {
             {/* Brand Column */}
             <div className="lg:col-span-2">
               <div className="flex items-center space-x-3 mb-6">
-                <div className="relative w-12 h-12">
+                <div className="relative w-16 h-16">
                   <Image
                     src="/logoosm.png"
-                    alt="CACK-pass"
+                    alt="CACK-pass logo"
                     fill
                     className="object-contain"
+                    priority
+                    sizes="(max-width: 640px) 40px, (max-width: 768px) 44px, (max-width: 1024px) 48px, 56px"
                   />
                 </div>
                 <div>
