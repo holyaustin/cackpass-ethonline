@@ -212,7 +212,7 @@ npm run lint
 
 ## 📄 License
 
-**MIT License** © 2024 CACK-pass  
+**MIT License** © 2026 CACK-pass  
 See [LICENSE](LICENSE) for details.
 
 ---
@@ -222,5 +222,5 @@ See [LICENSE](LICENSE) for details.
 - Check the code comments  
 - Review the detailed README.md
 
-**Built for developers, by developers.**  
+**Built for Event Creators  by CACK-pass Team.**  
 *Zero gas, maximum memories.*
