@@ -1,104 +1,83 @@
 // components/layout/Footer.tsx
-import { Twitter, Github, Linkedin, Instagram, Mail, Phone } from 'lucide-react'
+import { Twitter, Linkedin, Instagram } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
+
+// Telegram Messenger SVG Component
+const TelegramIcon = ({ className = "h-4 w-4" }) => (
+  <svg 
+    className={className} 
+    fill="currentColor" 
+    viewBox="0 0 24 24"
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.57-1.38-.93-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69.01-.03.01-.14-.06-.2-.07-.06-.17-.04-.24-.02-.1.02-1.79 1.14-5.06 3.34-.48.33-.91.49-1.3.48-.43-.01-1.27-.24-1.89-.44-.76-.24-1.36-.37-1.31-.78.03-.24.37-.49 1.03-.76 4.05-1.73 6.75-2.88 8.09-3.45 3.88-1.61 4.69-1.89 5.21-1.9.11 0 .36.03.52.18.12.12.15.28.14.44z"/>
+  </svg>
+)
 
 export function Footer() {
   return (
     <footer className="bg-surface dark:bg-dark-surface border-t border-gray-100 dark:border-gray-300">
       <div className="responsive-container">
-        <div className="py-8 md:py-12">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-8 md:gap-12">
-            {/* Brand Column */}
-            <div className="lg:col-span-2">
-              <div className="flex items-center space-x-3 mb-6">
-                <div className="relative w-16 h-16">
-                  <Image
-                    src="/logoosm.png"
-                    alt="CACK-pass logo"
-                    fill
-                    className="object-contain"
-                    priority
-                    sizes="(max-width: 640px) 40px, (max-width: 768px) 44px, (max-width: 1024px) 48px, 56px"
-                  />
-                </div>
-                <div>
-                  <span className="text-2xl font-bold text-text dark:text-dark-text block">
-                    Ticket<span className="text-primary dark:text-dark-primary">Pass</span>
-                  </span>
-                  <p className="text-sm text-text-light dark:text-dark-secondary">
-                    Smart Digital Tickets
-                  </p>
-                </div>
+        <div className="py-3">
+          {/* Single Row Layout */}
+          <div className="flex items-center justify-between gap-2 sm:gap-4 flex-wrap sm:flex-nowrap">
+            {/* Logo & Brand - Left */}
+            <div className="flex items-center space-x-2 sm:space-x-3 order-1 flex-shrink-0">
+              <div className="relative w-7 h-7 sm:w-8 sm:h-8">
+                <Image
+                  src="/logoosm.png"
+                  alt="CACK-pass logo"
+                  fill
+                  className="object-contain"
+                  priority
+                  sizes="28px"
+                />
               </div>
-              <p className="text-text-light dark:text-dark-secondary mb-6 max-w-md text-sm md:text-base">
-                The future of event ticketing is here. Experience seamless transactions, 
-                memorable digital tickets, and smart event management.
-              </p>
-              <div className="flex space-x-4">
-                <a href="#" className="p-2 bg-background dark:bg-dark-background rounded-lg hover:bg-primary hover:text-white dark:hover:bg-dark-primary transition-colors">
-                  <Twitter className="h-5 w-5" />
-                </a>
-                <a href="#" className="p-2 bg-background dark:bg-dark-background rounded-lg hover:bg-primary hover:text-white dark:hover:bg-dark-primary transition-colors">
-                  <Instagram className="h-5 w-5" />
-                </a>
-                <a href="#" className="p-2 bg-background dark:bg-dark-background rounded-lg hover:bg-primary hover:text-white dark:hover:bg-dark-primary transition-colors">
-                  <Github className="h-5 w-5" />
-                </a>
-                <a href="#" className="p-2 bg-background dark:bg-dark-background rounded-lg hover:bg-primary hover:text-white dark:hover:bg-dark-primary transition-colors">
-                  <Linkedin className="h-5 w-5" />
-                </a>
+              <div>
+                <span className="text-sm font-bold text-text dark:text-dark-text whitespace-nowrap">
+                  CACK<span className="text-primary dark:text-dark-primary">-pass</span>
+                </span>
               </div>
             </div>
 
-            {/* Quick Links */}
-            <div>
-              <h4 className="text-text dark:text-dark-text font-semibold mb-4 md:mb-6">Platform</h4>
-              <ul className="space-y-3 md:space-y-4">
-                <li><Link href="/events" className="text-text-light dark:text-dark-secondary hover:text-primary dark:hover:text-dark-primary transition-colors text-sm md:text-base">Events</Link></li>
-                <li><Link href="/dashboard" className="text-text-light dark:text-dark-secondary hover:text-primary dark:hover:text-dark-primary transition-colors text-sm md:text-base">Dashboard</Link></li>
-                <li><Link href="/market" className="text-text-light dark:text-dark-secondary hover:text-primary dark:hover:text-dark-primary transition-colors text-sm md:text-base">Resale Market</Link></li>
-                <li><Link href="/scanner" className="text-text-light dark:text-dark-secondary hover:text-primary dark:hover:text-dark-primary transition-colors text-sm md:text-base">Scanner App</Link></li>
-              </ul>
+            {/* Center Links */}
+            <div className="flex items-center space-x-3 sm:space-x-4 text-xs order-3 sm:order-2 flex-grow justify-center mt-2 sm:mt-0">
+              <Link href="/privacy" className="text-text-light dark:text-dark-secondary hover:text-primary dark:hover:text-dark-primary transition-colors whitespace-nowrap">
+                Privacy
+              </Link>
+              <span className="text-text-light dark:text-dark-secondary">•</span>
+              <Link href="/terms" className="text-text-light dark:text-dark-secondary hover:text-primary dark:hover:text-dark-primary transition-colors whitespace-nowrap">
+                Terms
+              </Link>
+              <span className="text-text-light dark:text-dark-secondary hidden sm:inline">•</span>
+              <span className="text-text-light dark:text-dark-secondary whitespace-nowrap hidden sm:inline">
+                &copy; {new Date().getFullYear()}
+              </span>
             </div>
 
-            {/* Resources */}
-            <div>
-              <h4 className="text-text dark:text-dark-text font-semibold mb-4 md:mb-6">Resources</h4>
-              <ul className="space-y-3 md:space-y-4">
-                <li><Link href="/docs" className="text-text-light dark:text-dark-secondary hover:text-primary dark:hover:text-dark-primary transition-colors text-sm md:text-base">Documentation</Link></li>
-                <li><Link href="/blog" className="text-text-light dark:text-dark-secondary hover:text-primary dark:hover:text-dark-primary transition-colors text-sm md:text-base">Blog</Link></li>
-                <li><Link href="/support" className="text-text-light dark:text-dark-secondary hover:text-primary dark:hover:text-dark-primary transition-colors text-sm md:text-base">Support</Link></li>
-                <li><Link href="/help" className="text-text-light dark:text-dark-secondary hover:text-primary dark:hover:text-dark-primary transition-colors text-sm md:text-base">Help Center</Link></li>
-              </ul>
-            </div>
-
-            {/* Company & Contact */}
-            <div>
-              <h4 className="text-text dark:text-dark-text font-semibold mb-4 md:mb-6">Contact</h4>
-              <ul className="space-y-3 md:space-y-4">
-                <li className="flex items-center space-x-2 text-text-light dark:text-dark-secondary text-sm md:text-base">
-                  <Mail className="h-4 w-4" />
-                  <a href="mailto:support@CACK-pass.com" className="hover:text-primary dark:hover:text-dark-primary transition-colors">support@CACK-pass.com</a>
-                </li>
-                <li className="flex items-center space-x-2 text-text-light dark:text-dark-secondary text-sm md:text-base">
-                  <Phone className="h-4 w-4" />
-                  <a href="tel:+2348001234567" className="hover:text-primary dark:hover:text-dark-primary transition-colors">+234 800 123 4567</a>
-                </li>
-              </ul>
-              <div className="mt-6 pt-6 border-t border-gray-100 dark:border-gray-300">
-                <Link href="/privacy" className="text-text-light dark:text-dark-secondary hover:text-primary dark:hover:text-dark-primary transition-colors text-xs md:text-sm">Privacy</Link>
-                <span className="mx-2 text-text-light dark:text-dark-secondary">•</span>
-                <Link href="/terms" className="text-text-light dark:text-dark-secondary hover:text-primary dark:hover:text-dark-primary transition-colors text-xs md:text-sm">Terms</Link>
-              </div>
+            {/* Social Links - Right */}
+            <div className="flex items-center space-x-1 sm:space-x-2 order-2 sm:order-3">
+              <a href="#" className="p-1 bg-background dark:bg-dark-background rounded hover:bg-primary hover:text-white dark:hover:bg-dark-primary transition-colors">
+                <Twitter className="h-3 w-3 sm:h-4 sm:w-4" />
+              </a>
+              <a href="#" className="p-1 bg-background dark:bg-dark-background rounded hover:bg-primary hover:text-white dark:hover:bg-dark-primary transition-colors">
+                <Instagram className="h-3 w-3 sm:h-4 sm:w-4" />
+              </a>
+              <a href="#" className="p-1 bg-background dark:bg-dark-background rounded hover:bg-primary hover:text-white dark:hover:bg-dark-primary transition-colors">
+                <TelegramIcon className="h-3 w-3 sm:h-4 sm:w-4" />
+              </a>
+              <a href="#" className="p-1 bg-background dark:bg-dark-background rounded hover:bg-primary hover:text-white dark:hover:bg-dark-primary transition-colors">
+                <Linkedin className="h-3 w-3 sm:h-4 sm:w-4" />
+              </a>
             </div>
           </div>
 
-          <div className="border-t border-gray-100 dark:border-gray-300 mt-8 md:mt-12 pt-8 text-center">
-            <p className="text-text-light dark:text-dark-secondary text-sm">&copy; {new Date().getFullYear()} CACK-pass. All rights reserved.</p>
-            <p className="text-text-light/70 dark:text-dark-secondary/70 text-xs mt-2">
-              Built with ❤️ for memorable event experiences
-            </p>
+          {/* Mobile-only Copyright Row */}
+          <div className="sm:hidden text-center mt-2 pt-2 border-t border-gray-100 dark:border-gray-300">
+            <span className="text-xs text-text-light dark:text-dark-secondary">
+              &copy; {new Date().getFullYear()} CACK-pass
+            </span>
           </div>
         </div>
       </div>

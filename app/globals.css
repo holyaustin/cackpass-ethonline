@@ -673,3 +673,52 @@
 .dark .orb-2 {
   opacity: 0.2;
 }
+
+/* Add custom animations to your global CSS (globals.css)*/
+@keyframes spin-slow {
+   from { transform: rotate(0deg); }
+   to { transform: rotate(360deg); }
+ }
+ .animate-spin-slow { animation: spin-slow 20s linear infinite; }
+
+ @keyframes spin-slow-reverse {
+   from { transform: rotate(360deg); }
+   to { transform: rotate(0deg); }
+ }
+ .animate-spin-slow-reverse { animation: spin-slow-reverse 25s linear infinite; }
+
+ @keyframes twinkle {
+   0%, 100% { opacity: 0.2; }
+   50% { opacity: 1; }
+ }
+ .animate-twinkle { animation: twinkle 2s ease-in-out infinite; }
+
+/* New animations */
+@keyframes float-slow {
+  0%, 100% {
+    transform: translateY(0) translateX(0);
+  }
+  33% {
+    transform: translateY(-20px) translateX(10px);
+  }
+  66% {
+    transform: translateY(10px) translateX(-10px);
+  }
+}
+
+@keyframes shift-slow {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 50px 50px;
+  }
+}
+
+.animate-float-slow {
+  animation: float-slow 20s ease-in-out infinite;
+}
+
+.animate-shift-slow {
+  animation: shift-slow 30s linear infinite;
+}

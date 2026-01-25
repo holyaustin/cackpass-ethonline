@@ -121,10 +121,10 @@ function DashboardContent() {
     try {
       // In a real app, you would fetch these from your backend
       const mockBalance = {
-        usdc: '1250.75',
-        eth: '0.85',
-        usd: '1250.75',
-        ngn: '1875000',
+        usdc: '100.00',
+        eth: '0.00034',
+        usd: '100.00',
+        ngn: '146500.00',
       }
       
       setStats(prev => ({
@@ -147,13 +147,15 @@ function DashboardContent() {
   if (!authenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-accent-50 dark:from-gray-950 dark:to-gray-900">
-        <div className="text-center glass-card p-12 rounded-3xl">
+        <div className="items-center justify-center text-center glass-card p-12 rounded-3xl">
           <Wallet className="h-16 w-16 text-primary-500 mx-auto mb-6" />
           <h2 className="text-3xl font-bold mb-4">Welcome to CACK-pass</h2>
           <p className="text-gray-600 dark:text-gray-400 mb-8 max-w-md">
             Sign in with your email or social account to access your dashboard and manage tickets
           </p>
+          <div className="flex items-center justify-center" >
           <ConnectButton />
+          </div>
         </div>
       </div>
     )

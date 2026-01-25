@@ -83,7 +83,7 @@ export function ConnectButton({ className = '' }: ConnectButtonProps) {
 
   if (!ready) {
     return (
-      <div className={`px-4 py-2 bg-background dark:bg-dark-background rounded-xl ${className}`}>
+      <div className={`px-4 py-2 bg-accent dark:bg-dark-background rounded-xl ${className}`}>
         <div className="flex items-center gap-2">
           <Loader2 className="h-4 w-4 animate-spin text-primary" />
           <span className="text-sm text-text-light">Loading...</span>
