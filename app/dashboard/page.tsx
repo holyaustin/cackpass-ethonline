@@ -5,7 +5,8 @@ import { useEffect, useState } from 'react'
 import { usePrivy } from '@privy-io/react-auth'
 import { 
   Ticket, Wallet, Plus, History, Send, Settings, 
-  Calendar, Users, QrCode, ChevronRight, Sparkles
+  Calendar, Users, QrCode, ChevronRight, Sparkles,
+  LogIn, User, CreditCard, Globe
 } from 'lucide-react'
 import Link from 'next/link'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
@@ -17,7 +18,7 @@ interface DashboardStats {
 }
 
 export default function DashboardPage() {
-  const { user, authenticated, ready } = usePrivy()
+  const { user, authenticated, ready, login } = usePrivy()
   const [stats, setStats] = useState<DashboardStats>({
     balance: '0.00',
     ticketCount: 0,
@@ -59,11 +60,19 @@ export default function DashboardPage() {
   if (!authenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="max-w-md w-full text-center">
-          <h2 className="text-2xl font-bold mb-4">Please sign in</h2>
-          <p className="text-gray-600 dark:text-gray-400 mb-6">
-            Sign in to access your dashboard
+        <div className="max-w-md w-full text-center glass-card p-8 rounded-3xl">
+          <Wallet className="h-16 w-16 text-primary mx-auto mb-6" />
+          <h2 className="text-2xl font-bold mb-4">Welcome to CACK-pass</h2>
+          <p className="text-gray-600 dark:text-gray-400 mb-8">
+            Login to access your digital tickets and wallet
           </p>
+          <button
+            onClick={login}
+            className="btn-primary px-8 py-3 text-lg flex items-center justify-center gap-2 mx-auto"
+          >
+            <LogIn className="h-5 w-5" />
+            Login to Dashboard
+          </button>
         </div>
       </div>
     )
@@ -71,7 +80,7 @@ export default function DashboardPage() {
 
   const userName = user?.email?.address?.split('@')[0] || user?.google?.name || 'User'
 
-  // Dashboard menu items
+  // Dashboard menu items - UPDATED ORDER
   const menuItems = [
     {
       title: 'My Tickets',
@@ -82,14 +91,6 @@ export default function DashboardPage() {
       count: stats.ticketCount,
     },
     {
-      title: 'Wallet',
-      description: 'View balance and transactions',
-      icon: <Wallet className="h-5 w-5" />,
-      href: '/dashboard/wallet',
-      color: 'bg-emerald-500',
-      count: null,
-    },
-    {
       title: 'Create Ticket',
       description: 'Design custom digital tickets',
       icon: <Plus className="h-5 w-5" />,
@@ -98,11 +99,27 @@ export default function DashboardPage() {
       count: null,
     },
     {
+      title: 'Fund Wallet',
+      description: 'Add funds and manage wallet',
+      icon: <CreditCard className="h-5 w-5" />,
+      href: '/dashboard/wallet',
+      color: 'bg-emerald-500',
+      count: null,
+    },
+    {
+      title: 'Update Profile',
+      description: 'Edit your personal information',
+      icon: <User className="h-5 w-5" />,
+      href: '/profile',
+      color: 'bg-purple-500',
+      count: null,
+    },
+    {
       title: 'Transfer Tickets',
       description: 'Share tickets with friends',
       icon: <Send className="h-5 w-5" />,
       href: '/dashboard/transfers',
-      color: 'bg-purple-500',
+      color: 'bg-pink-500',
       count: null,
     },
     {
@@ -141,7 +158,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Balance Card */}
+        {/* Balance Card - UPDATED BUTTON ORDER */}
         <div className="glass-card rounded-3xl p-6 mb-8 bg-gradient-to-r from-primary to-primary-dark text-white">
           <div className="flex items-center justify-between mb-4">
             <div>
@@ -154,47 +171,23 @@ export default function DashboardPage() {
           </div>
           <div className="flex gap-3">
             <Link 
-              href="/dashboard/wallet"
-              className="flex-1 py-3 bg-white text-primary font-semibold rounded-xl text-center hover:bg-gray-50 transition-colors"
+              href="/dashboard/create-ticket"  // Changed to Create Ticket
+              className="flex-1 py-3 bg-white text-primary font-semibold rounded-xl text-center hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
             >
-              Manage Wallet
+              <Plus className="h-4 w-4" />
+              Create Ticket
             </Link>
             <Link 
-              href="/dashboard/transactions"
-              className="flex-1 py-3 bg-white/20 text-white rounded-xl text-center hover:bg-white/30 transition-colors"
+              href="/dashboard/wallet"  // Changed to Fund Wallet
+              className="flex-1 py-3 bg-white/20 text-white rounded-xl text-center hover:bg-white/30 transition-colors flex items-center justify-center gap-2"
             >
-              View Transactions
+              <CreditCard className="h-4 w-4" />
+              Fund Wallet
             </Link>
           </div>
         </div>
 
-        {/* Quick Stats */}
-        <div className="grid grid-cols-2 gap-4 mb-8">
-          <div className="glass-card rounded-2xl p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600 dark:text-gray-400">Active Tickets</p>
-                <p className="text-2xl font-bold mt-1">{stats.ticketCount}</p>
-              </div>
-              <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg">
-                <Ticket className="h-5 w-5 text-orange-600 dark:text-orange-400" />
-              </div>
-            </div>
-          </div>
-          <div className="glass-card rounded-2xl p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600 dark:text-gray-400">Upcoming Events</p>
-                <p className="text-2xl font-bold mt-1">{stats.upcomingEvents}</p>
-              </div>
-              <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-                <Calendar className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Dashboard Menu */}
+        {/* Dashboard Menu - UPDATED ORDER */}
         <div className="space-y-3">
           <h2 className="text-lg font-semibold mb-4">Quick Actions</h2>
           {menuItems.map((item) => (
@@ -236,15 +229,15 @@ export default function DashboardPage() {
             <h2 className="text-lg font-semibold">Discover Events</h2>
             <Link 
               href="/events" 
-              className="text-primary text-sm font-medium"
+              className="text-primary text-sm font-medium flex items-center gap-1"
             >
-              View all
+              View all <ChevronRight className="h-4 w-4" />
             </Link>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <Link 
               href="/events?category=music"
-              className="glass-card rounded-2xl p-4 bg-gradient-to-br from-orange-500/10 to-orange-400/5"
+              className="glass-card rounded-2xl p-4 bg-gradient-to-br from-orange-500/10 to-orange-400/5 hover:from-orange-500/20 hover:to-orange-400/10 transition-all"
             >
               <div className="text-orange-600 dark:text-orange-400">
                 <div className="w-10 h-10 rounded-lg bg-orange-500/20 flex items-center justify-center mb-2">
@@ -256,7 +249,7 @@ export default function DashboardPage() {
             </Link>
             <Link 
               href="/events?category=tech"
-              className="glass-card rounded-2xl p-4 bg-gradient-to-br from-blue-500/10 to-blue-400/5"
+              className="glass-card rounded-2xl p-4 bg-gradient-to-br from-blue-500/10 to-blue-400/5 hover:from-blue-500/20 hover:to-blue-400/10 transition-all"
             >
               <div className="text-blue-600 dark:text-blue-400">
                 <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center mb-2">

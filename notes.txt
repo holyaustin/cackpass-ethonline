@@ -57,3 +57,7 @@ Create /lib/api/constants.ts:
 - tailwind.config.js
 - postcss.config.js
 - package.json (Tailwind version)
+
+
+
+

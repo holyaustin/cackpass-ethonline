@@ -8,7 +8,6 @@ import { useEffect, useState } from 'react'
 import { useRouter } from "next/navigation";
 import { usePrivy } from "@privy-io/react-auth";
 
-// Create QueryClient instance outside component to avoid recreating on re-renders
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -19,7 +18,6 @@ const queryClient = new QueryClient({
   },
 })
 
-// Custom chain configuration for Lisk Sepolia
 const liskSepolia = {
   id: 4202,
   name: 'Lisk Sepolia',
@@ -45,22 +43,6 @@ const liskSepolia = {
   testnet: true,
 }
 
-// Hydration fix component to prevent SSR for Privy
-function ClientOnly({ children }: { children: React.ReactNode }) {
-  const [hasMounted, setHasMounted] = useState(false)
-
-  useEffect(() => {
-    setHasMounted(true)
-  }, [])
-
-  if (!hasMounted) {
-    return null
-  }
-
-  return <>{children}</>
-}
-
-// Auth redirect component
 function AuthRedirect() {
   const router = useRouter();
   const { authenticated, ready, user } = usePrivy();
@@ -78,39 +60,52 @@ function AuthRedirect() {
 }
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    // Return a minimal skeleton during SSR
+    return (
+      <div className="min-h-screen bg-background dark:bg-dark-background">
+        {children}
+      </div>
+    );
+  }
+
   return (
-    <ClientOnly>
-      <PrivyProvider
-        appId={process.env.NEXT_PUBLIC_PRIVY_APP_ID!}
-        config={{
-          loginMethods: ['email', 'google', 'twitter'],
-          embeddedWallets: {
-            ethereum: {
-              createOnLogin: "users-without-wallets" as const,
-            },
+    <PrivyProvider
+      appId={process.env.NEXT_PUBLIC_PRIVY_APP_ID!}
+      config={{
+        loginMethods: ['email', 'google', 'twitter'],
+        embeddedWallets: {
+          ethereum: {
+            createOnLogin: "users-without-wallets" as const,
           },
-          appearance: {
-            theme: 'dark',
-            accentColor: '#D95427',
-            logo: '/logoosm.png',
-            showWalletLoginFirst: false,
-          },
-          legal: {
-            termsAndConditionsUrl: '/terms',
-            privacyPolicyUrl: '/privacy',
-          },
-          defaultChain: liskSepolia,
-          supportedChains: [liskSepolia, sepolia, mainnet],
-          mfa: {
-            noPromptOnMfaRequired: false,
-          },
-        }}
-      >
-        <QueryClientProvider client={queryClient}>
-          <AuthRedirect />
-          {children}
-        </QueryClientProvider>
-      </PrivyProvider>
-    </ClientOnly>
-  )
+        },
+        appearance: {
+          theme: 'dark',
+          accentColor: '#D95427',
+          logo: '/logoosm.png',
+          showWalletLoginFirst: false,
+        },
+        legal: {
+          termsAndConditionsUrl: '/terms',
+          privacyPolicyUrl: '/privacy',
+        },
+        defaultChain: liskSepolia,
+        supportedChains: [liskSepolia, sepolia, mainnet],
+        mfa: {
+          noPromptOnMfaRequired: false,
+        },
+      }}
+    >
+      <QueryClientProvider client={queryClient}>
+        <AuthRedirect />
+        {children}
+      </QueryClientProvider>
+    </PrivyProvider>
+  );
 }

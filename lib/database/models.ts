@@ -33,24 +33,80 @@ const UserProfileSchema = new mongoose.Schema({
 })
 
 // Event Schema
+// Event Schema - Updated version
 const EventSchema = new mongoose.Schema({
   organizerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  organizerWallet: { type: String, required: true }, // Wallet address from Privy
   title: { type: String, required: true },
   description: String,
+  
+  // Location fields
   venue: String,
   location: {
     lat: Number,
     lng: Number,
     address: String,
   },
+  
+  // Virtual event support
+  isVirtual: { type: Boolean, default: false },
+  virtualOptions: {
+    zoomMeeting: { type: Boolean, default: false },
+    googleMeet: { type: Boolean, default: false },
+    hasVirtualLink: { type: Boolean, default: false },
+    virtualLink: { type: String, default: '' }
+  },
+  
+  // Date and time
   startDate: { type: Date, required: true },
   endDate: { type: Date, required: true },
+  startDateTime: { type: Date }, // Combined start date + time
+  endDateTime: { type: Date },   // Combined end date + time
+  
+  // Category
+  category: { type: String, required: true },
+  customCategory: { type: String },
+  
+  // Image and metadata
   bannerImage: String,
+  imageCid: String, // IPFS CID for uploaded image
   metadataURI: String,
-  isActive: { type: Boolean, default: true },
+  metadataCid: String, // IPFS CID for metadata
+  
+  // Pricing
   isFree: { type: Boolean, default: false },
+  price: { type: Number, default: 0 },
+  currency: { type: String, default: 'USD' },
+  
+  // Ticket type (for events with single ticket type)
+  ticketType: { 
+    type: String, 
+    enum: ['GeneralAdmission', 'ReservedSeating', 'VIPPremium', 'Others'],
+    default: 'GeneralAdmission'
+  },
+  
+  // Capacity management
+  unlimitedCapacity: { type: Boolean, default: true },
+  capacity: { type: Number },
+  
+  // Blockchain integration
   onChainId: Number,
+  isOnChain: { type: Boolean, default: false },
+  transactionHash: String,
+  gaslessWallet: String, // Address that paid gas for gasless transactions
+  ticketId: Number, // For single-ticket events (alternative to TicketType model)
+  
+  // Status
+  status: { 
+    type: String, 
+    enum: ['draft', 'published', 'cancelled', 'completed'],
+    default: 'published'
+  },
+  isActive: { type: Boolean, default: true },
+  
+  // Timestamps
   createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
 })
 
 // Ticket Type Schema
