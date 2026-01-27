@@ -514,6 +514,7 @@ export default function CreateTicketPage() {
         transactionHash,
         ticketId,
         organizerWallet: user.wallet.address,
+        organizerId: user?.id, // This comes from usePrivy() hook
         status: 'published',
         isOnChain: !isFreeEvent, // Flag to indicate if on blockchain
         gaslessWallet: !isFreeEvent ? process.env.GASSLESS_PRIVATE_KEY_ADDRESS : undefined,
@@ -524,7 +525,9 @@ export default function CreateTicketPage() {
       // Call your backend API to save to MongoDB
       const dbResponse = await fetch('/api/events/create', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+         },
         body: JSON.stringify(eventData)
       })
 

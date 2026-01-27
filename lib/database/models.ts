@@ -33,7 +33,6 @@ const UserProfileSchema = new mongoose.Schema({
 })
 
 // Event Schema
-// Event Schema - Updated version
 const EventSchema = new mongoose.Schema({
   organizerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   organizerWallet: { type: String, required: true }, // Wallet address from Privy
