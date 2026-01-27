@@ -126,6 +126,38 @@ export function HeroSection() {
         
         {/* Grid pattern */}
         <div className="absolute inset-0 bg-grid-slate-800/30 [mask-image:radial-gradient(ellipse_at_center,black,transparent_70%)]" />
+
+                {/* Enhanced Bold Stars */}
+        {Array.from({ length: 40 }).map((_, i) => (
+          <div
+            key={`dark-star-${i}`}
+            className="absolute rounded-full animate-twinkle"
+            style={{
+              width: `${Math.random() * 4 + 2}px`,
+              height: `${Math.random() * 4 + 2}px`,
+              top: `${Math.random() * 100}%`,
+              left: `${Math.random() * 100}%`,
+              backgroundColor: 'white',
+              boxShadow: `0 0 ${Math.random() * 6 + 4}px white`,
+              animationDelay: `${Math.random() * 5}s`,
+              animationDuration: `${1 + Math.random() * 2}s`
+            }}
+          />
+        ))}
+        
+        {/* Shooting Stars */}
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div
+            key={`shooting-star-${i}`}
+            className="absolute w-24 h-1 bg-gradient-to-r from-transparent via-white to-transparent rounded-full animate-shooting-star"
+            style={{
+              top: `${20 + i * 25}%`,
+              left: `${-5 + i * 10}%`,
+              animationDelay: `${i * 7}s`,
+              opacity: 0.7
+            }}
+          />
+        ))}
         
         {/* Animated rings */}
         <div className="absolute top-32 right-32 w-48 h-48 border border-orange-500/40 rounded-full animate-spin-slow">

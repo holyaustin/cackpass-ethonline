@@ -722,3 +722,40 @@
 .animate-shift-slow {
   animation: shift-slow 30s linear infinite;
 }
+
+/* Add these animations to your globals.css file */
+@keyframes shift {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 40px 40px;
+  }
+}
+
+@keyframes shooting-star {
+  0% {
+    transform: translateX(0) translateY(0) rotate(45deg);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(100vw) translateY(100vh) rotate(45deg);
+    opacity: 0;
+  }
+}
+
+.animate-shift {
+  animation: shift 20s linear infinite;
+}
+
+.animate-shooting-star {
+  animation: shooting-star 3s ease-in-out infinite;
+}
+
+/* Custom radial gradient utility */
+.bg-gradient-radial {
+  background-image: radial-gradient(var(--tw-gradient-stops));
+}
