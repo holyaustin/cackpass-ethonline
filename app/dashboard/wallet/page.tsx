@@ -1,11 +1,10 @@
-// app/(main)/dashboard/wallet/page.tsx
+// app/dashboard/wallet/page.tsx
 'use client'
 
 import { useState, useEffect } from 'react'
 import { usePrivy } from '@privy-io/react-auth'
 import { Wallet, CreditCard, ArrowUpRight, ArrowDownRight, Copy, QrCode, ExternalLink } from 'lucide-react'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
-import { FundWallet } from '@/components/wallet/FundWallet'
 import Link from 'next/link'
 
 interface WalletBalance {
@@ -35,7 +34,6 @@ export default function WalletPage() {
   })
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [showFundModal, setShowFundModal] = useState(false)
   const [copied, setCopied] = useState(false)
 
   useEffect(() => {
@@ -104,8 +102,8 @@ export default function WalletPage() {
   if (!authenticated) return <div className="p-8 text-center">Please sign in to view wallet</div>
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-primary-50 dark:from-gray-950 dark:to-gray-900">
-      <div className="container mx-auto px-4 py-6">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      <div className="container mx-auto px-4 py-6 max-w-6xl">
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-2xl font-bold mb-2">Wallet</h1>
@@ -113,7 +111,7 @@ export default function WalletPage() {
         </div>
 
         {/* Balance Card */}
-        <div className="glass-card rounded-2xl p-5 mb-6 bg-gradient-to-r from-primary to-primary-dark">
+        <div className="glass-card rounded-3xl p-6 mb-8 bg-gradient-to-r from-primary to-primary-dark text-white">
           <div className="text-white mb-6">
             <p className="text-sm opacity-90">Total Balance</p>
             <p className="text-3xl font-bold mt-1">${balance.usd}</p>
@@ -121,10 +119,7 @@ export default function WalletPage() {
           </div>
           
           <div className="flex gap-3">
-            <button
-              onClick={() => setShowFundModal(true)}
-              className="flex-1 bg-white text-primary font-semibold py-3 rounded-xl hover:bg-gray-100 transition-colors flex items-center justify-center gap-2"
-            >
+            <button className="flex-1 bg-white text-primary font-semibold py-3 rounded-xl hover:bg-gray-100 transition-colors flex items-center justify-center gap-2">
               <CreditCard className="h-4 w-4" />
               Add Funds
             </button>
@@ -192,7 +187,15 @@ export default function WalletPage() {
 
         {/* Recent Transactions */}
         <div className="mb-8">
-          <h2 className="text-xl font-bold mb-4">Recent Transactions</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold">Recent Transactions</h2>
+            <Link 
+              href="/dashboard/transactions"
+              className="text-primary text-sm font-medium"
+            >
+              View All
+            </Link>
+          </div>
           
           {isLoading ? (
             <div className="space-y-3">
@@ -212,40 +215,14 @@ export default function WalletPage() {
             </div>
           )}
         </div>
-
-        {/* View All Link */}
-        <Link 
-          href="/dashboard/transactions"
-          className="block text-center py-3 glass-card rounded-2xl text-primary font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-        >
-          View All Transactions
-        </Link>
       </div>
-
-      {/* Fund Modal */}
-      {showFundModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-          <div className="glass-card rounded-3xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <h3 className="text-2xl font-bold mb-6">Add Funds</h3>
-              <FundWallet />
-              <button
-                onClick={() => setShowFundModal(false)}
-                className="w-full mt-6 py-3 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
 
 function TransactionItem({ transaction }: { transaction: Transaction }) {
   return (
-    <div className="glass-card rounded-2xl p-4">
+    <div className="glass-card rounded-2xl p-4 hover:shadow-sm transition-all">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
