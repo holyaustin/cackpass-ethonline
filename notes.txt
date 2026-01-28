@@ -778,3 +778,26 @@ Call Stack
 
 handleSubmit
 app/dashboard/create-ticket/page.tsx (537:15)
+
+
+What Should Happen in Sequence:
+User clicks login → Privy modal opens
+
+User authenticates (email/google/twitter) → Privy handles this
+
+Privy returns auth success → User object available in frontend
+
+Frontend detects new user → Calls user creation API
+
+Backend creates user record → Stores in MongoDB
+
+User can now create events
+
+
+The  /app/profile/page.tsx shall be used to update user profile. All other fields available on the users schema shall be updated later using the profile page. this is done willingly by users by selecting update profile link in the dashboard page.
+
+I want a visual effect to show that an actio is ongoing when i click on the logout button
+
+The useLogin Hook Callback
+
+Fix the Token Issue 

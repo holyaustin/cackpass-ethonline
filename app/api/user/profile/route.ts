@@ -27,49 +27,26 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
-    // Get or create user profile
-    let profile = await UserProfile.findOne({ userId: user._id })
+    // Get user profile (optional detailed profile)
+    const profile = await UserProfile.findOne({ userId: user._id })
     
-    if (!profile) {
-      profile = new UserProfile({
-        userId: user._id,
-        walletAddress: user.walletAddress,
-        fullName: '',
-        bio: '',
-        location: '',
-        country: '',
-        dateOfBirth: null,
-        interests: [],
-        profilePicture: '',
-        isProfileComplete: false,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      })
-      await profile.save()
-    }
-
     return NextResponse.json({
       success: true,
-      profile: {
-        fullName: profile.fullName,
-        bio: profile.bio,
-        location: profile.location,
-        country: profile.country,
-        dateOfBirth: profile.dateOfBirth,
-        interests: profile.interests,
-        profilePicture: profile.profilePicture,
-        isProfileComplete: profile.isProfileComplete,
-        walletAddress: profile.walletAddress || user.walletAddress,
-      },
       user: {
         id: user._id,
         email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
         walletAddress: user.walletAddress,
         loginMethod: user.loginMethod,
         username: user.username,
-        organizer: user.organizer,
+        isOrganizer: user.isOrganizer,
+        country: user.country,
+        phoneNumber: user.phoneNumber,
+        isProfileComplete: user.isProfileComplete,
         admin: user.admin,
-      }
+      },
+      detailedProfile: profile || null,
     })
     
   } catch (error) {
@@ -104,24 +81,22 @@ export async function POST(request: NextRequest) {
     }
     
     // Parse profile data
+     // Parse profile data (optional detailed profile)
     const body = await request.json()
-    const { fullName, bio, location, country, dateOfBirth, interests, profilePicture } = body
+    const { fullName, bio, location, dateOfBirth, interests, profilePicture } = body
     
-    // Find existing profile or create new
+    // Find or create detailed profile
     let profile = await UserProfile.findOne({ userId: user._id })
     
     if (!profile) {
       profile = new UserProfile({
         userId: user._id,
-        walletAddress: user.walletAddress,
         fullName: fullName || '',
         bio: bio || '',
         location: location || '',
-        country: country || '',
         dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
         interests: interests || [],
         profilePicture: profilePicture || '',
-        isProfileComplete: !!(fullName && profilePicture),
         createdAt: new Date(),
         updatedAt: new Date(),
       })
@@ -130,42 +105,18 @@ export async function POST(request: NextRequest) {
       profile.fullName = fullName || profile.fullName
       profile.bio = bio || profile.bio
       profile.location = location || profile.location
-      profile.country = country || profile.country
       profile.dateOfBirth = dateOfBirth ? new Date(dateOfBirth) : profile.dateOfBirth
       profile.interests = interests || profile.interests
       profile.profilePicture = profilePicture || profile.profilePicture
-      profile.isProfileComplete = !!(fullName && profilePicture)
       profile.updatedAt = new Date()
-      
-      // Sync wallet address
-      if (user.walletAddress && !profile.walletAddress) {
-        profile.walletAddress = user.walletAddress
-      }
     }
     
     await profile.save()
     
-    // Update user's username if full name is provided
-    if (fullName && fullName !== user.username) {
-      user.username = fullName
-      user.updatedAt = new Date()
-      await user.save()
-    }
-    
     return NextResponse.json({
       success: true,
-      message: 'Profile saved successfully',
-      profile: {
-        fullName: profile.fullName,
-        bio: profile.bio,
-        location: profile.location,
-        country: profile.country,
-        dateOfBirth: profile.dateOfBirth,
-        interests: profile.interests,
-        profilePicture: profile.profilePicture,
-        isProfileComplete: profile.isProfileComplete,
-      },
-      requiresProfileCompletion: !profile.isProfileComplete,
+      message: 'Profile updated successfully',
+      profile: profile,
     })
     
   } catch (error) {

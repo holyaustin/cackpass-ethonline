@@ -55,13 +55,14 @@ export async function middleware(request: NextRequest) {
     const data = await response.json()
     
     // Handle profile completion redirects
-    if (data.needsProfileCompletion && pathname !== '/profile') {
-      return NextResponse.redirect(new URL('/profile', request.url))
+    // Handle profile completion redirects
+    if (data.needsProfileCompletion && !pathname.startsWith('/profile')) {
+      return NextResponse.redirect(new URL('/profile', request.url));
     }
-    
-    // Redirect to dashboard if profile complete and trying to access profile
+
+    // Don't redirect from profile if it needs completion
     if (!data.needsProfileCompletion && pathname === '/profile') {
-      return NextResponse.redirect(new URL('/dashboard', request.url))
+      return NextResponse.redirect(new URL('/dashboard', request.url));
     }
     
     return NextResponse.next()

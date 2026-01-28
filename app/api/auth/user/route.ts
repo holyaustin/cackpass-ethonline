@@ -1,5 +1,4 @@
-// app/api/auth/user/route.ts
-
+// app/api/auth/user/route.ts - COMPLETE FIX
 import { NextRequest, NextResponse } from 'next/server'
 import { connectDB } from '@/lib/database/connection'
 import { User, UserProfile } from '@/lib/database/models'
@@ -9,6 +8,56 @@ const privy = new PrivyClient(
   process.env.NEXT_PUBLIC_PRIVY_APP_ID!,
   process.env.PRIVY_APP_SECRET!
 )
+
+// Helper function to extract embedded wallet from linked accounts
+function getEmbeddedWalletAddress(privyUser: any): string | null {
+  if (!privyUser.linkedAccounts || !Array.isArray(privyUser.linkedAccounts)) {
+    return null
+  }
+
+  // Find the embedded wallet (wallet with client type 'privy')
+  const embeddedWallet = privyUser.linkedAccounts.find(
+    (account: any) => 
+      account.type === 'wallet' && 
+      account.walletClientType === 'privy'
+  )
+
+  return embeddedWallet?.address || null
+}
+
+// Helper function to get user details from Privy
+function getUserDetailsFromPrivy(privyUser: any) {
+  let loginMethod = 'email'
+  let firstName = ''
+  let lastName = ''
+  let email = ''
+  let username = ''
+
+  // Determine login method and extract user info
+  if (privyUser.google?.email) {
+    loginMethod = 'google'
+    email = privyUser.google.email || ''
+    
+    // Parse name from Google
+    const names = privyUser.google.name?.split(' ') || []
+    firstName = names[0] || ''
+    lastName = names.slice(1).join(' ') || ''
+    username = firstName || email.split('@')[0] || ''
+  } 
+  else if (privyUser.twitter?.username) {
+    loginMethod = 'twitter'
+    firstName = privyUser.twitter.username || ''
+    username = `@${firstName}`
+  }
+  else if (privyUser.email?.address) {
+    loginMethod = 'email'
+    email = privyUser.email.address || ''
+    firstName = email.split('@')[0] || ''
+    username = firstName
+  }
+
+  return { loginMethod, firstName, lastName, email, username }
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -44,28 +93,25 @@ export async function GET(request: NextRequest) {
       // Get user details from Privy
       const privyUser = await privy.getUser(verifiedClaims.userId)
       
-      // Determine login method
-      let loginMethod = 'email'
-      if (privyUser.google?.email) loginMethod = 'google'
-      if (privyUser.twitter?.username) loginMethod = 'twitter'
+      // Extract user details
+      const { loginMethod, firstName, lastName, email, username } = getUserDetailsFromPrivy(privyUser)
       
-      // Get username
-      let username = 'user'
-      if (privyUser.email?.address) {
-        username = privyUser.email.address.split('@')[0]
-      } else if (privyUser.google?.name) {
-        username = privyUser.google.name
-      } else if (privyUser.twitter?.username) {
-        username = `@${privyUser.twitter.username}`
-      }
+      // Get embedded wallet address
+      const embeddedWalletAddress = getEmbeddedWalletAddress(privyUser)
       
-      // Create new user
+      // Create new user with minimal required fields
       user = new User({
         privyId: verifiedClaims.userId,
-        walletAddress: privyUser.wallet?.address || null,
-        loginMethod,
-        username,
-        organizer: false,
+        walletAddress: embeddedWalletAddress, // Store the embedded wallet address
+        loginMethod: loginMethod,
+        email: email,
+        firstName: firstName,
+        lastName: lastName,
+        username: username,
+        isOrganizer: false, // Default false, user will set this
+        country: '',
+        phoneNumber: '',
+        isProfileComplete: false, // Will be true after they set organizer, country, phone
         admin: false,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -73,46 +119,34 @@ export async function GET(request: NextRequest) {
       
       await user.save()
       
-      // Create empty profile
-      const userProfile = new UserProfile({
-        userId: user._id,
-        walletAddress: privyUser.wallet?.address || null,
-        fullName: '',
-        bio: '',
-        location: '',
-        country: '',
-        dateOfBirth: null,
-        interests: [],
-        profilePicture: '',
-        isProfileComplete: false,
-        createdAt: new Date(),
-        updatedAt: new Date(),
+      // Log the wallet address for debugging
+      console.log('New user created with embedded wallet:', {
+        userId: verifiedClaims.userId,
+        walletAddress: embeddedWalletAddress,
+        hasLinkedAccounts: !!privyUser.linkedAccounts,
+        linkedAccountsCount: privyUser.linkedAccounts?.length || 0
       })
-      
-      await userProfile.save()
     } else {
-      // Update wallet address if not set
+      // For existing user, check if we need to update wallet address
       if (!user.walletAddress) {
         const privyUser = await privy.getUser(verifiedClaims.userId)
-        if (privyUser.wallet?.address) {
-          user.walletAddress = privyUser.wallet.address
+        const embeddedWalletAddress = getEmbeddedWalletAddress(privyUser)
+        
+        if (embeddedWalletAddress) {
+          user.walletAddress = embeddedWalletAddress
+          user.updatedAt = new Date()
           await user.save()
           
-          // Also update profile wallet address
-          const profile = await UserProfile.findOne({ userId: user._id })
-          if (profile && !profile.walletAddress) {
-            profile.walletAddress = privyUser.wallet.address
-            await profile.save()
-          }
+          console.log('Updated existing user with embedded wallet:', {
+            userId: verifiedClaims.userId,
+            walletAddress: embeddedWalletAddress
+          })
         }
       }
     }
     
-    // Get user profile
-    const profile = await UserProfile.findOne({ userId: user._id })
-    
-    // Check if profile needs completion
-    const needsProfileCompletion = !profile?.isProfileComplete
+    // Check if profile needs completion (just organizer, country, phone)
+    const needsProfileCompletion = !user.isProfileComplete
     
     return NextResponse.json({
       success: true,
@@ -120,16 +154,20 @@ export async function GET(request: NextRequest) {
         id: user._id,
         privyId: user.privyId,
         walletAddress: user.walletAddress,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
         loginMethod: user.loginMethod,
         username: user.username,
-        organizer: user.organizer,
+        isOrganizer: user.isOrganizer,
+        country: user.country,
+        phoneNumber: user.phoneNumber,
+        isProfileComplete: user.isProfileComplete,
         admin: user.admin,
       },
-      profile: profile || null,
       needsProfileCompletion,
-      hasWallet: !!user.walletAddress,
       message: needsProfileCompletion 
-        ? 'Please complete your profile' 
+        ? 'Please complete your basic profile information' 
         : 'User authenticated successfully',
     })
     
@@ -174,54 +212,44 @@ export async function POST(request: NextRequest) {
     
     // Parse request body
     const body = await request.json()
-    const { profile } = body
+    const { isOrganizer, country, phoneNumber } = body
     
-    if (!profile) {
+    // Validate required fields
+    if (typeof isOrganizer !== 'boolean' || !country || !phoneNumber) {
       return NextResponse.json({ 
         success: false, 
-        error: 'Profile data is required' 
+        error: 'isOrganizer, country, and phoneNumber are required' 
       }, { status: 400 })
     }
     
-    // Find or create profile
-    let userProfile = await UserProfile.findOne({ userId: user._id })
-    
-    if (!userProfile) {
-      userProfile = new UserProfile({
-        userId: user._id,
-        walletAddress: user.walletAddress,
-        ...profile,
-        isProfileComplete: !!(profile.fullName && profile.profilePicture),
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      })
-    } else {
-      // Update existing profile
-      Object.assign(userProfile, profile, {
-        isProfileComplete: !!(profile.fullName && profile.profilePicture),
-        updatedAt: new Date(),
-      })
-      
-      // Ensure wallet address is synced
-      if (user.walletAddress && !userProfile.walletAddress) {
-        userProfile.walletAddress = user.walletAddress
-      }
+    // Validate phone number format (basic validation)
+    const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/
+    if (!phoneRegex.test(phoneNumber.replace(/\D/g, ''))) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Invalid phone number format' 
+      }, { status: 400 })
     }
     
-    await userProfile.save()
+    // Update user with basic profile info
+    user.isOrganizer = isOrganizer
+    user.country = country
+    user.phoneNumber = phoneNumber
+    user.isProfileComplete = true // Mark as complete after these fields
+    user.updatedAt = new Date()
     
-    // Update username if full name is provided
-    if (profile.fullName && profile.fullName !== user.username) {
-      user.username = profile.fullName
-      user.updatedAt = new Date()
-      await user.save()
-    }
+    await user.save()
     
     return NextResponse.json({
       success: true,
-      profile: userProfile,
-      message: 'Profile saved successfully',
-      needsProfileCompletion: !userProfile.isProfileComplete,
+      user: {
+        id: user._id,
+        isOrganizer: user.isOrganizer,
+        country: user.country,
+        phoneNumber: user.phoneNumber,
+        isProfileComplete: user.isProfileComplete,
+      },
+      message: 'Basic profile completed successfully',
     })
     
   } catch (error) {
@@ -232,6 +260,69 @@ export async function POST(request: NextRequest) {
         success: false,
         error: 'Failed to update profile',
         details: error instanceof Error ? error.message : 'Unknown error'
+      },
+      { status: 500 }
+    )
+  }
+}
+
+// New endpoint to sync wallet (in case wallet is created after initial login)
+export async function PUT(request: NextRequest) {
+  try {
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Unauthorized' 
+      }, { status: 401 })
+    }
+
+    const authToken = authHeader.split(' ')[1]
+    const verifiedClaims = await privy.verifyAuthToken(authToken)
+    
+    await connectDB()
+    
+    // Find user
+    const user = await User.findOne({ privyId: verifiedClaims.userId })
+    if (!user) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'User not found' 
+      }, { status: 404 })
+    }
+    
+    // Get latest user data from Privy
+    const privyUser = await privy.getUser(verifiedClaims.userId)
+    const embeddedWalletAddress = getEmbeddedWalletAddress(privyUser)
+    
+    if (embeddedWalletAddress && embeddedWalletAddress !== user.walletAddress) {
+      user.walletAddress = embeddedWalletAddress
+      user.updatedAt = new Date()
+      await user.save()
+      
+      console.log('Wallet address updated via sync:', {
+        userId: verifiedClaims.userId,
+        oldAddress: user.walletAddress,
+        newAddress: embeddedWalletAddress
+      })
+    }
+    
+    return NextResponse.json({
+      success: true,
+      user: {
+        walletAddress: user.walletAddress,
+        hasWallet: !!user.walletAddress,
+        updated: !!embeddedWalletAddress && embeddedWalletAddress !== user.walletAddress
+      }
+    })
+    
+  } catch (error) {
+    console.error('Wallet sync error:', error)
+    
+    return NextResponse.json(
+      { 
+        success: false,
+        error: 'Failed to sync wallet'
       },
       { status: 500 }
     )

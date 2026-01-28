@@ -1,36 +1,41 @@
+// lib/database/models.ts - FIXED VERSION
 import mongoose from 'mongoose'
 
 // User Schema with simplified fields
 const UserSchema = new mongoose.Schema({
-  privyId: { type: String, unique: true, required: true },
-  walletAddress: { type: String, unique: true, sparse: true },
-  loginMethod: { 
-    type: String, 
-    enum: ['email', 'google', 'twitter', 'tiktok', 'instagram'],
-    required: true 
-  },
+  privyId: { type: String, required: true, unique: true },
+  // Embedded wallet address (provided by Privy)
+  walletAddress: { type: String, default: null },
+  // User info from Privy
+  loginMethod: { type: String, required: true },
+  email: { type: String },
+  firstName: { type: String },
+  lastName: { type: String },
   username: { type: String },
-  organizer: { type: Boolean, default: false },
+  
+  // Profile info (user provided)
+  isOrganizer: { type: Boolean, default: false },
+  country: { type: String, default: '' },
+  phoneNumber: { type: String, default: '' },
+  isProfileComplete: { type: Boolean, default: false },
+  
   admin: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 })
 
-// User Profile Schema
+// Update UserProfile schema to be optional
 const UserProfileSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
-  walletAddress: { type: String, unique: true, sparse: true }, // Added walletAddress to profile
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   fullName: { type: String, default: '' },
   bio: { type: String, default: '' },
   location: { type: String, default: '' },
-  country: { type: String, default: '' },
-  dateOfBirth: { type: Date },
+  dateOfBirth: { type: Date, default: null },
   interests: [{ type: String }],
   profilePicture: { type: String, default: '' },
-  isProfileComplete: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
-})
+});
 
 // Event Schema
 const EventSchema = new mongoose.Schema({
@@ -181,16 +186,8 @@ const MarketListingSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
 })
 
-export const User = mongoose.models.User || mongoose.model('User', UserSchema)
-export const UserProfile = mongoose.models.UserProfile || mongoose.model('UserProfile', UserProfileSchema)
-export const Event = mongoose.models.Event || mongoose.model('Event', EventSchema)
-export const TicketType = mongoose.models.TicketType || mongoose.model('TicketType', TicketTypeSchema)
-export const Order = mongoose.models.Order || mongoose.model('Order', OrderSchema)
-export const Whitelist = mongoose.models.Whitelist || mongoose.model('Whitelist', WhitelistSchema)
-export const MarketListing = mongoose.models.MarketListing || mongoose.model('MarketListing', MarketListingSchema)
-
 // Additional models
-export const Payout = mongoose.model('Payout', new mongoose.Schema({
+const PayoutSchema = new mongoose.Schema({
   eventId: { type: mongoose.Schema.Types.ObjectId, ref: 'Event', required: true },
   organizerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   totalAmount: { type: Number, required: true },
@@ -204,9 +201,9 @@ export const Payout = mongoose.model('Payout', new mongoose.Schema({
   },
   processedAt: Date,
   createdAt: { type: Date, default: Date.now },
-}))
+})
 
-export const CheckIn = mongoose.model('CheckIn', new mongoose.Schema({
+const CheckInSchema = new mongoose.Schema({
   eventId: { type: mongoose.Schema.Types.ObjectId, ref: 'Event', required: true },
   ticketId: { type: Number, required: true },
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
@@ -218,9 +215,9 @@ export const CheckIn = mongoose.model('CheckIn', new mongoose.Schema({
     accuracy: Number,
   },
   isVerified: { type: Boolean, default: false },
-}))
+})
 
-export const Notification = mongoose.model('Notification', new mongoose.Schema({
+const NotificationSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   title: { type: String, required: true },
   message: { type: String, required: true },
@@ -232,4 +229,16 @@ export const Notification = mongoose.model('Notification', new mongoose.Schema({
   isRead: { type: Boolean, default: false },
   metadata: mongoose.Schema.Types.Mixed,
   createdAt: { type: Date, default: Date.now },
-}))
+})
+
+// Prevent model overwrite error in Next.js hot reload
+export const User = mongoose.models.User || mongoose.model('User', UserSchema)
+export const UserProfile = mongoose.models.UserProfile || mongoose.model('UserProfile', UserProfileSchema)
+export const Event = mongoose.models.Event || mongoose.model('Event', EventSchema)
+export const TicketType = mongoose.models.TicketType || mongoose.model('TicketType', TicketTypeSchema)
+export const Order = mongoose.models.Order || mongoose.model('Order', OrderSchema)
+export const Whitelist = mongoose.models.Whitelist || mongoose.model('Whitelist', WhitelistSchema)
+export const MarketListing = mongoose.models.MarketListing || mongoose.model('MarketListing', MarketListingSchema)
+export const Payout = mongoose.models.Payout || mongoose.model('Payout', PayoutSchema)
+export const CheckIn = mongoose.models.CheckIn || mongoose.model('CheckIn', CheckInSchema)
+export const Notification = mongoose.models.Notification || mongoose.model('Notification', NotificationSchema)

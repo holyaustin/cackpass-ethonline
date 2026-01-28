@@ -1,12 +1,10 @@
-// components/providers/AppProviders.tsx
+// /components/providers/AppProviders.tsx - UPDATED (Simplified)
 'use client'
 
 import { PrivyProvider } from '@privy-io/react-auth'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { sepolia, mainnet } from 'viem/chains'
 import { useEffect, useState } from 'react'
-import { useRouter } from "next/navigation";
-import { usePrivy } from "@privy-io/react-auth";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -43,22 +41,6 @@ const liskSepolia = {
   testnet: true,
 }
 
-function AuthRedirect() {
-  const router = useRouter();
-  const { authenticated, ready, user } = usePrivy();
-
-  useEffect(() => {
-    if (!ready) return;
-
-    if (authenticated) {
-      console.log("✅ User authenticated, redirecting to dashboard...");
-      router.push("/dashboard");
-    }
-  }, [authenticated, ready, user, router]);
-
-  return null;
-}
-
 export function AppProviders({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false);
 
@@ -67,7 +49,6 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
   }, []);
 
   if (!mounted) {
-    // Return a minimal skeleton during SSR
     return (
       <div className="min-h-screen bg-background dark:bg-dark-background">
         {children}
@@ -103,9 +84,8 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
       }}
     >
       <QueryClientProvider client={queryClient}>
-        <AuthRedirect />
         {children}
       </QueryClientProvider>
     </PrivyProvider>
-  );
+  )
 }
