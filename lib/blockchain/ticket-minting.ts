@@ -1,4 +1,4 @@
-// /lib/blockchain/ticket-minting.ts - COMPLETE FIXED VERSION
+// /lib/blockchain/ticket-minting.ts - UPDATED WITH BETTER ERROR HANDLING
 import { ethers } from 'ethers'
 import { CackPassCoreABI } from '@/lib/contracts/abis/CackPassCore'
 
@@ -28,11 +28,10 @@ interface CreateEventParams {
   endTime: number
 }
 
-// FIXED: maxTickets must be number, not number | undefined
 interface AddTicketTypeParams {
   eventId: number
   category: TicketCategory
-  maxTickets: number // Changed from number | undefined
+  maxTickets: number
   ticketPrice: bigint
 }
 
@@ -41,16 +40,30 @@ let gaslessWallet: ethers.Wallet | null = null
 
 // Initialize provider and gasless wallet
 function getProvider() {
-  return new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_LISK_RPC_URL || 'https://rpc.sepolia-api.lisk.com')
+  const rpcUrl = process.env.NEXT_PUBLIC_LISK_RPC_URL || 'https://rpc.sepolia-api.lisk.com'
+  console.log('🔗 Using RPC URL:', rpcUrl)
+  return new ethers.JsonRpcProvider(rpcUrl)
 }
 
 function getGaslessWallet(): ethers.Wallet {
   if (!gaslessWallet) {
     const provider = getProvider()
-    if (!process.env.GASLESS_PRIVATE_KEY) {
-      throw new Error('GASLESS_PRIVATE_KEY environment variable is required')
+    const privateKey = process.env.GASLESS_PRIVATE_KEY
+    
+    if (!privateKey) {
+      console.error('❌ GASLESS_PRIVATE_KEY is not set in environment variables')
+      console.log('💡 Please add GASLESS_PRIVATE_KEY to your .env.local file')
+      console.log('💡 Generate one with: ethers.Wallet.createRandom().privateKey')
+      throw new Error('GASLESS_PRIVATE_KEY environment variable is required for gasless transactions')
     }
-    gaslessWallet = new ethers.Wallet(process.env.GASLESS_PRIVATE_KEY, provider)
+    
+    // Validate private key format
+    if (!privateKey.startsWith('0x')) {
+      throw new Error('GASLESS_PRIVATE_KEY must start with 0x')
+    }
+    
+    gaslessWallet = new ethers.Wallet(privateKey, provider)
+    console.log('💰 Gasless wallet address:', gaslessWallet.address)
   }
   return gaslessWallet
 }
@@ -59,27 +72,40 @@ function getGaslessWallet(): ethers.Wallet {
 function getCackPassCoreContract() {
   const contractAddress = process.env.NEXT_PUBLIC_CACKPASS_CORE_ADDRESS
   if (!contractAddress) {
+    console.error('❌ NEXT_PUBLIC_CACKPASS_CORE_ADDRESS is not set')
     throw new Error('NEXT_PUBLIC_CACKPASS_CORE_ADDRESS environment variable is required')
   }
   
+  // Validate contract address
+  if (!ethers.isAddress(contractAddress)) {
+    throw new Error('NEXT_PUBLIC_CACKPASS_CORE_ADDRESS is not a valid Ethereum address')
+  }
+  
   const wallet = getGaslessWallet()
+  console.log('📝 Creating contract instance with address:', contractAddress)
   return new ethers.Contract(contractAddress, CackPassCoreABI, wallet)
 }
 
 // Create a new event on-chain
 export async function createEventOnChain(params: CreateEventParams) {
   try {
+    console.log('🔗 Creating event on blockchain with params:', params)
+    
     const contract = getCackPassCoreContract()
     
+    console.log('⛽ Sending transaction...')
     const tx = await contract.createEvent(
       params.eventName,
       params.baseURI,
       params.startTime,
       params.endTime,
       {
-        gasLimit: 500000 // Adjust based on needs
+        gasLimit: 500000
       }
     )
+    
+    console.log('📝 Transaction sent:', tx.hash)
+    console.log('⏳ Waiting for confirmation...')
     
     const receipt = await tx.wait()
     
@@ -87,9 +113,10 @@ export async function createEventOnChain(params: CreateEventParams) {
       throw new Error('Transaction receipt not found')
     }
     
+    console.log('✅ Transaction confirmed in block:', receipt.blockNumber)
+    
     // Parse event creation from logs
     const eventCreatedLog = receipt.logs?.find((log: any) => {
-      // Convert both addresses to lowercase for comparison
       const contractAddress = contract.target.toString().toLowerCase()
       const logAddress = log.address.toLowerCase()
       
@@ -104,6 +131,7 @@ export async function createEventOnChain(params: CreateEventParams) {
       try {
         const parsedLog = contract.interface.parseLog(eventCreatedLog)
         eventId = Number(parsedLog?.args.eventId || 0)
+        console.log('🎫 Event created with ID:', eventId)
       } catch (parseError) {
         console.warn('Failed to parse event log:', parseError)
       }
@@ -116,11 +144,26 @@ export async function createEventOnChain(params: CreateEventParams) {
       eventId,
       gasPaidBy: getGaslessWallet().address
     }
-  } catch (error) {
-    console.error('Event creation error:', error)
+  } catch (error: any) {
+    console.error('❌ Event creation error:', {
+      message: error.message,
+      code: error.code,
+      reason: error.reason,
+      stack: error.stack
+    })
+    
+    // Provide more helpful error messages
+    let errorMessage = error.message
+    if (error.code === 'INSUFFICIENT_FUNDS') {
+      errorMessage = 'Gasless wallet has insufficient funds. Please send ETH to: ' + getGaslessWallet().address
+    } else if (error.code === 'CALL_EXCEPTION') {
+      errorMessage = 'Contract call failed. Check contract address and parameters.'
+    }
+    
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : 'Unknown error' 
+      error: errorMessage,
+      originalError: error.message
     }
   }
 }
@@ -128,6 +171,8 @@ export async function createEventOnChain(params: CreateEventParams) {
 // Add ticket type to existing event
 export async function addTicketType(params: AddTicketTypeParams) {
   try {
+    console.log('➕ Adding ticket type:', params)
+    
     const contract = getCackPassCoreContract()
     
     const tx = await contract.addTicketType(
@@ -140,11 +185,14 @@ export async function addTicketType(params: AddTicketTypeParams) {
       }
     )
     
+    console.log('📝 Ticket type transaction sent:', tx.hash)
     const receipt = await tx.wait()
     
     if (!receipt) {
       throw new Error('Transaction receipt not found')
     }
+    
+    console.log('✅ Ticket type added successfully')
     
     return {
       success: true,
@@ -152,7 +200,7 @@ export async function addTicketType(params: AddTicketTypeParams) {
       receipt,
       gasPaidBy: getGaslessWallet().address
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('Add ticket type error:', error)
     return { 
       success: false, 
@@ -164,6 +212,8 @@ export async function addTicketType(params: AddTicketTypeParams) {
 // Mint ticket with approval (gasless)
 export async function mintTicketWithApproval(params: MintTicketParams) {
   try {
+    console.log('🎫 Minting ticket with approval:', params)
+    
     const contract = getCackPassCoreContract()
     
     // Prepare approval struct
@@ -185,6 +235,7 @@ export async function mintTicketWithApproval(params: MintTicketParams) {
       }
     )
     
+    console.log('📝 Mint transaction sent:', tx.hash)
     const receipt = await tx.wait()
     
     if (!receipt) {
@@ -207,6 +258,7 @@ export async function mintTicketWithApproval(params: MintTicketParams) {
       try {
         const parsedLog = contract.interface.parseLog(ticketMintedLog)
         ticketId = Number(parsedLog?.args.ticketId || 0)
+        console.log('✅ Ticket minted with ID:', ticketId)
       } catch (parseError) {
         console.warn('Failed to parse ticket minted log:', parseError)
       }
@@ -219,7 +271,7 @@ export async function mintTicketWithApproval(params: MintTicketParams) {
       ticketId,
       gasPaidBy: getGaslessWallet().address
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('Ticket minting error:', error)
     return { 
       success: false, 
@@ -290,24 +342,5 @@ export function createTicketMetadata(
         value: price === '0' ? "Yes" : "No"
       }
     ]
-  }
-}
-
-// Additional helper function for better error handling
-export function parseTransactionReceipt(receipt: ethers.TransactionReceipt | null) {
-  if (!receipt) {
-    return {
-      status: 'failed',
-      blockNumber: null,
-      gasUsed: null,
-      effectiveGasPrice: null
-    }
-  }
-  
-  return {
-    status: receipt.status === 1 ? 'success' : 'failed',
-    blockNumber: receipt.blockNumber,
-    gasUsed: receipt.gasUsed?.toString(),
-    effectiveGasPrice: receipt.gasPrice?.toString()
   }
 }

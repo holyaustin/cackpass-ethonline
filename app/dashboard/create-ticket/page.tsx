@@ -1,4 +1,4 @@
-// /app/dashboard/create-ticket/page.tsx - FIXED VERSION (only the imports and handleSubmit)
+// /app/dashboard/create-ticket/page.tsx - FIXED VERSION
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
@@ -68,23 +68,6 @@ interface UploadProgress {
   metadata: number;
   blockchain: number;
   total: number;
-}
-
-interface MintParams {
-  eventId: number;
-  ticketType: number;
-  metadataURI: string;
-  recipient: string;
-  price: bigint;
-  userWalletAddress: string;
-}
-
-interface MintResult {
-  success: boolean;
-  transactionHash?: string;
-  ticketId?: number;
-  error?: string;
-  gasPaidBy?: string;
 }
 
 export default function CreateTicketPage() {
@@ -292,13 +275,31 @@ export default function CreateTicketPage() {
 
   // Mock upload function (replace with actual implementation)
   const uploadToPinata = async (file: File): Promise<{success: boolean, cid: string}> => {
-    // This is a mock implementation
-    // In production, implement actual Pinata upload
-    console.log('📤 Uploading to Pinata:', file.name)
-    await new Promise(resolve => setTimeout(resolve, 2000))
-    return {
-      success: true,
-      cid: `Qm${Math.random().toString(36).substring(2)}`
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const response = await fetch('/api/ipfs/upload', {
+        method: 'POST',
+        body: formData,
+      })
+
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Upload failed')
+      }
+
+      return {
+        success: true,
+        cid: result.cid
+      }
+    } catch (error) {
+      console.error('Pinata upload error:', error)
+      return {
+        success: false,
+        cid: ''
+      }
     }
   }
 
@@ -307,13 +308,36 @@ export default function CreateTicketPage() {
     data: any,
     fileName: string
   ): Promise<{success: boolean, cid: string}> => {
-    // This is a mock implementation
-    // In production, implement actual Pinata upload
-    console.log('📤 Uploading JSON to Pinata:', fileName)
-    await new Promise(resolve => setTimeout(resolve, 2000))
-    return {
-      success: true,
-      cid: `Qm${Math.random().toString(36).substring(2)}`
+    try {
+      // Convert data to JSON string and create a file
+      const jsonString = JSON.stringify(data)
+      const blob = new Blob([jsonString], { type: 'application/json' })
+      const file = new File([blob], `${fileName}.json`)
+
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const response = await fetch('/api/ipfs/upload', {
+        method: 'POST',
+        body: formData,
+      })
+
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'JSON upload failed')
+      }
+
+      return {
+        success: true,
+        cid: result.cid
+      }
+    } catch (error) {
+      console.error('JSON upload error:', error)
+      return {
+        success: false,
+        cid: ''
+      }
     }
   }
 
@@ -363,6 +387,10 @@ export default function CreateTicketPage() {
         throw new Error('Event description is required')
       }
       
+      if (!formData.category) {
+        throw new Error('Event category is required')
+      }
+      
       if (!formData.isFree && !formData.priceAmount) {
         throw new Error('Price is required for paid tickets')
       }
@@ -389,7 +417,7 @@ export default function CreateTicketPage() {
         toast.info('Uploading image to IPFS...')
         const uploadResult = await uploadToPinata(formData.image)
         
-        if (!uploadResult.success) {
+        if (!uploadResult.success || !uploadResult.cid) {
           throw new Error('Failed to upload image to IPFS')
         }
         
@@ -419,7 +447,7 @@ export default function CreateTicketPage() {
         `${formData.eventName.replace(/\s+/g, '-').toLowerCase()}-metadata`
       )
       
-      if (!metadataResult.success) {
+      if (!metadataResult.success || !metadataResult.cid) {
         throw new Error('Failed to upload metadata to IPFS')
       }
       
@@ -473,7 +501,7 @@ export default function CreateTicketPage() {
 
       const dbResult = await dbResponse.json()
       
-      if (!dbResponse.ok) {
+      if (!dbResponse.ok || !dbResult.success) {
         throw new Error(dbResult.error || 'Failed to save to database')
       }
 
@@ -482,68 +510,73 @@ export default function CreateTicketPage() {
       setUploadProgress(prev => ({ ...prev, total: 85 }))
 
       // Step 4: For paid events, create on blockchain (gasless)
-// Step 4: For paid events, create on blockchain (gasless)
-if (!isFreeEvent) {
-  toast.info('Creating event on blockchain (gasless)...')
-  
-  // Convert dates to timestamps
-  const startTime = Math.floor(new Date(`${formData.startDate}T${formData.startTime}`).getTime() / 1000)
-  const endTime = Math.floor(new Date(`${formData.endDate}T${formData.endTime}`).getTime() / 1000)
-  
-  // Create event on blockchain
-  const createEventResult = await createEventOnChain({
-    eventName: formData.eventName,
-    baseURI: `ipfs://${metadataCid}`,
-    startTime,
-    endTime
-  })
-  
-  if (!createEventResult.success) {
-    throw new Error(`Failed to create event on blockchain: ${createEventResult.error}`)
-  }
-  
-  eventId = createEventResult.eventId
-  transactionHash = createEventResult.transactionHash!
-  toast.success('Event created on blockchain!')
-  toast.info(`Gas paid by: ${createEventResult.gasPaidBy?.slice(0, 10)}...`)
-  setUploadProgress(prev => ({ ...prev, blockchain: 50, total: 90 }))
-  
-  // Add ticket type to the event
-  toast.info('Adding ticket type to blockchain...')
-  
-  // FIXED: Handle capacity properly with guaranteed number
-  let maxTickets: number;
-  
-  if (formData.unlimitedCapacity) {
-    maxTickets = 0; // 0 means unlimited in the contract
-  } else {
-    // Parse capacity with proper validation
-    const capacityValue = formData.capacity ? parseInt(formData.capacity) : 0;
-    
-    // Validate capacity
-    if (capacityValue <= 0) {
-      throw new Error('Capacity must be greater than 0 for limited tickets');
-    }
-    
-    maxTickets = capacityValue;
-  }
-  
-  const ticketPrice = ethers.parseEther(formData.priceAmount)
-  
-  const addTicketResult = await addTicketType({
-    eventId,
-    category: ticketCategory,
-    maxTickets: maxTickets, // This is now guaranteed to be a number
-    ticketPrice: ticketPrice
-  })
-  
-  if (!addTicketResult.success) {
-    throw new Error(`Failed to add ticket type: ${addTicketResult.error}`)
-  }
-  
-  toast.success('Ticket type added!')
-  setUploadProgress(prev => ({ ...prev, blockchain: 75, total: 95 }))
-  
+      if (!isFreeEvent) {
+        toast.info('Creating event on blockchain (gasless)...')
+        
+        // Convert dates to timestamps
+        const startTime = Math.floor(new Date(`${formData.startDate}T${formData.startTime}`).getTime() / 1000)
+        const endTime = Math.floor(new Date(`${formData.endDate}T${formData.endTime}`).getTime() / 1000)
+        
+        // Create event on blockchain
+        const createEventResult = await createEventOnChain({
+          eventName: formData.eventName,
+          baseURI: `ipfs://${metadataCid}`,
+          startTime,
+          endTime
+        })
+        
+        if (!createEventResult.success) {
+          throw new Error(`Failed to create event on blockchain: ${createEventResult.error}`)
+        }
+        
+        // FIXED: Ensure eventId is a number
+        eventId = createEventResult.eventId || 0
+        if (eventId === 0) {
+          throw new Error('Event created but eventId is 0')
+        }
+        
+        transactionHash = createEventResult.transactionHash || ''
+        toast.success('Event created on blockchain!')
+        if (createEventResult.gasPaidBy) {
+          toast.info(`Gas paid by: ${createEventResult.gasPaidBy.slice(0, 10)}...`)
+        }
+        setUploadProgress(prev => ({ ...prev, blockchain: 50, total: 90 }))
+        
+        // Add ticket type to the event
+        toast.info('Adding ticket type to blockchain...')
+        
+        // FIXED: Handle capacity properly with guaranteed number
+        let maxTickets: number;
+        
+        if (formData.unlimitedCapacity) {
+          maxTickets = 0; // 0 means unlimited in the contract
+        } else {
+          // Parse capacity with proper validation
+          const capacityValue = formData.capacity ? parseInt(formData.capacity) : 0;
+          
+          // Validate capacity
+          if (capacityValue <= 0) {
+            throw new Error('Capacity must be greater than 0 for limited tickets');
+          }
+          
+          maxTickets = capacityValue;
+        }
+        
+        const ticketPrice = ethers.parseEther(formData.priceAmount)
+        
+        const addTicketResult = await addTicketType({
+          eventId,
+          category: ticketCategory,
+          maxTickets: maxTickets, // This is now guaranteed to be a number
+          ticketPrice: ticketPrice
+        })
+        
+        if (!addTicketResult.success) {
+          throw new Error(`Failed to add ticket type: ${addTicketResult.error}`)
+        }
+        
+        toast.success('Ticket type added!')
+        setUploadProgress(prev => ({ ...prev, blockchain: 75, total: 95 }))
         
         // Step 5: Generate approval signature for gasless minting
         toast.info('Generating approval signature...')
@@ -629,7 +662,7 @@ if (!isFreeEvent) {
       
       // Redirect after 3 seconds
       setTimeout(() => {
-        router.push(`/dashboard/tickets?created=${savedEventId}`)
+        router.push(`/dashboard?created=${savedEventId}`)
       }, 3000)
 
     } catch (error) {
