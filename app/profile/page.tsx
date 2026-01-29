@@ -1,4 +1,4 @@
-// /app/profile/page.tsx - UPDATED with interests moved to left column
+// /app/profile/page.tsx - COMPLETE FIXED VERSION
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
@@ -22,6 +22,23 @@ interface ProfileData {
   username?: string
 }
 
+// Type guard for Privy wallet
+function isPrivyWallet(wallet: any): wallet is { address: string; type?: string } {
+  return wallet && typeof wallet === 'object' && 'address' in wallet && typeof wallet.address === 'string'
+}
+
+// Type guard for wallet accounts in linked accounts
+function isWalletAccount(account: any): account is { type: 'wallet' | 'smart_wallet'; address: string; chainType?: string } {
+  if (!account || typeof account !== 'object') return false
+  
+  // Check if it's a wallet type account
+  const isWalletType = account.type === 'wallet' || account.type === 'smart_wallet'
+  if (!isWalletType) return false
+  
+  // Check if it has an address property
+  return 'address' in account && typeof (account as any).address === 'string'
+}
+
 export default function ProfilePage() {
   const { user, authenticated, ready } = usePrivy()
   const router = useRouter()
@@ -43,26 +60,42 @@ export default function ProfilePage() {
   const [error, setError] = useState<string | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
 
+  // Helper function to extract wallet address from Privy user
   const getWalletAddress = () => {
     if (!user) return null
     
-    if (user.wallet?.address) {
+    console.log('🔍 Checking Privy user for wallet:', {
+      userId: user.id,
+      hasDirectWallet: !!user.wallet,
+      walletType: user.wallet?.address,
+      linkedAccountsCount: user.linkedAccounts?.length || 0,
+    })
+    
+    // Method 1: Check direct wallet object (for embedded wallets)
+    if (user.wallet && isPrivyWallet(user.wallet)) {
+      console.log('✅ Found direct wallet address:', user.wallet.address)
       return user.wallet.address
     }
     
-    if (user.linkedAccounts && Array.isArray(user.linkedAccounts)) {
-      for (const account of user.linkedAccounts) {
-        if ((account.type === 'wallet' || account.type === 'smart_wallet') && 
-            'address' in account && typeof (account as any).address === 'string') {
-          return (account as any).address
-        }
+    // Method 2: Check linked accounts for wallet types
+    const linkedAccounts = user.linkedAccounts || []
+    
+    // Look for wallet accounts in linked accounts
+    for (const account of linkedAccounts) {
+      if (isWalletAccount(account)) {
+        console.log('✅ Found wallet in linked accounts:', account.address)
+        return account.address
       }
     }
     
+    // Method 3: Try to find any address in the user object
+    // This is a fallback for edge cases
     if (userData?.walletAddress) {
+      console.log('✅ Using wallet address from userData:', userData.walletAddress)
       return userData.walletAddress
     }
     
+    console.log('❌ No wallet found in user object')
     return null
   }
 
@@ -81,10 +114,12 @@ export default function ProfilePage() {
       
       const walletAddress = getWalletAddress()
       if (!walletAddress) {
-        throw new Error('No wallet address found.')
+        throw new Error('No wallet address found. Please ensure you have a connected wallet.')
       }
       
-      const response = await fetch(`/api/auth/user?walletAddress=${walletAddress}`)
+      console.log('📡 Fetching profile data for wallet:', walletAddress)
+      
+      const response = await fetch(`/api/user/profile?walletAddress=${walletAddress}`)
       
       if (!response.ok) {
         const errorData = await response.json()
@@ -97,25 +132,20 @@ export default function ProfilePage() {
         throw new Error(data.error || 'Failed to fetch profile')
       }
       
+      console.log('✅ Profile data fetched:', data)
+      
       setUserData(data.user)
       
-      const existingFirstName = data.user.firstName || ''
-      const existingLastName = data.user.lastName || ''
-      
-      let existingProfileData: any = {}
-      if (data.detailedProfile) {
-        existingProfileData = data.detailedProfile
-      }
-      
+      // Merge data from user and detailedProfile
       const profile = {
-        firstName: existingProfileData.firstName || existingFirstName || '',
-        lastName: existingProfileData.lastName || existingLastName || '',
-        bio: existingProfileData.bio || '',
-        location: existingProfileData.location || '',
-        dateOfBirth: existingProfileData.dateOfBirth ? 
-          new Date(existingProfileData.dateOfBirth).toISOString().split('T')[0] : '',
-        interests: existingProfileData.interests || [],
-        profilePicture: existingProfileData.profilePicture || '',
+        firstName: data.user.firstName || '',
+        lastName: data.user.lastName || '',
+        bio: data.detailedProfile?.bio || '',
+        location: data.detailedProfile?.location || '',
+        dateOfBirth: data.detailedProfile?.dateOfBirth ? 
+          new Date(data.detailedProfile.dateOfBirth).toISOString().split('T')[0] : '',
+        interests: data.detailedProfile?.interests || [],
+        profilePicture: data.detailedProfile?.profilePicture || '',
         username: data.user.username || ''
       }
       
@@ -148,6 +178,7 @@ export default function ProfilePage() {
         interests: [...prev.interests, tempInterest.trim()]
       }))
       setTempInterest('')
+      toast.success(`Added interest: ${tempInterest.trim()}`)
     }
   }
 
@@ -156,6 +187,7 @@ export default function ProfilePage() {
       ...prev,
       interests: prev.interests.filter(i => i !== interest)
     }))
+    toast.info(`Removed interest: ${interest}`)
   }
 
   const toggleOrganizerStatus = async () => {
@@ -171,18 +203,24 @@ export default function ProfilePage() {
         throw new Error('No wallet address found')
       }
       
+      // Prepare organizer update data
+      const organizerData = {
+        isOrganizer: true,
+        country: userData?.country || profileData.location || '',
+        phoneNumber: userData?.phoneNumber || '',
+        email: userData?.email || '',
+        firstName: profileData.firstName || userData?.firstName || '',
+        lastName: profileData.lastName || userData?.lastName || '',
+      }
+      
+      console.log('🔄 Updating organizer status:', organizerData)
+      
       const response = await fetch(`/api/auth/user?walletAddress=${walletAddress}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          ...profileData,
-          isOrganizer: true,
-          email: userData?.email || '',
-          country: userData?.country || '',
-          phoneNumber: userData?.phoneNumber || '',
-        }),
+        body: JSON.stringify(organizerData),
       })
 
       const data = await response.json()
@@ -257,6 +295,7 @@ export default function ProfilePage() {
     toast.info('Profile picture removed')
   }
 
+  // FIXED: Profile submission without auth token
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
@@ -264,7 +303,7 @@ export default function ProfilePage() {
     try {
       const walletAddress = getWalletAddress()
       if (!walletAddress) {
-        throw new Error('No wallet address found')
+        throw new Error('No wallet address found. Please ensure you have a connected wallet.')
       }
       
       const submissionData = {
@@ -275,14 +314,16 @@ export default function ProfilePage() {
         dateOfBirth: profileData.dateOfBirth,
         interests: profileData.interests,
         profilePicture: profileData.profilePicture,
-        email: userData?.email || '',
         country: userData?.country || '',
         phoneNumber: userData?.phoneNumber || '',
         isOrganizer: userData?.isOrganizer || false,
         username: profileData.username || userData?.username || ''
       }
       
-      const response = await fetch(`/api/auth/user?walletAddress=${walletAddress}`, {
+      console.log('📤 Submitting profile data:', submissionData)
+      
+      // Use the profile API endpoint with wallet address
+      const response = await fetch(`/api/user/profile?walletAddress=${walletAddress}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -293,18 +334,22 @@ export default function ProfilePage() {
       const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to save profile')
+        throw new Error(data.error || data.message || 'Failed to save profile')
       }
 
       if (!data.success) {
         throw new Error(data.message || 'Failed to save profile')
       }
 
+      console.log('✅ Profile saved successfully:', data)
       toast.success('Profile updated successfully!')
       
+      // Update local state with returned data
       setUserData(data.user)
       
+      // Show success and redirect after delay
       setTimeout(() => {
+        toast.info('Redirecting to dashboard...')
         router.push('/dashboard')
       }, 1500)
       
@@ -403,7 +448,7 @@ export default function ProfilePage() {
         <form onSubmit={handleSubmit} className="space-y-8">
           {/* Two Column Layout */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* LEFT COLUMN - Profile, Personal Info, and Interests */}
+            {/* LEFT COLUMN - Profile, Personal Info (now top), and Interests (now bottom) */}
             <div className="space-y-8">
               {/* Profile Picture Section */}
               <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm">
@@ -488,68 +533,7 @@ export default function ProfilePage() {
                 </div>
               </div>
 
-              {/* Interests - MOVED TO LEFT COLUMN */}
-              <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm">
-                <h2 className="text-lg font-bold mb-6 text-gray-900 dark:text-white flex items-center gap-2">
-                  <Heart className="h-5 w-5 text-primary" />
-                  Interests
-                </h2>
-                <p className="text-gray-600 dark:text-gray-400 text-sm mb-5">
-                  Add your interests to get personalized event recommendations
-                </p>
-                
-                <div className="flex gap-2 mb-5">
-                  <input
-                    type="text"
-                    value={tempInterest}
-                    onChange={(e) => setTempInterest(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddInterest())}
-                    className="flex-1 px-4 py-3.5 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-200 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
-                    placeholder="E.g., Music, Sports, Technology, Art..."
-                    maxLength={30}
-                    disabled={isSaving}
-                  />
-                  <button
-                    type="button"
-                    onClick={handleAddInterest}
-                    disabled={!tempInterest.trim() || isSaving}
-                    className="px-5 py-3.5 bg-primary text-white rounded-xl hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
-                  >
-                    Add
-                  </button>
-                </div>
-
-                {/* Selected Interests */}
-                <div className="flex flex-wrap gap-2 min-h-[48px]">
-                  {profileData.interests.map((interest) => (
-                    <div
-                      key={interest}
-                      className="flex items-center gap-2 bg-primary/10 text-primary px-4 py-2.5 rounded-full group"
-                    >
-                      <Heart className="h-3.5 w-3.5" />
-                      <span className="text-sm font-medium">{interest}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveInterest(interest)}
-                        className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center hover:bg-primary/30 transition-colors ml-1"
-                        aria-label={`Remove ${interest}`}
-                        disabled={isSaving}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
-                  {profileData.interests.length === 0 && (
-                    <div className="text-center w-full py-4">
-                      <p className="text-gray-500 text-sm italic">
-                        No interests added yet. Add some to discover relevant events!
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Personal Information */}
+              {/* Personal Information - NOW ABOVE INTERESTS */}
               <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm">
                 <h2 className="text-lg font-bold mb-6 text-gray-900 dark:text-white">
                   Personal Information
@@ -665,6 +649,67 @@ export default function ProfilePage() {
                       </div>
                     </div>
                   </div>
+                </div>
+              </div>
+
+              {/* Interests - NOW BELOW PERSONAL INFORMATION */}
+              <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm">
+                <h2 className="text-lg font-bold mb-6 text-gray-900 dark:text-white flex items-center gap-2">
+                  <Heart className="h-5 w-5 text-primary" />
+                  Interests
+                </h2>
+                <p className="text-gray-600 dark:text-gray-400 text-sm mb-5">
+                  Add your interests to get personalized event recommendations
+                </p>
+                
+                <div className="flex gap-2 mb-5">
+                  <input
+                    type="text"
+                    value={tempInterest}
+                    onChange={(e) => setTempInterest(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddInterest())}
+                    className="flex-1 px-4 py-3.5 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-200 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+                    placeholder="E.g., Music, Sports, Technology, Art..."
+                    maxLength={30}
+                    disabled={isSaving}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddInterest}
+                    disabled={!tempInterest.trim() || isSaving}
+                    className="px-5 py-3.5 bg-primary text-white rounded-xl hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+                  >
+                    Add
+                  </button>
+                </div>
+
+                {/* Selected Interests */}
+                <div className="flex flex-wrap gap-2 min-h-[48px]">
+                  {profileData.interests.map((interest) => (
+                    <div
+                      key={interest}
+                      className="flex items-center gap-2 bg-primary/10 text-primary px-4 py-2.5 rounded-full group"
+                    >
+                      <Heart className="h-3.5 w-3.5" />
+                      <span className="text-sm font-medium">{interest}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveInterest(interest)}
+                        className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center hover:bg-primary/30 transition-colors ml-1"
+                        aria-label={`Remove ${interest}`}
+                        disabled={isSaving}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                  {profileData.interests.length === 0 && (
+                    <div className="text-center w-full py-4">
+                      <p className="text-gray-500 text-sm italic">
+                        No interests added yet. Add some to discover relevant events!
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

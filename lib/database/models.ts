@@ -31,7 +31,8 @@ const UserSchema = new mongoose.Schema({
 // Update UserProfile schema to be optional
 const UserProfileSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  fullName: { type: String, default: '' },
+  firstName: { type: String },
+  lastName: { type: String },
   bio: { type: String, default: '' },
   location: { type: String, default: '' },
   dateOfBirth: { type: Date, default: null },

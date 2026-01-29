@@ -1,4 +1,4 @@
-// app/api/events/create/route.ts - SIMPLIFIED VERSION
+// app/api/events/create/route.ts - 
 import { NextRequest, NextResponse } from 'next/server'
 import { connectDB } from '@/lib/database/connection'
 import { Event, TicketType, User } from '@/lib/database/models'
@@ -187,6 +187,70 @@ export async function POST(request: NextRequest) {
       { 
         success: false, 
         error: 'Failed to create event',
+        details: error.message
+      },
+      { status: 500 }
+    )
+  }
+
+
+}
+
+// PUT endpoint - Update event with blockchain info
+export async function PUT(request: NextRequest) {
+  try {
+    await connectDB()
+    
+    const body = await request.json()
+    const { eventId, onChainId, transactionHash, ticketId, isOnChain } = body
+    
+    if (!eventId) {
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'eventId is required' 
+        },
+        { status: 400 }
+      )
+    }
+    
+    const event = await Event.findById(eventId)
+    if (!event) {
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Event not found' 
+        },
+        { status: 404 }
+      )
+    }
+    
+    // Update blockchain fields
+    if (onChainId !== undefined) event.onChainId = onChainId
+    if (transactionHash !== undefined) event.transactionHash = transactionHash
+    if (ticketId !== undefined) event.ticketId = ticketId
+    if (isOnChain !== undefined) event.isOnChain = isOnChain
+    
+    event.updatedAt = new Date()
+    await event.save()
+    
+    return NextResponse.json({
+      success: true,
+      message: 'Event updated successfully',
+      event: {
+        id: event._id,
+        onChainId: event.onChainId,
+        transactionHash: event.transactionHash,
+        isOnChain: event.isOnChain
+      }
+    })
+    
+  } catch (error: any) {
+    console.error('Event update error:', error)
+    return NextResponse.json(
+      { 
+        success: false, 
+        error: 'Failed to update event',
         details: error.message
       },
       { status: 500 }
