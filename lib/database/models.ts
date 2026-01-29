@@ -7,7 +7,11 @@ const UserSchema = new mongoose.Schema({
   // Embedded wallet address (provided by Privy)
   walletAddress: { type: String, default: null },
   // User info from Privy
-  loginMethod: { type: String, required: true },
+  loginMethod: { 
+    type: String, 
+    enum: ['email', 'google', 'twitter'], 
+    required: true 
+  },
   email: { type: String },
   firstName: { type: String },
   lastName: { type: String },

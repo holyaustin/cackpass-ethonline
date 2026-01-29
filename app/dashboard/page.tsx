@@ -1,4 +1,4 @@
-// app/dashboard/page.tsx
+// app/dashboard/page.tsx - Updated wallet address display
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -6,15 +6,36 @@ import { usePrivy } from '@privy-io/react-auth'
 import { 
   Ticket, Wallet, Plus, History, Send, Settings, 
   Calendar, Users, QrCode, ChevronRight, Sparkles,
-  LogIn, User, CreditCard, Globe
-} from 'lucide-react'
+  LogIn, User, CreditCard, Globe, Copy
+} from 'lucide-react' // Added Copy icon
 import Link from 'next/link'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
+import { toast } from 'sonner'
 
 interface DashboardStats {
   balance: string
   ticketCount: number
   upcomingEvents: number
+}
+
+// Helper function to extract wallet address from Privy user
+function getWalletAddressFromUser(user: any): string | null {
+  if (!user) return null
+  
+  // Check direct wallet object (for embedded wallets)
+  if (user.wallet?.address && typeof user.wallet.address === 'string') {
+    return user.wallet.address
+  }
+  
+  // Check linked accounts
+  const linkedAccounts = user.linkedAccounts || []
+  
+  // Look for embedded wallet in linked accounts
+  const embeddedWallet = linkedAccounts.find(
+    (acc: any) => acc.type === 'wallet' && acc.walletClientType === 'privy'
+  )
+  
+  return embeddedWallet?.address || null
 }
 
 export default function DashboardPage() {
@@ -25,12 +46,16 @@ export default function DashboardPage() {
     upcomingEvents: 0,
   })
   const [isLoading, setIsLoading] = useState(true)
+  const [walletAddress, setWalletAddress] = useState<string | null>(null)
 
   useEffect(() => {
-    if (authenticated && ready) {
+    if (authenticated && ready && user) {
       fetchDashboardData()
+      // Extract wallet address from user
+      const address = getWalletAddressFromUser(user)
+      setWalletAddress(address)
     }
-  }, [authenticated, ready])
+  }, [authenticated, ready, user])
 
   const fetchDashboardData = async () => {
     setIsLoading(true)
@@ -46,6 +71,13 @@ export default function DashboardPage() {
       console.error('Failed to fetch dashboard data:', error)
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const copyWalletAddress = () => {
+    if (walletAddress) {
+      navigator.clipboard.writeText(walletAddress)
+      toast.success('Wallet address copied to clipboard!')
     }
   }
 
@@ -165,8 +197,22 @@ export default function DashboardPage() {
               <p className="text-sm opacity-90">Total Balance</p>
               <p className="text-3xl font-bold mt-1">${stats.balance}</p>
             </div>
-            <div className="p-3 bg-white/20 rounded-2xl backdrop-blur-sm">
+            <div className="flex items-center gap-3 p-3 bg-white/20 rounded-2xl backdrop-blur-sm">
               <Wallet className="h-6 w-6" />
+              {walletAddress && (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-mono max-w-[120px] truncate">
+                    {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
+                  </span>
+                  <button 
+                    onClick={copyWalletAddress}
+                    className="p-1 hover:bg-white/20 rounded-md transition-colors"
+                    title="Copy wallet address"
+                  >
+                    <Copy className="h-3 w-3" />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
           <div className="flex gap-3">

@@ -220,7 +220,7 @@ useEffect(() => {
                 <button
                   onClick={handleLogout}
                   disabled={isLoggingOut}
-                  className="px-4 py-2 border border-gray-200 dark:border-gray-300 text-gray-700 dark:text-gray-300 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-50 flex items-center gap-2"
+                  className="px-4 py-2 border border-gray-200 dark:border-gray-900 text-gray-700 dark:text-gray-900 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-200 transition-colors disabled:opacity-50 flex items-center gap-2"
                 >
                   {isLoggingOut ? (
                     <>
@@ -292,7 +292,7 @@ useEffect(() => {
                   <button
                     onClick={handleLogout}
                     disabled={isLoggingOut}
-                    className="px-4 py-3 mt-4 border border-gray-200 dark:border-gray-300 text-gray-700 dark:text-gray-300 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-left flex items-center gap-2"
+                    className="px-4 py-3 mt-4 border border-gray-900 dark:border-gray-900 text-gray-900 dark:text-gray-900 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-200 transition-colors text-left flex items-center gap-2"
                   >
                     {isLoggingOut ? (
                       <>

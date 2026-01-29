@@ -1,4 +1,4 @@
-// app/api/auth/user/route.ts - WALLET-FIRST APPROACH
+// app/api/auth/user/route.ts - SIMPLE LOGIN METHOD FIX (TypeScript fixed)
 import { NextRequest, NextResponse } from 'next/server'
 import { connectDB } from '@/lib/database/connection'
 import { User } from '@/lib/database/models'
@@ -9,11 +9,72 @@ const privy = new PrivyClient(
   process.env.PRIVY_APP_SECRET!
 )
 
-// Helper function to get user from Privy by wallet address
-async function getPrivyUserByWalletAddress(walletAddress: string): Promise<any> {
-  // Note: Privy API doesn't directly support getting user by wallet address
-  // We'll need to handle this differently
-  return null;
+// SIMPLE Helper function to detect login method from Privy user
+function detectLoginMethod(privyUser: any): 'email' | 'google' | 'twitter' {
+  // Check root properties (most reliable)
+  if (privyUser.google?.email) {
+    console.log('✅ Login method detected: google')
+    return 'google'
+  }
+  
+  if (privyUser.twitter?.username) {
+    console.log('✅ Login method detected: twitter')
+    return 'twitter'
+  }
+  
+  if (privyUser.email?.address) {
+    console.log('✅ Login method detected: email')
+    return 'email'
+  }
+  
+  // Fallback to email as default
+  console.log('⚠️ No login method found, defaulting to email')
+  return 'email'
+}
+
+// SIMPLE Helper function to extract basic user info - FIXED TYPE
+function getBasicUserInfo(privyUser: any, loginMethod: string): {
+  email: string
+  firstName: string
+  lastName: string
+  username: string
+} {
+  let email = ''
+  let firstName = ''
+  let lastName = ''
+  let username = 'user'
+  
+  switch (loginMethod) {
+    case 'google':
+      email = privyUser.google?.email || ''
+      const googleName = privyUser.google?.name || ''
+      if (googleName) {
+        const nameParts = googleName.split(' ')
+        firstName = nameParts[0] || ''
+        lastName = nameParts.slice(1).join(' ') || ''
+      }
+      username = email.split('@')[0] || 'user'
+      break
+      
+    case 'twitter':
+      const twitterUsername = privyUser.twitter?.username || ''
+      firstName = twitterUsername
+      username = `@${twitterUsername}`
+      break
+      
+    case 'email':
+      email = privyUser.email?.address || ''
+      username = email.split('@')[0] || 'user'
+      firstName = username
+      break
+  }
+  
+  return {
+    email: email,
+    firstName: firstName,
+    lastName: lastName,
+    username
+  }
 }
 
 // Helper function to create or update user from wallet
@@ -58,22 +119,42 @@ async function findOrCreateUserByWallet(walletAddress: string, token?: string) {
   // If still no user, create new one
   if (!user) {
     let privyId = `wallet-${walletAddress}`
+    let loginMethod: 'email' | 'google' | 'twitter' = 'email'
+    let userInfo = {
+      email: '',
+      firstName: '',
+      lastName: '',
+      username: `user_${walletAddress.slice(2, 8)}`
+    }
     
-    // Try to get privyId from token if available
+    // Try to get privyId and user data from token if available
     if (token) {
       try {
         const verifiedClaims = await privy.verifyAuthToken(token)
         privyId = verifiedClaims.userId
+        
+        // Get user data from Privy
+        const privyUser = await privy.getUser(verifiedClaims.userId)
+        
+        // Detect login method
+        loginMethod = detectLoginMethod(privyUser)
+        
+        // Get basic user info
+        userInfo = getBasicUserInfo(privyUser, loginMethod)
+        
       } catch (error) {
-        console.log('Using wallet-based privyId')
+        console.log('Using wallet-based privyId and default info')
       }
     }
     
     user = new User({
       privyId: privyId,
       walletAddress: walletAddress,
-      loginMethod: 'wallet',
-      username: `user_${walletAddress.slice(2, 8)}`,
+      loginMethod: loginMethod, // Use detected login method
+      email: userInfo.email,
+      firstName: userInfo.firstName,
+      lastName: userInfo.lastName,
+      username: userInfo.username,
       isOrganizer: false,
       country: '',
       phoneNumber: '',
@@ -84,19 +165,18 @@ async function findOrCreateUserByWallet(walletAddress: string, token?: string) {
     })
     
     await user.save()
-    console.log('New user created with wallet:', walletAddress)
+    console.log('New user created with login method:', loginMethod)
   }
   
   return user
 }
 
 // GET endpoint - Get user by wallet address (primary) or token
-// app/api/auth/user/route.ts - GET endpoint (Corrected Section)
 export async function GET(request: NextRequest) {
   try {
-    const searchParams = request.nextUrl.searchParams;
-    const walletAddress = searchParams.get('walletAddress');
-    const authHeader = request.headers.get('authorization');
+    const searchParams = request.nextUrl.searchParams
+    const walletAddress = searchParams.get('walletAddress')
+    const authHeader = request.headers.get('authorization')
 
     if (!walletAddress && !authHeader) {
       return NextResponse.json(
@@ -105,34 +185,34 @@ export async function GET(request: NextRequest) {
           error: 'Provide walletAddress query param or authorization header',
         },
         { status: 400 }
-      );
+      )
     }
 
-    let token: string | undefined;
+    let token: string | undefined
     if (authHeader && authHeader.startsWith('Bearer ')) {
-      token = authHeader.split(' ')[1];
+      token = authHeader.split(' ')[1]
     }
 
     // If no wallet address in query but we have token, try to get wallet from Privy
-    let finalWalletAddress = walletAddress;
+    let finalWalletAddress = walletAddress
     if (!finalWalletAddress && token) {
       try {
-        const verifiedClaims = await privy.verifyAuthToken(token);
-        const privyUser = await privy.getUser(verifiedClaims.userId);
+        const verifiedClaims = await privy.verifyAuthToken(token)
+        const privyUser = await privy.getUser(verifiedClaims.userId)
 
-        // CORRECTION: Find a linked wallet account from the user's linkedAccounts
+        // Find a linked wallet account from the user's linkedAccounts
         const linkedWallet = privyUser.linkedAccounts?.find(
           (account: any) => account.type === 'wallet' || account.type === 'smart_wallet'
-        );
+        )
 
         // Safely extract the address from the found wallet object
         if (linkedWallet && 'address' in linkedWallet) {
-          finalWalletAddress = linkedWallet.address as string;
+          finalWalletAddress = linkedWallet.address as string
         } else {
-          console.log('No linked wallet found for user:', verifiedClaims.userId);
+          console.log('No linked wallet found for user:', verifiedClaims.userId)
         }
       } catch (error) {
-        console.log('Cannot get wallet from token:', error);
+        console.log('Cannot get wallet from token:', error)
       }
     }
 
@@ -143,12 +223,11 @@ export async function GET(request: NextRequest) {
           error: 'Could not determine wallet address',
         },
         { status: 400 }
-      );
+      )
     }
 
-    // ... [Rest of your function: findOrCreateUserByWallet, returning response, etc.]
-    const user = await findOrCreateUserByWallet(finalWalletAddress, token);
-    const needsProfileCompletion = !user.isProfileComplete;
+    const user = await findOrCreateUserByWallet(finalWalletAddress, token)
+    const needsProfileCompletion = !user.isProfileComplete
 
     return NextResponse.json({
       success: true,
@@ -173,21 +252,22 @@ export async function GET(request: NextRequest) {
       isNewUser:
         !user.isProfileComplete &&
         user.createdAt > new Date(Date.now() - 5 * 60 * 1000),
-    });
+    })
   } catch (error) {
-    console.error('Auth error:', error);
+    console.error('Auth error:', error)
+    
     return NextResponse.json(
-      {
+      { 
         success: false,
         error: 'Authentication failed',
-        details: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.message : 'Unknown error'
       },
       { status: 500 }
-    );
+    )
   }
 }
 
-// POST endpoint - Update profile by wallet address
+// POST endpoint - Update profile by wallet address (UNCHANGED)
 export async function POST(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
