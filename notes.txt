@@ -801,3 +801,56 @@ I want a visual effect to show that an actio is ongoing when i click on the logo
 The useLogin Hook Callback
 
 Fix the Token Issue 
+
+{/* Phone Number */}
+<div>
+  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2.5 ml-1">
+    Phone Number <span className="text-primary">*</span>
+  </label>
+  
+  <div className={`
+    group relative flex items-center w-full transition-all duration-200
+    bg-white dark:bg-gray-800/50 
+    border-2 border-gray-100 dark:border-gray-700/50
+    rounded-2xl hover:border-gray-200 dark:hover:border-gray-600
+    focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/10
+    shadow-sm focus-within:shadow-md
+  `}>
+    {/* Left-side Icon Section */}
+    <div className="flex items-center justify-center pl-4 border-r border-gray-100 dark:border-gray-700 h-10 my-auto">
+      <Phone className="text-gray-400 group-focus-within:text-primary transition-colors h-5 w-5" />
+    </div>
+
+    <PhoneInput
+      international
+      defaultCountry="NG"
+      value={formData.phoneNumber}
+      onChange={(value) => setFormData({
+        ...formData,
+        phoneNumber: value || ''
+      })}
+      // Customizing the internal structure
+      className="flex-1 flex h-14 pl-4 "
+      
+      // Standardizes the input field specifically
+      inputComponent={({ className, ...props }: any) => (
+        <input
+          {...props}
+          className="w-full h-full bg-transparent px-4 text-base font-medium outline-none text-gray-900 dark:text-gray-100 placeholder:text-gray-400"
+          placeholder="080 000 0000"
+        />
+      )}
+      
+      // Styles for the Country Selector part
+      numberInputProps={{
+        className: "bg-transparent border-none focus:ring-0" 
+      }}
+      
+      style={{
+        // Removes the default library borders so our container takes over
+        "--PhoneInputCountrySelect-marginRight": "10px",
+        "--PhoneInputCountryFlag-height": "1.2rem",
+      } as React.CSSProperties}
+    />
+  </div>
+</div>

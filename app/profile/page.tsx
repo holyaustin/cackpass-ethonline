@@ -44,33 +44,29 @@ export default function ProfilePage() {
     }
   }, [ready, authenticated, router])
 
-  const fetchProfileData = async () => {
-    try {
-      setIsLoading(true)
-      setError(null)
-      
-      // Get auth token
-      const token = await getAuthToken()
-      
-      if (!token) {
-        throw new Error('No authentication token found')
-      }
-      
-      const response = await fetch('/api/user/profile', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      })
+  // In /app/profile/page.tsx, update the fetchProfileData function:
+const fetchProfileData = async () => {
+  try {
+    setIsLoading(true)
+    setError(null)
+    
+    if (!user?.wallet?.address) {
+      throw new Error('No wallet address found')
+    }
+    
+    // Use wallet-based API
+    const response = await fetch(`/api/auth/user?walletAddress=${user.wallet.address}`)
+    
+    if (!response.ok) {
+      const errorData = await response.json()
+      throw new Error(errorData.error || 'Failed to fetch profile')
+    }
 
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to fetch profile')
-      }
-
-      const data = await response.json()
-      
-      // Set user data
-      setUserData(data.user)
+    const data = await response.json()
+    
+    // Set user data
+    setUserData(data.user)
+    
       
       // Set profile data (if exists)
       if (data.detailedProfile) {
@@ -159,29 +155,30 @@ export default function ProfilePage() {
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  e.preventDefault()
+  
+  setIsSaving(true)
+  try {
+    if (!user?.wallet?.address) {
+      throw new Error('No wallet address found')
+    }
     
-    setIsSaving(true)
-    try {
-      const token = await getAuthToken()
-      
-      const response = await fetch('/api/user/profile', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify(profileData),
-      })
+    const response = await fetch(`/api/auth/user?walletAddress=${user.wallet.address}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(profileData),
+    })
 
-      const data = await response.json()
+    const data = await response.json()
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to save profile')
-      }
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to save profile')
+    }
 
-      toast.success('Profile updated successfully!')
-      
+    toast.success('Profile updated successfully!')
+  
       // Go back to dashboard
       setTimeout(() => {
         router.push('/dashboard')

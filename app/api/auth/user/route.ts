@@ -1,7 +1,7 @@
-// app/api/auth/user/route.ts - COMPLETE FIX
+// app/api/auth/user/route.ts - WALLET-FIRST APPROACH
 import { NextRequest, NextResponse } from 'next/server'
 import { connectDB } from '@/lib/database/connection'
-import { User, UserProfile } from '@/lib/database/models'
+import { User } from '@/lib/database/models'
 import { PrivyClient } from '@privy-io/server-auth'
 
 const privy = new PrivyClient(
@@ -9,145 +9,147 @@ const privy = new PrivyClient(
   process.env.PRIVY_APP_SECRET!
 )
 
-// Helper function to extract embedded wallet from linked accounts
-function getEmbeddedWalletAddress(privyUser: any): string | null {
-  if (!privyUser.linkedAccounts || !Array.isArray(privyUser.linkedAccounts)) {
-    return null
-  }
-
-  // Find the embedded wallet (wallet with client type 'privy')
-  const embeddedWallet = privyUser.linkedAccounts.find(
-    (account: any) => 
-      account.type === 'wallet' && 
-      account.walletClientType === 'privy'
-  )
-
-  return embeddedWallet?.address || null
+// Helper function to get user from Privy by wallet address
+async function getPrivyUserByWalletAddress(walletAddress: string): Promise<any> {
+  // Note: Privy API doesn't directly support getting user by wallet address
+  // We'll need to handle this differently
+  return null;
 }
 
-// Helper function to get user details from Privy
-function getUserDetailsFromPrivy(privyUser: any) {
-  let loginMethod = 'email'
-  let firstName = ''
-  let lastName = ''
-  let email = ''
-  let username = ''
-
-  // Determine login method and extract user info
-  if (privyUser.google?.email) {
-    loginMethod = 'google'
-    email = privyUser.google.email || ''
-    
-    // Parse name from Google
-    const names = privyUser.google.name?.split(' ') || []
-    firstName = names[0] || ''
-    lastName = names.slice(1).join(' ') || ''
-    username = firstName || email.split('@')[0] || ''
-  } 
-  else if (privyUser.twitter?.username) {
-    loginMethod = 'twitter'
-    firstName = privyUser.twitter.username || ''
-    username = `@${firstName}`
-  }
-  else if (privyUser.email?.address) {
-    loginMethod = 'email'
-    email = privyUser.email.address || ''
-    firstName = email.split('@')[0] || ''
-    username = firstName
-  }
-
-  return { loginMethod, firstName, lastName, email, username }
-}
-
-export async function GET(request: NextRequest) {
-  try {
-    // Get auth token from header
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Missing or invalid authorization header' 
-      }, { status: 401 })
-    }
-
-    const authToken = authHeader.split(' ')[1]
-    
-    // Verify token with Privy
-    let verifiedClaims
+// Helper function to create or update user from wallet
+async function findOrCreateUserByWallet(walletAddress: string, token?: string) {
+  await connectDB()
+  
+  // First, try to find user by wallet address
+  let user = await User.findOne({ walletAddress })
+  
+  // If user found, update token if provided
+  if (user && token) {
+    // If we have a token, we can verify and get privyId
     try {
-      verifiedClaims = await privy.verifyAuthToken(authToken)
+      const verifiedClaims = await privy.verifyAuthToken(token)
+      if (verifiedClaims.userId && user.privyId !== verifiedClaims.userId) {
+        user.privyId = verifiedClaims.userId
+        user.updatedAt = new Date()
+        await user.save()
+      }
     } catch (error) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Invalid authentication token' 
-      }, { status: 401 })
+      console.log('Token verification failed, but user found by wallet')
     }
+  }
+  
+  // If user not found but we have token, try to find by token
+  if (!user && token) {
+    try {
+      const verifiedClaims = await privy.verifyAuthToken(token)
+      user = await User.findOne({ privyId: verifiedClaims.userId })
+      
+      // If found by privyId, update wallet address
+      if (user && !user.walletAddress) {
+        user.walletAddress = walletAddress
+        user.updatedAt = new Date()
+        await user.save()
+      }
+    } catch (error) {
+      console.log('Cannot verify token or find user by privyId')
+    }
+  }
+  
+  // If still no user, create new one
+  if (!user) {
+    let privyId = `wallet-${walletAddress}`
     
-    // Connect to database
-    await connectDB()
-    
-    // Find or create user
-    let user = await User.findOne({ privyId: verifiedClaims.userId })
-    
-    if (!user) {
-      // Get user details from Privy
-      const privyUser = await privy.getUser(verifiedClaims.userId)
-      
-      // Extract user details
-      const { loginMethod, firstName, lastName, email, username } = getUserDetailsFromPrivy(privyUser)
-      
-      // Get embedded wallet address
-      const embeddedWalletAddress = getEmbeddedWalletAddress(privyUser)
-      
-      // Create new user with minimal required fields
-      user = new User({
-        privyId: verifiedClaims.userId,
-        walletAddress: embeddedWalletAddress, // Store the embedded wallet address
-        loginMethod: loginMethod,
-        email: email,
-        firstName: firstName,
-        lastName: lastName,
-        username: username,
-        isOrganizer: false, // Default false, user will set this
-        country: '',
-        phoneNumber: '',
-        isProfileComplete: false, // Will be true after they set organizer, country, phone
-        admin: false,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      })
-      
-      await user.save()
-      
-      // Log the wallet address for debugging
-      console.log('New user created with embedded wallet:', {
-        userId: verifiedClaims.userId,
-        walletAddress: embeddedWalletAddress,
-        hasLinkedAccounts: !!privyUser.linkedAccounts,
-        linkedAccountsCount: privyUser.linkedAccounts?.length || 0
-      })
-    } else {
-      // For existing user, check if we need to update wallet address
-      if (!user.walletAddress) {
-        const privyUser = await privy.getUser(verifiedClaims.userId)
-        const embeddedWalletAddress = getEmbeddedWalletAddress(privyUser)
-        
-        if (embeddedWalletAddress) {
-          user.walletAddress = embeddedWalletAddress
-          user.updatedAt = new Date()
-          await user.save()
-          
-          console.log('Updated existing user with embedded wallet:', {
-            userId: verifiedClaims.userId,
-            walletAddress: embeddedWalletAddress
-          })
-        }
+    // Try to get privyId from token if available
+    if (token) {
+      try {
+        const verifiedClaims = await privy.verifyAuthToken(token)
+        privyId = verifiedClaims.userId
+      } catch (error) {
+        console.log('Using wallet-based privyId')
       }
     }
     
-    // Check if profile needs completion (just organizer, country, phone)
-    const needsProfileCompletion = !user.isProfileComplete
+    user = new User({
+      privyId: privyId,
+      walletAddress: walletAddress,
+      loginMethod: 'wallet',
+      username: `user_${walletAddress.slice(2, 8)}`,
+      isOrganizer: false,
+      country: '',
+      phoneNumber: '',
+      isProfileComplete: false,
+      admin: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })
     
+    await user.save()
+    console.log('New user created with wallet:', walletAddress)
+  }
+  
+  return user
+}
+
+// GET endpoint - Get user by wallet address (primary) or token
+// app/api/auth/user/route.ts - GET endpoint (Corrected Section)
+export async function GET(request: NextRequest) {
+  try {
+    const searchParams = request.nextUrl.searchParams;
+    const walletAddress = searchParams.get('walletAddress');
+    const authHeader = request.headers.get('authorization');
+
+    if (!walletAddress && !authHeader) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Provide walletAddress query param or authorization header',
+        },
+        { status: 400 }
+      );
+    }
+
+    let token: string | undefined;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.split(' ')[1];
+    }
+
+    // If no wallet address in query but we have token, try to get wallet from Privy
+    let finalWalletAddress = walletAddress;
+    if (!finalWalletAddress && token) {
+      try {
+        const verifiedClaims = await privy.verifyAuthToken(token);
+        const privyUser = await privy.getUser(verifiedClaims.userId);
+
+        // CORRECTION: Find a linked wallet account from the user's linkedAccounts
+        const linkedWallet = privyUser.linkedAccounts?.find(
+          (account: any) => account.type === 'wallet' || account.type === 'smart_wallet'
+        );
+
+        // Safely extract the address from the found wallet object
+        if (linkedWallet && 'address' in linkedWallet) {
+          finalWalletAddress = linkedWallet.address as string;
+        } else {
+          console.log('No linked wallet found for user:', verifiedClaims.userId);
+        }
+      } catch (error) {
+        console.log('Cannot get wallet from token:', error);
+      }
+    }
+
+    if (!finalWalletAddress) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Could not determine wallet address',
+        },
+        { status: 400 }
+      );
+    }
+
+    // ... [Rest of your function: findOrCreateUserByWallet, returning response, etc.]
+    const user = await findOrCreateUserByWallet(finalWalletAddress, token);
+    const needsProfileCompletion = !user.isProfileComplete;
+
     return NextResponse.json({
       success: true,
       user: {
@@ -164,45 +166,44 @@ export async function GET(request: NextRequest) {
         phoneNumber: user.phoneNumber,
         isProfileComplete: user.isProfileComplete,
         admin: user.admin,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
       },
       needsProfileCompletion,
-      message: needsProfileCompletion 
-        ? 'Please complete your basic profile information' 
-        : 'User authenticated successfully',
-    })
-    
+      isNewUser:
+        !user.isProfileComplete &&
+        user.createdAt > new Date(Date.now() - 5 * 60 * 1000),
+    });
   } catch (error) {
-    console.error('Auth error:', error)
-    
+    console.error('Auth error:', error);
     return NextResponse.json(
-      { 
+      {
         success: false,
         error: 'Authentication failed',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: error instanceof Error ? error.message : 'Unknown error',
       },
       { status: 500 }
-    )
+    );
   }
 }
 
-// POST endpoint to update user profile
+// POST endpoint - Update profile by wallet address
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    const searchParams = request.nextUrl.searchParams
+    const walletAddress = searchParams.get('walletAddress')
+    
+    if (!walletAddress) {
       return NextResponse.json({ 
         success: false, 
-        error: 'Unauthorized' 
-      }, { status: 401 })
+        error: 'walletAddress query param is required' 
+      }, { status: 400 })
     }
-
-    const authToken = authHeader.split(' ')[1]
-    const verifiedClaims = await privy.verifyAuthToken(authToken)
     
     await connectDB()
     
-    // Find user
-    const user = await User.findOne({ privyId: verifiedClaims.userId })
+    // Find user by wallet address
+    const user = await User.findOne({ walletAddress })
     if (!user) {
       return NextResponse.json({ 
         success: false, 
@@ -212,9 +213,9 @@ export async function POST(request: NextRequest) {
     
     // Parse request body
     const body = await request.json()
-    const { isOrganizer, country, phoneNumber } = body
+    const { isOrganizer, country, phoneNumber, email, firstName, lastName } = body
     
-    // Validate required fields
+    // Validate required fields for basic profile
     if (typeof isOrganizer !== 'boolean' || !country || !phoneNumber) {
       return NextResponse.json({ 
         success: false, 
@@ -222,7 +223,7 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
     
-    // Validate phone number format (basic validation)
+    // Validate phone number format
     const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/
     if (!phoneRegex.test(phoneNumber.replace(/\D/g, ''))) {
       return NextResponse.json({ 
@@ -231,11 +232,17 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
     
-    // Update user with basic profile info
+    // Update user
     user.isOrganizer = isOrganizer
     user.country = country
     user.phoneNumber = phoneNumber
-    user.isProfileComplete = true // Mark as complete after these fields
+    user.isProfileComplete = true
+    
+    // Optional fields
+    if (email) user.email = email
+    if (firstName) user.firstName = firstName
+    if (lastName) user.lastName = lastName
+    
     user.updatedAt = new Date()
     
     await user.save()
@@ -244,12 +251,16 @@ export async function POST(request: NextRequest) {
       success: true,
       user: {
         id: user._id,
+        walletAddress: user.walletAddress,
         isOrganizer: user.isOrganizer,
         country: user.country,
         phoneNumber: user.phoneNumber,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
         isProfileComplete: user.isProfileComplete,
       },
-      message: 'Basic profile completed successfully',
+      message: 'Profile updated successfully',
     })
     
   } catch (error) {
@@ -260,69 +271,6 @@ export async function POST(request: NextRequest) {
         success: false,
         error: 'Failed to update profile',
         details: error instanceof Error ? error.message : 'Unknown error'
-      },
-      { status: 500 }
-    )
-  }
-}
-
-// New endpoint to sync wallet (in case wallet is created after initial login)
-export async function PUT(request: NextRequest) {
-  try {
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Unauthorized' 
-      }, { status: 401 })
-    }
-
-    const authToken = authHeader.split(' ')[1]
-    const verifiedClaims = await privy.verifyAuthToken(authToken)
-    
-    await connectDB()
-    
-    // Find user
-    const user = await User.findOne({ privyId: verifiedClaims.userId })
-    if (!user) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'User not found' 
-      }, { status: 404 })
-    }
-    
-    // Get latest user data from Privy
-    const privyUser = await privy.getUser(verifiedClaims.userId)
-    const embeddedWalletAddress = getEmbeddedWalletAddress(privyUser)
-    
-    if (embeddedWalletAddress && embeddedWalletAddress !== user.walletAddress) {
-      user.walletAddress = embeddedWalletAddress
-      user.updatedAt = new Date()
-      await user.save()
-      
-      console.log('Wallet address updated via sync:', {
-        userId: verifiedClaims.userId,
-        oldAddress: user.walletAddress,
-        newAddress: embeddedWalletAddress
-      })
-    }
-    
-    return NextResponse.json({
-      success: true,
-      user: {
-        walletAddress: user.walletAddress,
-        hasWallet: !!user.walletAddress,
-        updated: !!embeddedWalletAddress && embeddedWalletAddress !== user.walletAddress
-      }
-    })
-    
-  } catch (error) {
-    console.error('Wallet sync error:', error)
-    
-    return NextResponse.json(
-      { 
-        success: false,
-        error: 'Failed to sync wallet'
       },
       { status: 500 }
     )

@@ -132,7 +132,7 @@ export function AuthChecker() {
           isOpen={showProfileModal}
           onClose={() => setShowProfileModal(false)}
           onComplete={handleProfileComplete}
-          authToken={authToken}
+         // authToken={authToken}
         />
       )}
     </>

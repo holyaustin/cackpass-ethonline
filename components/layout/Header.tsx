@@ -38,102 +38,60 @@ export function Header() {
   }
 
   // Effect to handle post-login logic AFTER authentication
-  useEffect(() => {
-    const handlePostLogin = async () => {
-      // Only run if user is authenticated and ready
-      if (!ready || !authenticated || !user) return
-      
-      console.log('🔐 User authenticated, checking profile status...')
-      
-      try {
-        // Find the session token
-        const tokenKeys = [
-          'privy:auth_token',
-          'privy-token',
-          `privy-token-${user.id}`,
-          `privy:token:${user.id}`
-        ]
-        
-        let sessionToken = ''
-        for (const key of tokenKeys) {
-          const token = localStorage.getItem(key) || sessionStorage.getItem(key)
-          if (token) {
-            sessionToken = token
-            console.log(`✅ Found token with key: ${key}`)
-            break
-          }
-        }
-        
-        // If no token found, check for embedded wallet
-        if (!sessionToken) {
-          console.log('⚠️ No session token found, checking for wallet...')
-          
-          // Check if user has a wallet (embedded wallet creates one)
-          if (user.wallet?.address) {
-            console.log('✅ Found embedded wallet:', user.wallet.address)
-            // Even without session token, we can proceed
-            sessionToken = 'embedded-wallet-present'
-          }
-        }
-        
-        if (!sessionToken || sessionToken === 'embedded-wallet-present') {
-          // For new users with embedded wallets, we need to create their profile
-          console.log('👤 New user detected (no session token)')
-          
-          // Show profile modal directly for new users
-          // We'll use a special token to indicate new user
-          setAuthTokenForModal('new-user-' + Date.now())
-          
-          // Import ProfileModal dynamically to avoid dependency issues
-          import('@/components/auth/ProfileModal').then(({ ProfileModal }) => {
-            // We'll handle the modal display differently
-            toast.info('Please complete your profile to continue')
-          }).catch(() => {
-            console.log('ProfileModal not available, redirecting to profile page')
-            router.push('/profile')
-          })
-          
-          return
-        }
-        
-        // For users with session token, check their status
-        console.log('🔄 Checking user status with backend...')
-        
-        const response = await fetch('/api/auth/user', {
-          headers: {
-            'Authorization': `Bearer ${sessionToken}`,
-          },
-        })
-        
-        if (response.ok) {
-          const data = await response.json()
-          console.log('📊 User status:', data)
-          
-          if (data.needsProfileCompletion) {
-            console.log('📝 User needs profile completion')
-            setAuthTokenForModal(sessionToken)
-            // Redirect to profile page instead of using modal
-            router.push('/profile')
-          } else {
-            console.log('✅ Profile complete, redirecting to dashboard')
-            router.push('/dashboard')
-          }
-        } else {
-          console.log('⚠️ API check failed, assuming new user')
-          router.push('/profile')
-        }
-        
-      } catch (error) {
-        console.error('💥 Error in post-login flow:', error)
-        // On any error, redirect to dashboard as fallback
-        router.push('/dashboard')
-      }
-    }
+// In Header.tsx, update the post-login useEffect:
+useEffect(() => {
+  const handlePostLogin = async () => {
+    // Only run if user is authenticated and ready
+    if (!ready || !authenticated || !user) return
     
-    // Give a small delay for state to settle
-    const timer = setTimeout(handlePostLogin, 500)
-    return () => clearTimeout(timer)
-  }, [ready, authenticated, user, router])
+    console.log('🔐 User authenticated, checking wallet status...')
+    
+    try {
+      // Check if user has a wallet address (embedded wallet)
+      if (!user.wallet?.address) {
+        console.log('⚠️ User has no wallet address')
+        // Users without wallets go to dashboard (they might have signed up with email)
+        router.push('/')
+        return
+      }
+      
+      const walletAddress = user.wallet.address
+      console.log('✅ Found wallet address:', walletAddress)
+      
+      // Check user status by wallet address
+      const response = await fetch(`/api/auth/user?walletAddress=${walletAddress}`)
+      
+      if (response.ok) {
+        const data = await response.json()
+        console.log('📊 User status by wallet:', data)
+        
+        if (data.isNewUser) {
+          console.log('🆕 New user detected, redirecting to complete-profile')
+          router.push('/complete-profile')
+        } else if (data.needsProfileCompletion) {
+          console.log('📝 Existing user needs profile completion, redirecting to dashboard')
+          // Existing users can update from dashboard
+          router.push('/dashboard')
+        } else {
+          console.log('✅ User profile complete, redirecting to dashboard')
+          router.push('/dashboard')
+        }
+      } else {
+        console.log('⚠️ API check failed, redirecting to complete-profile')
+        router.push('/complete-profile')
+      }
+      
+    } catch (error) {
+      console.error('💥 Error in post-login flow:', error)
+      // On any error, redirect to complete-profile as fallback
+      router.push('/complete-profile')
+    }
+  }
+  
+  // Give a small delay for state to settle
+  const timer = setTimeout(handlePostLogin, 500)
+  return () => clearTimeout(timer)
+}, [ready, authenticated, user, router])
 
   // Handle logout
   const handleLogout = async () => {
