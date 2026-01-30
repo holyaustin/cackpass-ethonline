@@ -1,4 +1,4 @@
-// app/api/events/route.ts - FIXED VERSION
+// app/api/events/route.ts - FIXED (no params needed here, but adding proper typing)
 import { NextRequest, NextResponse } from 'next/server'
 import { connectDB } from '@/lib/database/connection'
 import { Event } from '@/lib/database/models'
