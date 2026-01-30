@@ -177,11 +177,7 @@ useEffect(() => {
             <Link href="/dashboard" className="text-text hover:text-primary dark:text-dark-text dark:hover:text-dark-primary transition-colors font-medium">
               Dashboard
             </Link>
-            {user?.linkedAccounts?.some((acc: any) => acc.type === 'wallet') && (
-              <Link href="/organizer" className="text-text hover:text-primary dark:text-dark-text dark:hover:text-dark-primary transition-colors font-medium">
-                Organizer
-              </Link>
-            )}
+            
           </div>
 
           {/* Right Side Actions */}
@@ -210,17 +206,11 @@ useEffect(() => {
                     {getUserDisplayName()}
                   </div>
                 </div>
-                <Link 
-                  href="/dashboard" 
-                  className="flex items-center space-x-2 px-4 py-2 bg-primary text-white rounded-xl hover:bg-primary-dark dark:bg-dark-primary dark:hover:bg-dark-primary-dark transition-colors"
-                >
-                  <UserIcon className="h-5 w-5" />
-                  <span>Dashboard</span>
-                </Link>
+
                 <button
                   onClick={handleLogout}
                   disabled={isLoggingOut}
-                  className="px-4 py-2 border border-primary dark:border-primary text-gray-700 dark:text-gray-700 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-300 transition-colors disabled:opacity-50 flex items-center gap-2"
+                  className="px-4 py-2 border border-primary dark:border-primary text-gray-700 dark:text-primary rounded-xl hover:bg-gray-50 dark:hover:bg-gray-300 transition-colors disabled:opacity-50 flex items-center gap-2"
                 >
                   {isLoggingOut ? (
                     <>
