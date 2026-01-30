@@ -120,7 +120,15 @@ export default function DashboardPage() {
       icon: <Ticket className="h-5 w-5" />,
       href: '/dashboard/tickets',
       color: 'bg-orange-500',
-      count: stats.ticketCount,
+      count: null,
+    },
+    {
+      title: 'My Events',
+      description: 'View the events you created',
+      icon: <Ticket className="h-5 w-5" />,
+      href: '/events',
+      color: 'bg-orange-500',
+      count: null,
     },
     {
       title: 'Create Ticket',

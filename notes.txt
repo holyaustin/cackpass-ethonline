@@ -8,3 +8,6 @@ Provide complete code fix.
 
 
 1. How do i send an email to organizers automatically after they have created an event with the events url or link for sharing on socials.
+
+1. go through the repo and understand the various codes and pages in the repo. I want to create a page to display all events created from the create-ticket page. This events are store in my mongodb under table events. You task is to create a responsive page that shows ticket in four colums on laptop, 2 on tablets and single on phone. check the price fields. if the prize = 0, then put a badge of free otherwise put a badge of piad with another color. this will enable people to visualize paid and free events at a glance.
+Dont reproduce codes that we already have. analyze the repo and build something very beautiful to engage evenet organizers.

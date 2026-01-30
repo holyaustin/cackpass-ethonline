@@ -10,7 +10,8 @@ import {
   Upload, X, Check, Globe, Video, Wifi, Camera,
   Bold, Italic, Link as LinkIcon, Smile, Save,
   Loader2, Map, Building, Home, Coffee, Zap,
-  Youtube, Mic, Monitor, MessageSquare, Cloud
+  Youtube, Mic, Monitor, MessageSquare, Cloud,
+  Info, Trophy
 } from 'lucide-react'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { toast } from 'sonner'
@@ -48,12 +49,13 @@ const LOCATION_TYPES = [
   { id: 'custom_link', label: 'Custom Link', icon: LinkIcon, description: 'Your own virtual link' },
 ]
 
-// Venue types for in-person events
+// Venue types for in-person events - Now 6 items with Stadium added
 const VENUE_TYPES = [
   { id: 'conference_center', label: 'Conference Center', icon: Building },
   { id: 'hotel', label: 'Hotel', icon: Home },
   { id: 'cafe', label: 'Cafe/Restaurant', icon: Coffee },
   { id: 'studio', label: 'Studio', icon: Mic },
+  { id: 'stadium', label: 'Stadium/Arena', icon: Trophy },
   { id: 'other_venue', label: 'Other Venue', icon: Map },
 ]
 
@@ -88,6 +90,8 @@ interface LocationDetails {
   city?: string;
   country?: string;
   virtualLink?: string;
+  youtubeLink?: string;
+  twitchLink?: string;
   platform?: string;
   meetingId?: string;
   password?: string;
@@ -134,10 +138,15 @@ export default function CreateTicketPage() {
     city: '',
     country: '',
     virtualLink: '',
+    youtubeLink: '',
+    twitchLink: '',
     platform: 'zoom',
     meetingId: '',
     password: '',
   })
+
+  // Validation state
+  const [dateError, setDateError] = useState<string>('')
 
   // Additional state
   const [showCustomCategory, setShowCustomCategory] = useState(false)
@@ -149,7 +158,7 @@ export default function CreateTicketPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const descriptionRef = useRef<HTMLTextAreaElement>(null)
 
-  // Set default dates on mount
+  // Set default dates on mount and validate
   useEffect(() => {
     if (ready && authenticated) {
       const today = new Date()
@@ -169,6 +178,22 @@ export default function CreateTicketPage() {
       }))
     }
   }, [ready, authenticated])
+
+  // Validate dates when they change
+  useEffect(() => {
+    if (formData.startDate && formData.endDate) {
+      const startDateTime = new Date(`${formData.startDate}T${formData.startTime}`)
+      const endDateTime = new Date(`${formData.endDate}T${formData.endTime}`)
+      
+      if (endDateTime <= startDateTime) {
+        setDateError('End date/time must be after start date/time')
+      } else {
+        setDateError('')
+      }
+    } else {
+      setDateError('')
+    }
+  }, [formData.startDate, formData.endDate, formData.startTime, formData.endTime])
 
   // Handle category change
   const handleCategoryChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -353,11 +378,13 @@ export default function CreateTicketPage() {
         return `${locationDetails.address}, ${locationDetails.city}, ${locationDetails.country || ''}`
       }
       return locationDetails.address || 'Location to be announced'
+    } else if (locationType === 'youtube' && locationDetails.youtubeLink) {
+      return locationDetails.youtubeLink
+    } else if (locationType === 'twitch' && locationDetails.twitchLink) {
+      return locationDetails.twitchLink
+    } else if (locationType === 'custom_link' && locationDetails.virtualLink) {
+      return locationDetails.virtualLink
     } else {
-      // Virtual event
-      if (locationType === 'custom_link' && locationDetails.virtualLink) {
-        return locationDetails.virtualLink
-      }
       return `${LOCATION_TYPES.find(l => l.id === locationType)?.label} Meeting`
     }
   }
@@ -368,6 +395,12 @@ export default function CreateTicketPage() {
     
     if (!user?.wallet?.address) {
       toast.error('Please connect your embedded wallet to create tickets')
+      return
+    }
+
+    // Validate dates before submission
+    if (dateError) {
+      toast.error(dateError)
       return
     }
 
@@ -411,6 +444,14 @@ export default function CreateTicketPage() {
       
       if (locationType === 'custom_link' && !locationDetails.virtualLink) {
         throw new Error('Virtual link is required')
+      }
+      
+      if (locationType === 'youtube' && !locationDetails.youtubeLink) {
+        throw new Error('YouTube link is required')
+      }
+      
+      if (locationType === 'twitch' && !locationDetails.twitchLink) {
+        throw new Error('Twitch link is required')
       }
 
       const isFreeEvent = formData.isFree
@@ -494,7 +535,9 @@ export default function CreateTicketPage() {
           zoomMeeting: locationType === 'zoom',
           googleMeet: locationType === 'google_meet',
           hasVirtualLink: locationType !== 'in_person',
-          virtualLink: locationDetails.virtualLink || '',
+          virtualLink: locationDetails.virtualLink || locationDetails.youtubeLink || locationDetails.twitchLink || '',
+          youtubeLink: locationDetails.youtubeLink,
+          twitchLink: locationDetails.twitchLink,
           platform: locationDetails.platform,
           meetingId: locationDetails.meetingId,
         },
@@ -674,10 +717,25 @@ export default function CreateTicketPage() {
         setTransactionHash(transactionHash)
       }
       
-      // Redirect after 3 seconds
+      // Add event page URL information
+      const eventSlug = formData.eventName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+      const eventUrl = `${window.location.origin}/event/${savedEventId}/${eventSlug}`
+      
+      toast.info(
+        <div className="space-y-2">
+          <div className="font-semibold">Event Page Created!</div>
+          <div className="text-sm">Share this URL with attendees:</div>
+          <div className="text-xs bg-blue-50 dark:bg-blue-900/30 p-2 rounded break-all">
+            {eventUrl}
+          </div>
+        </div>,
+        { duration: 10000 }
+      )
+      
+      // Redirect after 5 seconds
       setTimeout(() => {
         router.push(`/dashboard?created=${savedEventId}`)
-      }, 3000)
+      }, 5000)
 
     } catch (error) {
       console.error('Ticket creation error:', error)
@@ -810,11 +868,49 @@ export default function CreateTicketPage() {
           </div>
         )
       
+      case 'youtube':
+        return (
+          <div>
+            <label className="block text-sm font-medium mb-2">
+              YouTube Link
+            </label>
+            <input
+              type="url"
+              value={locationDetails.youtubeLink || ''}
+              onChange={(e) => handleLocationDetailsChange('youtubeLink', e.target.value)}
+              placeholder="https://youtube.com/live/your-stream-id or https://youtu.be/your-video-id"
+              className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+            <p className="mt-2 text-sm text-gray-500">
+              Paste the link to your YouTube Live stream or premiere
+            </p>
+          </div>
+        )
+      
+      case 'twitch':
+        return (
+          <div>
+            <label className="block text-sm font-medium mb-2">
+              Twitch Link
+            </label>
+            <input
+              type="url"
+              value={locationDetails.twitchLink || ''}
+              onChange={(e) => handleLocationDetailsChange('twitchLink', e.target.value)}
+              placeholder="https://twitch.tv/your-channel"
+              className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+            <p className="mt-2 text-sm text-gray-500">
+              Paste the link to your Twitch channel or stream
+            </p>
+          </div>
+        )
+      
       case 'custom_link':
         return (
           <div>
             <label className="block text-sm font-medium mb-2">
-              Virtual Event Link
+              Custom Virtual Event Link
             </label>
             <input
               type="url"
@@ -824,7 +920,7 @@ export default function CreateTicketPage() {
               className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
             />
             <p className="mt-2 text-sm text-gray-500">
-              Paste the link to your virtual event (Zoom, Teams, YouTube, etc.)
+              Paste the link to your virtual event (Zoom, Teams, etc.)
             </p>
           </div>
         )
@@ -858,8 +954,18 @@ export default function CreateTicketPage() {
         </div>
       </div>
 
-      {/* Main Form */}
+      {/* Main Form - Original spacing restored */}
       <div className="container mx-auto px-4 py-6 max-w-3xl">
+        {/* Event Page URL Info */}
+        <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+          <div className="flex items-start gap-3">
+            <Info className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
+            <div className="text-sm">
+              <span className="font-medium">Event Page URL:</span> After creating your event, you'll receive a unique URL to share with attendees (e.g., https://yourapp.com/event/123/event-name)
+            </div>
+          </div>
+        </div>
+
         <form onSubmit={handleSubmit} className="space-y-8">
           {/* 1. Event Name */}
           <div>
@@ -883,13 +989,13 @@ export default function CreateTicketPage() {
             </div>
           </div>
 
-          {/* 2. Start & End Date/Time */}
+          {/* 2. Start & End Date/Time - Original spacing */}
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Start */}
               <div>
                 <label className="block text-sm font-medium mb-2">
-                  Start
+                  Start <span className="text-xs text-gray-500">(GMT+1/WAT)</span>
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="relative">
@@ -899,7 +1005,7 @@ export default function CreateTicketPage() {
                       value={formData.startDate}
                       onChange={(e) => setFormData(prev => ({ ...prev, startDate: e.target.value }))}
                       required
-                      className="w-full pl-7 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
+                      className="w-full pl-10 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
                     />
                   </div>
                   <div className="relative">
@@ -909,7 +1015,7 @@ export default function CreateTicketPage() {
                       value={formData.startTime}
                       onChange={(e) => setFormData(prev => ({ ...prev, startTime: e.target.value }))}
                       required
-                      className="w-full pl-7 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
+                      className="w-full pl-10 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
                     />
                   </div>
                 </div>
@@ -918,7 +1024,7 @@ export default function CreateTicketPage() {
               {/* End */}
               <div>
                 <label className="block text-sm font-medium mb-2">
-                  End
+                  End <span className="text-xs text-gray-500">(GMT+1/WAT)</span>
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="relative">
@@ -928,7 +1034,7 @@ export default function CreateTicketPage() {
                       value={formData.endDate}
                       onChange={(e) => setFormData(prev => ({ ...prev, endDate: e.target.value }))}
                       required
-                      className="w-full pl-7 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
+                      className="w-full pl-10 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
                     />
                   </div>
                   <div className="relative">
@@ -938,15 +1044,18 @@ export default function CreateTicketPage() {
                       value={formData.endTime}
                       onChange={(e) => setFormData(prev => ({ ...prev, endTime: e.target.value }))}
                       required
-                      className="w-full pl-7 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
+                      className="w-full pl-10 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
                     />
                   </div>
                 </div>
               </div>
             </div>
+            {dateError && (
+              <div className="text-sm text-red-500 mt-2">{dateError}</div>
+            )}
           </div>
 
-          {/* 3. Event Category */}
+          {/* 3. Event Category - Original spacing */}
           <div>
             <label className="block text-sm font-medium mb-2">
               Event Category
@@ -987,13 +1096,13 @@ export default function CreateTicketPage() {
             )}
           </div>
 
-          {/* 4. Event Location (Luma-style) */}
+          {/* 4. Event Location - Original spacing */}
           <div>
             <label className="block text-sm font-medium mb-2">
               Event Location
             </label>
             
-            {/* Location Type Selector */}
+            {/* Location Type Selector - Original spacing */}
             <div className="mb-6">
               <div className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-3">
                 Choose how your event will be hosted
@@ -1024,7 +1133,7 @@ export default function CreateTicketPage() {
               </div>
             </div>
 
-            {/* Location Details */}
+            {/* Location Details - Original spacing */}
             <div className="mt-6 p-6 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl">
               <div className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-4">
                 {locationType === 'in_person' ? 'Venue Details' : 'Virtual Event Setup'}
@@ -1032,7 +1141,7 @@ export default function CreateTicketPage() {
               {renderLocationInput()}
             </div>
 
-            {/* Preview */}
+            {/* Preview - Original spacing */}
             <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
               <div className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
                 Location Preview
@@ -1044,13 +1153,13 @@ export default function CreateTicketPage() {
             </div>
           </div>
 
-          {/* 5. Event Description */}
+          {/* 5. Event Description - Original spacing */}
           <div>
             <label className="block text-sm font-medium mb-2">
               Event Description
             </label>
             
-            {/* Toolbar */}
+            {/* Toolbar - Original spacing */}
             <div className="flex gap-1 mb-2">
               <button
                 type="button"
@@ -1104,13 +1213,13 @@ export default function CreateTicketPage() {
             </div>
           </div>
 
-          {/* 6. Ticket Price */}
+          {/* 6. Ticket Price - Original spacing */}
           <div>
             <label className="block text-sm font-medium mb-3">
               Ticket Price
             </label>
             
-            {/* Price Toggle */}
+            {/* Price Toggle - Original spacing */}
             <div className="grid grid-cols-2 gap-4 mb-4">
               <div>
                 <input
@@ -1171,7 +1280,7 @@ export default function CreateTicketPage() {
               </div>
             </div>
 
-            {/* Price Input (shown when Paid is selected) */}
+            {/* Price Input (shown when Paid is selected) - Original spacing */}
             {showPriceInput && (
               <div className="mt-4 space-y-4">
                 <div className="text-sm font-medium mb-2">Ticket Price Details</div>
@@ -1211,7 +1320,7 @@ export default function CreateTicketPage() {
                 </div>
                 <div className="mt-1 text-sm text-gray-500">Per ticket</div>
                 
-                {/* Ticket Type Dropdown (only for paid events) */}
+                {/* Ticket Type Dropdown (only for paid events) - Original spacing */}
                 <div>
                   <div className="text-sm font-medium mb-2">Ticket Type</div>
                   <div className="relative">
@@ -1239,13 +1348,13 @@ export default function CreateTicketPage() {
             )}
           </div>
 
-          {/* 7. Ticket Capacity */}
+          {/* 7. Ticket Capacity - Original spacing */}
           <div>
             <label className="block text-sm font-medium mb-3">
               Ticket Capacity
             </label>
             
-            {/* Capacity Toggle */}
+            {/* Capacity Toggle - Original spacing */}
             <div className="mb-4">
               <label className="flex items-center gap-3 p-4 border border-gray-200 dark:border-gray-700 rounded-xl cursor-pointer hover:border-gray-300 dark:hover:border-gray-600 transition-all">
                 <input
@@ -1266,7 +1375,7 @@ export default function CreateTicketPage() {
               </label>
             </div>
 
-            {/* Capacity Input (shown when unlimited is unchecked) */}
+            {/* Capacity Input (shown when unlimited is unchecked) - Original spacing */}
             {showCapacityInput && (
               <div className="mt-4">
                 <div className="relative">
@@ -1285,13 +1394,13 @@ export default function CreateTicketPage() {
             )}
           </div>
 
-          {/* 8. Event Image */}
+          {/* 8. Event Image - Original spacing */}
           <div>
             <label className="block text-sm font-medium mb-3">
               Event Image
             </label>
             
-            {/* Upload Area */}
+            {/* Upload Area - Original spacing */}
             <div className="border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-xl p-8 text-center hover:border-primary transition-colors">
               <input
                 type="file"
@@ -1338,7 +1447,7 @@ export default function CreateTicketPage() {
             </div>
           </div>
 
-          {/* Submit Buttons */}
+          {/* Submit Buttons - Original spacing */}
           <div className="flex gap-4 pt-8">
             <button
               type="button"
