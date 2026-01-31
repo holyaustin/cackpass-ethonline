@@ -51,7 +51,7 @@ RoyaltyEngine.sol    # Royalty distribution (0-50%)
 **Deployed on Lisk Sepolia**  
 Addresses in `/lib/contracts/client.ts`
 
-## ⚙️ Environment Setup
+## ⚙️ Environment Setup / variables
 
 ### 1. Copy environment file:
 ```bash

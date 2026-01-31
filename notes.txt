@@ -1,13 +1,3 @@
-The paid ticket have been created onchain
-1.  update the /app/dashboard/create-ticket/page.tsx to fix date validation:
-2. The youtube and twitch in the event location should provide a place to paste their links just like the custom url. 
-3. Can you compact the whole UI to reduce length of the page
-4.Add out timezone  to start and end labels. GMT+1 (WAT)
-
-Provide complete code fix. 
-
-
 1. How do i send an email to organizers automatically after they have created an event with the events url or link for sharing on socials.
 
-1. go through the repo and understand the various codes and pages in the repo. I want to create a page to display all events created from the create-ticket page. This events are store in my mongodb under table events. You task is to create a responsive page that shows ticket in four colums on laptop, 2 on tablets and single on phone. check the price fields. if the prize = 0, then put a badge of free otherwise put a badge of piad with another color. this will enable people to visualize paid and free events at a glance.
-Dont reproduce codes that we already have. analyze the repo and build something very beautiful to engage evenet organizers.
+1. 
