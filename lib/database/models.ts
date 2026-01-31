@@ -1,4 +1,4 @@
-// lib/database/models.ts - FIXED VERSION
+// lib/database/models.ts - UPDATED WITH TRANSFER HISTORY
 import mongoose from 'mongoose'
 
 // User Schema with simplified fields
@@ -311,12 +311,15 @@ const myTicketSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['active', 'used', 'transferred', 'cancelled', 'refunded'],
+    enum: ['active', 'used', 'transferred', 'cancelled', 'refunded', 'transferred_complete'],
     default: 'active'
   },
   transferredTo: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
+  },
+  transferredAt: {
+    type: Date
   },
   usedAt: {
     type: Date
@@ -350,7 +353,353 @@ myTicketSchema.index({ status: 1 })
 myTicketSchema.index({ createdAt: -1 })
 myTicketSchema.index({ transferredTo: 1 }, { sparse: true })
 
+// ========================
+// TRANSFER HISTORY SCHEMA
+// ========================
+const TransferHistorySchema = new mongoose.Schema({
+  ticketId: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'MyTicket', 
+    required: true 
+  },
+  fromUserId: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'User', 
+    required: true 
+  },
+  toUserId: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'User', 
+    required: true 
+  },
+  status: { 
+    type: String, 
+    enum: ['pending', 'accepted', 'cancelled', 'rejected'],
+    default: 'pending' 
+  },
+  ticketNumber: { 
+    type: String, 
+    required: true 
+  },
+  eventId: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'Event' 
+  },
+  ticketTypeId: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'TicketType' 
+  },
+  transferredAt: { 
+    type: Date, 
+    default: Date.now 
+  },
+  acceptedAt: { 
+    type: Date 
+  },
+  cancelledAt: { 
+    type: Date 
+  },
+  rejectedAt: { 
+    type: Date 
+  },
+  reason: { 
+    type: String 
+  },
+  metadata: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
+  },
+  createdAt: { 
+    type: Date, 
+    default: Date.now 
+  },
+  updatedAt: { 
+    type: Date, 
+    default: Date.now 
+  }
+}, {
+  timestamps: true
+})
 
+// Indexes for better query performance
+TransferHistorySchema.index({ fromUserId: 1, status: 1 })
+TransferHistorySchema.index({ toUserId: 1, status: 1 })
+TransferHistorySchema.index({ ticketId: 1 })
+TransferHistorySchema.index({ ticketNumber: 1 })
+TransferHistorySchema.index({ eventId: 1 })
+TransferHistorySchema.index({ createdAt: -1 })
+TransferHistorySchema.index({ transferredAt: -1 })
+
+// ========================
+// RESALE LISTING SCHEMA
+// ========================
+const ResaleListingSchema = new mongoose.Schema({
+  ticketId: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'MyTicket', 
+    required: true 
+  },
+  sellerId: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'User', 
+    required: true 
+  },
+  price: { 
+    type: Number, 
+    required: true 
+  },
+  currency: { 
+    type: String, 
+    enum: ['NGN', 'USD', 'ETH', 'USDC'], 
+    default: 'NGN' 
+  },
+  status: { 
+    type: String, 
+    enum: ['active', 'sold', 'cancelled', 'expired'], 
+    default: 'active' 
+  },
+  expiresAt: { 
+    type: Date 
+  },
+  buyerId: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'User' 
+  },
+  soldAt: { 
+    type: Date 
+  },
+  transactionHash: { 
+    type: String 
+  },
+  metadata: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
+  },
+  createdAt: { 
+    type: Date, 
+    default: Date.now 
+  },
+  updatedAt: { 
+    type: Date, 
+    default: Date.now 
+  }
+}, {
+  timestamps: true
+})
+
+// Add indexes for ResaleListing schema
+ResaleListingSchema.index({ ticketId: 1, status: 1 })
+ResaleListingSchema.index({ sellerId: 1, status: 1 })
+ResaleListingSchema.index({ buyerId: 1 })
+ResaleListingSchema.index({ status: 1 })
+ResaleListingSchema.index({ expiresAt: 1 })
+ResaleListingSchema.index({ createdAt: -1 })
+
+// ========================
+// RESALE PURCHASE SCHEMA
+// ========================
+const ResalePurchaseSchema = new mongoose.Schema({
+  listingId: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'ResaleListing', 
+    required: true 
+  },
+  buyerId: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'User', 
+    required: true 
+  },
+  sellerId: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'User', 
+    required: true 
+  },
+  ticketId: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'MyTicket', 
+    required: true 
+  },
+  price: { 
+    type: Number, 
+    required: true 
+  },
+  currency: { 
+    type: String, 
+    enum: ['NGN', 'USD', 'ETH', 'USDC'], 
+    default: 'NGN' 
+  },
+  paymentMethod: { 
+    type: String, 
+    enum: ['crypto', 'paystack', 'flutterwave'], 
+    required: true 
+  },
+  paymentStatus: { 
+    type: String, 
+    enum: ['pending', 'completed', 'failed', 'refunded'], 
+    default: 'pending' 
+  },
+  paymentReference: { 
+    type: String 
+  },
+  transactionHash: { 
+    type: String 
+  },
+  serviceFee: { 
+    type: Number, 
+    default: 0 
+  },
+  sellerAmount: { 
+    type: Number 
+  },
+  metadata: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
+  },
+  createdAt: { 
+    type: Date, 
+    default: Date.now 
+  },
+  updatedAt: { 
+    type: Date, 
+    default: Date.now 
+  }
+}, {
+  timestamps: true
+})
+
+// Add indexes for ResalePurchase schema
+ResalePurchaseSchema.index({ listingId: 1 })
+ResalePurchaseSchema.index({ buyerId: 1 })
+ResalePurchaseSchema.index({ sellerId: 1 })
+ResalePurchaseSchema.index({ ticketId: 1 })
+ResalePurchaseSchema.index({ paymentStatus: 1 })
+ResalePurchaseSchema.index({ createdAt: -1 })
+
+// ========================
+// TRANSACTION LOG SCHEMA
+// ========================
+const TransactionLogSchema = new mongoose.Schema({
+  userId: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'User', 
+    required: true 
+  },
+  type: { 
+    type: String, 
+    enum: ['ticket_purchase', 'ticket_transfer', 'resale_purchase', 'resale_listing', 'withdrawal', 'deposit'],
+    required: true 
+  },
+  amount: { 
+    type: Number, 
+    required: true 
+  },
+  currency: { 
+    type: String, 
+    enum: ['NGN', 'USD', 'ETH', 'USDC'], 
+    default: 'NGN' 
+  },
+  status: { 
+    type: String, 
+    enum: ['pending', 'completed', 'failed', 'cancelled'], 
+    default: 'pending' 
+  },
+  referenceId: { 
+    type: String 
+  },
+  transactionHash: { 
+    type: String 
+  },
+  metadata: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
+  },
+  description: { 
+    type: String 
+  },
+  createdAt: { 
+    type: Date, 
+    default: Date.now 
+  }
+})
+
+// Add indexes for TransactionLog schema
+TransactionLogSchema.index({ userId: 1, type: 1 })
+TransactionLogSchema.index({ status: 1 })
+TransactionLogSchema.index({ createdAt: -1 })
+TransactionLogSchema.index({ transactionHash: 1 }, { sparse: true })
+TransactionLogSchema.index({ referenceId: 1 }, { sparse: true })
+
+// ========================
+// WALLET TRANSACTION SCHEMA
+// ========================
+const WalletTransactionSchema = new mongoose.Schema({
+  userId: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'User', 
+    required: true 
+  },
+  walletAddress: { 
+    type: String, 
+    required: true 
+  },
+  type: { 
+    type: String, 
+    enum: ['deposit', 'withdrawal', 'transfer_in', 'transfer_out', 'refund', 'fee'],
+    required: true 
+  },
+  amount: { 
+    type: Number, 
+    required: true 
+  },
+  currency: { 
+    type: String, 
+    enum: ['ETH', 'USDC', 'USDT'], 
+    required: true 
+  },
+  status: { 
+    type: String, 
+    enum: ['pending', 'confirmed', 'failed'], 
+    default: 'pending' 
+  },
+  transactionHash: { 
+    type: String, 
+    unique: true 
+  },
+  blockNumber: { 
+    type: Number 
+  },
+  fromAddress: { 
+    type: String 
+  },
+  toAddress: { 
+    type: String 
+  },
+  gasUsed: { 
+    type: Number 
+  },
+  gasPrice: { 
+    type: Number 
+  },
+  metadata: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
+  },
+  confirmedAt: { 
+    type: Date 
+  },
+  createdAt: { 
+    type: Date, 
+    default: Date.now 
+  }
+})
+
+// Add indexes for WalletTransaction schema
+WalletTransactionSchema.index({ userId: 1 })
+WalletTransactionSchema.index({ walletAddress: 1 })
+WalletTransactionSchema.index({ transactionHash: 1 })
+WalletTransactionSchema.index({ type: 1, status: 1 })
+WalletTransactionSchema.index({ createdAt: -1 })
+WalletTransactionSchema.index({ blockNumber: -1 })
 
 // Prevent model overwrite error in Next.js hot reload
 export const User = mongoose.models.User || mongoose.model('User', UserSchema)
@@ -364,3 +713,8 @@ export const Payout = mongoose.models.Payout || mongoose.model('Payout', PayoutS
 export const CheckIn = mongoose.models.CheckIn || mongoose.model('CheckIn', CheckInSchema)
 export const Notification = mongoose.models.Notification || mongoose.model('Notification', NotificationSchema)
 export const MyTicket = mongoose.models.MyTicket || mongoose.model('MyTicket', myTicketSchema)
+export const TransferHistory = mongoose.models.TransferHistory || mongoose.model('TransferHistory', TransferHistorySchema)
+export const ResaleListing = mongoose.models.ResaleListing || mongoose.model('ResaleListing', ResaleListingSchema)
+export const ResalePurchase = mongoose.models.ResalePurchase || mongoose.model('ResalePurchase', ResalePurchaseSchema)
+export const TransactionLog = mongoose.models.TransactionLog || mongoose.model('TransactionLog', TransactionLogSchema)
+export const WalletTransaction = mongoose.models.WalletTransaction || mongoose.model('WalletTransaction', WalletTransactionSchema)
