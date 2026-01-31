@@ -136,22 +136,45 @@ const TicketTypeSchema = new mongoose.Schema({
   onChainCategoryId: Number,
 })
 
-// Order Schema
 const OrderSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  eventId: { type: mongoose.Schema.Types.ObjectId, ref: 'Event', required: true },
-  ticketTypeId: { type: mongoose.Schema.Types.ObjectId, ref: 'TicketType', required: true },
-  quantity: { type: Number, required: true },
-  totalAmount: { type: Number, required: true },
-  currency: { type: String, enum: ['NGN', 'USD', 'ETH', 'USDC'], default: 'NGN' },
+  userId: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'User', 
+    required: true 
+  },
+  eventId: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'Event', 
+    required: true 
+  },
+  ticketTypeId: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'TicketType', 
+    required: true 
+  },
+  quantity: { 
+    type: Number, 
+    required: true,
+    min: 1  // Added from first schema
+  },
+  totalAmount: { 
+    type: Number, 
+    required: true,
+    min: 0  // Added from first schema
+  },
+  currency: { 
+    type: String, 
+    enum: ['NGN', 'USD', 'ETH', 'USDC'],  // From second schema (superior)
+    default: 'NGN' 
+  },
   paymentMethod: { 
     type: String, 
-    enum: ['paystack', 'flutterwave', 'ussd', 'crypto', 'free'],
+    enum: ['paystack', 'flutterwave', 'ussd', 'crypto', 'free'],  // From second schema (superior)
     required: true 
   },
   paymentStatus: { 
     type: String, 
-    enum: ['pending', 'paid', 'failed', 'refunded'], 
+    enum: ['pending', 'paid', 'failed', 'refunded'],  // Using 'paid' instead of 'completed' from second schema
     default: 'pending' 
   },
   paymentReference: String,
@@ -161,9 +184,22 @@ const OrderSchema = new mongoose.Schema({
     default: 'pending' 
   },
   transactionHash: String,
-  ticketIds: [Number],
-  createdAt: { type: Date, default: Date.now },
-})
+  ticketIds: [Number],  // From second schema (new field)
+  metadata: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}  // From first schema (added as optional)
+  },
+  createdAt: { 
+    type: Date, 
+    default: Date.now 
+  },
+  updatedAt: {  // From first schema (added field)
+    type: Date, 
+    default: Date.now 
+  }
+}, {
+  timestamps: true  // Added to automatically handle createdAt and updatedAt
+});
 
 // Whitelist Schema
 const WhitelistSchema = new mongoose.Schema({
@@ -236,6 +272,86 @@ const NotificationSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
 })
 
+// ========================
+// MY TICKET SCHEMA
+// ========================
+const myTicketSchema = new mongoose.Schema({
+  orderId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Order',
+    required: true
+  },
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  eventId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Event',
+    required: true
+  },
+  ticketTypeId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'TicketType',
+    required: true
+  },
+  ticketNumber: {
+    type: String,
+    required: true,
+    unique: true
+  },
+  qrCode: {
+    type: String,
+    default: ''
+  },
+  qrCodeCid: {
+    type: String,
+    default: ''
+  },
+  status: {
+    type: String,
+    enum: ['active', 'used', 'transferred', 'cancelled', 'refunded'],
+    default: 'active'
+  },
+  transferredTo: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  usedAt: {
+    type: Date
+  },
+  seatNumber: {
+    type: String
+  },
+  zone: {
+    type: String
+  },
+  metadata: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now
+  }
+})
+
+// Add indexes for MyTicket schema
+myTicketSchema.index({ userId: 1 })
+myTicketSchema.index({ eventId: 1 })
+myTicketSchema.index({ orderId: 1 })
+myTicketSchema.index({ ticketNumber: 1 })
+myTicketSchema.index({ status: 1 })
+myTicketSchema.index({ createdAt: -1 })
+myTicketSchema.index({ transferredTo: 1 }, { sparse: true })
+
+
+
 // Prevent model overwrite error in Next.js hot reload
 export const User = mongoose.models.User || mongoose.model('User', UserSchema)
 export const UserProfile = mongoose.models.UserProfile || mongoose.model('UserProfile', UserProfileSchema)
@@ -247,3 +363,4 @@ export const MarketListing = mongoose.models.MarketListing || mongoose.model('Ma
 export const Payout = mongoose.models.Payout || mongoose.model('Payout', PayoutSchema)
 export const CheckIn = mongoose.models.CheckIn || mongoose.model('CheckIn', CheckInSchema)
 export const Notification = mongoose.models.Notification || mongoose.model('Notification', NotificationSchema)
+export const MyTicket = mongoose.models.MyTicket || mongoose.model('MyTicket', myTicketSchema)
