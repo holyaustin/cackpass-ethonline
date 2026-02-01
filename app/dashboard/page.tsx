@@ -1,4 +1,4 @@
-// app/dashboard/page.tsx - FIXED with real-time ETH balance
+// app/dashboard/page.tsx 
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -14,8 +14,19 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { toast } from 'sonner'
 import { ethers } from 'ethers'
 
+// USDC ABI - Minimal interface for balanceOf
+const USDC_ABI = [
+  "function balanceOf(address owner) view returns (uint256)",
+  "function decimals() view returns (uint8)"
+]
+
+// Lisk Mainnet USDC Contract Address
+const LISK_MAINNET_USDC_ADDRESS = '0xF242275d3a6527d877f2c927a82D9b057609cc71'
+// Lisk Mainnet RPC URL
+const LISK_MAINNET_RPC_URL = 'https://rpc.api.lisk.com'
+
 interface DashboardStats {
-  ethBalance: string
+  usdcBalance: string
   usdBalance: string
   ticketCount: number
   upcomingEvents: number
@@ -27,17 +38,8 @@ interface DashboardStats {
 function getWalletAddressFromUser(user: any): string | null {
   if (!user) return null
   
-  // Log user object for debugging
-  console.log('🔍 Privy user object:', {
-    hasWallet: !!user.wallet,
-    walletAddress: user.wallet?.address,
-    linkedAccountsCount: user.linkedAccounts?.length || 0,
-    linkedAccounts: user.linkedAccounts || []
-  })
-  
   // Check direct wallet object (for embedded wallets)
   if (user.wallet?.address && typeof user.wallet.address === 'string') {
-    console.log('✅ Found wallet address in user.wallet:', user.wallet.address)
     return user.wallet.address
   }
   
@@ -50,90 +52,91 @@ function getWalletAddressFromUser(user: any): string | null {
   )
   
   if (embeddedWallet?.address) {
-    console.log('✅ Found wallet address in linked accounts:', embeddedWallet.address)
     return embeddedWallet.address
   }
   
   // Try to find any wallet address
   for (const account of linkedAccounts) {
     if (account.type === 'wallet' && account.address) {
-      console.log('✅ Found wallet address in linked account:', account.address)
       return account.address
     }
   }
   
-  console.log('❌ No wallet address found in user object')
   return null
 }
 
-// Function to fetch ETH balance from blockchain
-async function fetchETHBalance(walletAddress: string): Promise<{
-  ethBalance: string;
+// Function to fetch USDC balance from Lisk Mainnet
+async function fetchUSDCBalance(walletAddress: string): Promise<{
+  usdcBalance: string;
   usdBalance: string;
   success: boolean;
   error?: string;
 }> {
   try {
-    console.log('💰 Fetching ETH balance for:', walletAddress)
+    console.log('💰 Fetching USDC balance for:', walletAddress)
     
-    // Use Lisk Sepolia RPC URL
-    const rpcUrl = process.env.NEXT_PUBLIC_LISK_RPC_URL || 'https://rpc.sepolia-api.lisk.com'
-    console.log('🔗 Using RPC URL:', rpcUrl)
+    // Use Lisk Mainnet RPC URL
+    const provider = new ethers.JsonRpcProvider(LISK_MAINNET_RPC_URL)
     
-    const provider = new ethers.JsonRpcProvider(rpcUrl)
-    
-    // Test connection
+    // Test connection to Lisk Mainnet
     try {
       const network = await provider.getNetwork()
-      console.log('✅ Connected to network:', network.name, 'Chain ID:', network.chainId)
+      console.log('✅ Connected to Lisk Mainnet:', {
+        name: network.name,
+        chainId: network.chainId
+      })
     } catch (networkError) {
-      console.error('❌ Network connection error:', networkError)
+      console.error('❌ Lisk Mainnet connection error:', networkError)
       return {
-        ethBalance: '0.0000',
+        usdcBalance: '0.00',
         usdBalance: '0.00',
         success: false,
-        error: 'Network connection failed'
+        error: 'Failed to connect to Lisk Mainnet'
       }
     }
     
-    // Get ETH balance in wei
-    const balanceWei = await provider.getBalance(walletAddress)
-    console.log('📊 Raw balance (wei):', balanceWei.toString())
+    // Create USDC contract instance
+    const usdcContract = new ethers.Contract(
+      LISK_MAINNET_USDC_ADDRESS,
+      USDC_ABI,
+      provider
+    )
     
-    // Convert wei to ETH
-    const ethBalance = ethers.formatEther(balanceWei)
-    console.log('📊 ETH balance:', ethBalance)
+    // Get USDC balance
+    const rawBalance = await usdcContract.balanceOf(walletAddress)
+    const decimals = await usdcContract.decimals()
     
-    // Format with 4 decimal places
-    const ethBalanceFormatted = parseFloat(ethBalance).toFixed(4)
+    // Convert to proper USDC amount
+    const usdcBalance = ethers.formatUnits(rawBalance, decimals)
     
-    // Convert to USD (1 ETH = 2700 USD)
-    const ethToUsdRate = 2700
-    const usdValue = parseFloat(ethBalance) * ethToUsdRate
-    const usdBalance = usdValue.toFixed(2)
+    // Format with 2 decimal places
+    const usdcBalanceFormatted = parseFloat(usdcBalance).toFixed(2)
     
-    console.log('✅ Balance fetched successfully:', {
-      eth: ethBalanceFormatted,
+    // Since USDC is pegged to USD, 1 USDC = 1 USD
+    const usdBalance = usdcBalanceFormatted
+    
+    console.log('✅ USDC balance fetched successfully:', {
+      usdc: usdcBalanceFormatted,
       usd: usdBalance
     })
     
     return {
-      ethBalance: ethBalanceFormatted,
+      usdcBalance: usdcBalanceFormatted,
       usdBalance: usdBalance,
       success: true
     }
     
   } catch (error: any) {
-    console.error('❌ Error fetching ETH balance:', {
+    console.error('❌ Error fetching USDC balance:', {
       error: error.message,
       code: error.code,
       stack: error.stack
     })
     return {
-      ethBalance: '0.0000',
+      usdcBalance: '0.00',
       usdBalance: '0.00',
       success: false,
-      error: error.message || 'Failed to fetch balance'
+      error: error.message || 'Failed to fetch USDC balance'
     }
   }
 }
@@ -141,7 +144,7 @@ async function fetchETHBalance(walletAddress: string): Promise<{
 export default function DashboardPage() {
   const { user, authenticated, ready, login } = usePrivy()
   const [stats, setStats] = useState<DashboardStats>({
-    ethBalance: '0.0000',
+    usdcBalance: '0.00',
     usdBalance: '0.00',
     ticketCount: 0,
     upcomingEvents: 0,
@@ -157,17 +160,14 @@ export default function DashboardPage() {
     if (authenticated && ready && user) {
       const address = getWalletAddressFromUser(user)
       setWalletAddress(address)
-      console.log('🏷️ Wallet address set:', address)
     }
   }, [authenticated, ready, user])
 
   // Fetch balance when wallet address changes
   useEffect(() => {
     if (walletAddress) {
-      console.log('🚀 Fetching dashboard data with wallet:', walletAddress)
       fetchDashboardData()
     } else if (authenticated && ready) {
-      // User is authenticated but no wallet found
       setStats(prev => ({
         ...prev,
         isLoading: false,
@@ -177,10 +177,7 @@ export default function DashboardPage() {
   }, [walletAddress, authenticated, ready])
 
   const fetchDashboardData = async (showToast = false) => {
-    console.log('🔄 fetchDashboardData called, walletAddress:', walletAddress)
-    
     if (!walletAddress) {
-      console.log('⚠️ No wallet address, skipping balance fetch')
       setStats(prev => ({
         ...prev,
         isLoading: false,
@@ -196,14 +193,13 @@ export default function DashboardPage() {
     setStats(prev => ({ ...prev, isLoading: true, error: null }))
 
     try {
-      // Fetch real ETH balance
-      const balanceData = await fetchETHBalance(walletAddress)
+      // Fetch real USDC balance from Lisk Mainnet
+      const balanceData = await fetchUSDCBalance(walletAddress)
       
       if (balanceData.success) {
-        // Update stats with real balance data
         setStats(prev => ({
           ...prev,
-          ethBalance: balanceData.ethBalance,
+          usdcBalance: balanceData.usdcBalance,
           usdBalance: balanceData.usdBalance,
           isLoading: false,
           error: null
@@ -219,14 +215,7 @@ export default function DashboardPage() {
         if (showToast) {
           toast.success('Balance updated successfully!')
         }
-        
-        console.log('✅ Dashboard data updated:', {
-          eth: balanceData.ethBalance,
-          usd: balanceData.usdBalance,
-          time: balanceUpdateTime
-        })
       } else {
-        // Handle balance fetch error
         setStats(prev => ({
           ...prev,
           isLoading: false,
@@ -236,13 +225,9 @@ export default function DashboardPage() {
         if (showToast) {
           toast.error('Failed to update balance')
         }
-        
-        console.error('❌ Balance fetch failed:', balanceData.error)
       }
       
       // Fetch other dashboard data (tickets, events count)
-      // For now, using mock data for tickets and events
-      // TODO: Replace with actual API calls
       const ticketCount = 3
       const upcomingEvents = 2
       
@@ -402,11 +387,11 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Balance Card */}
-        <div className="glass-card rounded-3xl p-6 mb-8 bg-gradient-to-r from-primary to-primary-dark text-white">
-          <div className="flex items-center justify-between mb-4">
+        {/* Balance Card - Updated for USDC on Lisk Mainnet */}
+        <div className="glass-card rounded-3xl p-6 mb-8 bg-gradient-to-r from-primary to-primary-dark text-white font-extrabold">
+          <div className="flex items-center justify-between mb-6">
             <div>
-              <div className="flex items-center gap-3 mb-1">
+              <div className="flex items-center gap-3 mb-2">
                 <p className="text-sm opacity-90">Total Balance</p>
                 <button 
                   onClick={refreshBalance}
@@ -433,10 +418,10 @@ export default function DashboardPage() {
               ) : (
                 <div>
                   <div className="flex items-baseline gap-2">
-                    <p className="text-3xl font-bold mt-1">${stats.usdBalance}</p>
-                    <p className="text-sm opacity-80">({stats.ethBalance} ETH)</p>
+                    <p className="text-3xl font-extrabold">${stats.usdBalance}</p>
+                    <p className="text-sm opacity-80 font-extrabold">USDC</p>
                   </div>
-                  <p className="text-xs opacity-70 mt-2">1 ETH = $2,700.00</p>
+                  <p className="text-xs opacity-70 mt-2 font-extrabold">USDC on Lisk Mainnet (1:1 with USD)</p>
                 </div>
               )}
             </div>
@@ -462,7 +447,7 @@ export default function DashboardPage() {
             </div>
           </div>
           
-          <div className="flex gap-3">
+          <div className="flex gap-3 text-lg">
             <Link 
               href="/dashboard/create-ticket"
               className="flex-1 py-3 bg-white text-primary font-semibold rounded-xl text-center hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"

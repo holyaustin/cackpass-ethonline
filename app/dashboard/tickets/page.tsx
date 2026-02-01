@@ -1,4 +1,4 @@
-// /app/dashboard/tickets/page.tsx - COMPLETELY FIXED VERSION
+// /app/dashboard/tickets/page.tsx - CSS THEME FIXED VERSION
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
@@ -377,11 +377,20 @@ export default function TicketsPage() {
   }
 
   if (!ready) return <LoadingSpinner fullScreen />
-  if (!authenticated) return <div className="p-8 text-center">Please sign in to view tickets</div>
+  if (!authenticated) return (
+    <div className="min-h-screen bg-gradient-background flex items-center justify-center">
+      <div className="text-center p-8">
+        <h2 className="text-2xl font-bold mb-4">Please sign in</h2>
+        <p className="text-gray-600 dark:text-gray-400">
+          Sign in to view your tickets
+        </p>
+      </div>
+    </div>
+  )
 
   if (!walletAddress && ready && authenticated) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-950">
         <div className="text-center p-8 max-w-md">
           <Ticket className="h-16 w-16 text-gray-300 mx-auto mb-4" />
           <h3 className="text-xl font-semibold mb-2">No Wallet Connected</h3>
@@ -400,7 +409,7 @@ export default function TicketsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-background">
+   <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-950">
       <div className="container mx-auto px-4 py-6 max-w-6xl">
         {/* Header */}
         <div className="mb-8">
@@ -429,10 +438,12 @@ export default function TicketsPage() {
           </div>
 
           {/* Stats Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8
+          glass-card rounded-3xl p-6 mb-8 bg-gradient-to-r from-primary to-primary-dark text-gray-500 font-extrabold
+          ">
             <div className="card rounded-2xl p-4">
               <div className="flex items-center justify-between mb-2">
-                <p className="text-sm text-gray-600 dark:text-gray-400">Total Tickets</p>
+                <p className="text-sm text-gray-800 dark:text-gray-400">Total Tickets</p>
                 <BarChart3 className="h-4 w-4 text-primary" />
               </div>
               <p className="text-2xl font-bold">{stats.totalTickets}</p>
@@ -442,21 +453,21 @@ export default function TicketsPage() {
                 <p className="text-sm text-gray-600 dark:text-gray-400">Active</p>
                 <CheckCircle className="h-4 w-4 text-green-500" />
               </div>
-              <p className="text-2xl font-bold text-green-600">{stats.activeTickets}</p>
+              <p className="text-2xl font-bold text-green-600 dark:text-gray-500">{stats.activeTickets}</p>
             </div>
             <div className="card rounded-2xl p-4">
               <div className="flex items-center justify-between mb-2">
-                <p className="text-sm text-gray-600 dark:text-gray-400">Past Events</p>
+                <p className="text-sm text-gray-500 dark:text-gray-500">Past Events</p>
                 <Clock className="h-4 w-4 text-gray-500" />
               </div>
-              <p className="text-2xl font-bold text-gray-600">{stats.pastTickets}</p>
+              <p className="text-2xl font-bold text-gray-500 dark:text-gray-500">{stats.pastTickets}</p>
             </div>
             <div className="card rounded-2xl p-4">
               <div className="flex items-center justify-between mb-2">
-                <p className="text-sm text-gray-600 dark:text-gray-400">Transferred</p>
-                <ArrowUpRight className="h-4 w-4 text-purple-500" />
+                <p className="text-sm text-gray-500 dark:text-gray-500">Transferred</p>
+                <ArrowUpRight className="h-4 w-4 text-gray-500" />
               </div>
-              <p className="text-2xl font-bold text-purple-600">{stats.transferredTickets}</p>
+              <p className="text-2xl font-bold text-gray-600 dark:text-gray-500">{stats.transferredTickets}</p>
             </div>
           </div>
 
@@ -469,7 +480,7 @@ export default function TicketsPage() {
                 placeholder="Search tickets by event, venue, or ticket number..."
                 value={search}
                 onChange={handleSearch}
-                className="w-full pl-12 pr-4 py-3 bg-white dark:bg-gray-800 text-white rounded-2xl border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-primary"
+                className="w-full pl-12 pr-4 py-3 bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-primary text-gray-200 dark:text-gray-200 transition-colors"
               />
             </div>
             <div className="flex gap-2">
@@ -480,7 +491,7 @@ export default function TicketsPage() {
                   className={`px-4 py-3 rounded-2xl font-medium transition-colors ${
                     filter === tab
                       ? 'bg-primary text-white'
-                      : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300'
+                      : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
                   }`}
                 >
                   {tab.charAt(0).toUpperCase() + tab.slice(1)}
@@ -542,9 +553,9 @@ export default function TicketsPage() {
           </>
         ) : (
           <div className="text-center py-12 card rounded-2xl">
-            <Ticket className="h-16 w-16 mx-auto text-gray-300 mb-4" />
+            <Ticket className="h-16 w-16 mx-auto text-gray-700 mb-4" />
             <h3 className="text-xl font-semibold mb-2">No tickets found</h3>
-            <p className="text-gray-600 dark:text-gray-400 mb-6 max-w-md mx-auto">
+            <p className="text-gray-200 dark:text-gray-500 mb-6 max-w-md mx-auto">
               {search 
                 ? 'No tickets match your search. Try a different search term.'
                 : filter !== 'all'
@@ -801,9 +812,9 @@ function TicketCard({
               <div>
                 <p className="text-gray-500 mb-1">Payment Status</p>
                 <p className={`font-medium ${
-                  order?.paymentStatus === 'completed' ? 'text-green-600' :
-                  order?.paymentStatus === 'pending' ? 'text-yellow-600' :
-                  order?.paymentStatus === 'failed' ? 'text-red-600' : 'text-gray-600'
+                  order?.paymentStatus === 'completed' ? 'text-green-600 dark:text-green-400' :
+                  order?.paymentStatus === 'pending' ? 'text-yellow-600 dark:text-yellow-400' :
+                  order?.paymentStatus === 'failed' ? 'text-red-600 dark:text-red-400' : 'text-gray-600 dark:text-gray-400'
                 }`}>
                   {order?.paymentStatus ? order.paymentStatus.charAt(0).toUpperCase() + order.paymentStatus.slice(1) : 'N/A'}
                 </p>

@@ -1,4 +1,4 @@
-// lib/database/models.ts - UPDATED WITH TRANSFER HISTORY
+// lib/database/models.ts - UPDATED WITH ENHANCED USER PROFILE AND USER SETTINGS
 import mongoose from 'mongoose'
 
 // User Schema with simplified fields
@@ -28,18 +28,110 @@ const UserSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now },
 })
 
-// Update UserProfile schema to be optional
+// Enhanced UserProfile schema with social links and preferences
 const UserProfileSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  firstName: { type: String },
-  lastName: { type: String },
-  bio: { type: String, default: '' },
-  location: { type: String, default: '' },
-  dateOfBirth: { type: Date, default: null },
-  interests: [{ type: String }],
-  profilePicture: { type: String, default: '' },
-  createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now },
+  userId: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'User', 
+    required: true,
+    unique: true 
+  },
+  fullName: { 
+    type: String 
+  },
+  bio: { 
+    type: String, 
+    default: '' 
+  },
+  location: { 
+    type: String, 
+    default: '' 
+  },
+  dateOfBirth: { 
+    type: Date, 
+    default: null 
+  },
+  interests: [{ 
+    type: String 
+  }],
+  profilePicture: { 
+    type: String, 
+    default: '' 
+  },
+  socialLinks: {
+    twitter: { type: String, default: '' },
+    instagram: { type: String, default: '' },
+    linkedin: { type: String, default: '' },
+    website: { type: String, default: '' }
+  },
+  notificationPreferences: {
+    email: { type: Boolean, default: true },
+    push: { type: Boolean, default: true },
+    ticketUpdates: { type: Boolean, default: true },
+    eventReminders: { type: Boolean, default: true },
+    promotional: { type: Boolean, default: true }
+  },
+  privacySettings: {
+    showEmail: { type: Boolean, default: false },
+    showPhone: { type: Boolean, default: false },
+    showLocation: { type: Boolean, default: false }
+  },
+  createdAt: { 
+    type: Date, 
+    default: Date.now 
+  },
+  updatedAt: { 
+    type: Date, 
+    default: Date.now 
+  }
+});
+
+// UserSettings model for app preferences
+const UserSettingsSchema = new mongoose.Schema({
+  userId: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'User', 
+    required: true,
+    unique: true 
+  },
+  theme: { 
+    type: String, 
+    enum: ['light', 'dark', 'system'], 
+    default: 'system' 
+  },
+  language: { 
+    type: String, 
+    default: 'en' 
+  },
+  currency: { 
+    type: String, 
+    default: 'USD' 
+  },
+  notifications: {
+    email: { type: Boolean, default: true },
+    push: { type: Boolean, default: true },
+    ticketUpdates: { type: Boolean, default: true },
+    eventReminders: { type: Boolean, default: true },
+    promotional: { type: Boolean, default: true }
+  },
+  security: {
+    twoFactorAuth: { type: Boolean, default: false },
+    biometricLogin: { type: Boolean, default: false },
+    sessionTimeout: { type: Number, default: 3600 } // seconds
+  },
+  emailPreferences: {
+    updates: { type: Boolean, default: true },
+    marketing: { type: Boolean, default: true },
+    weeklyDigest: { type: Boolean, default: true }
+  },
+  createdAt: { 
+    type: Date, 
+    default: Date.now 
+  },
+  updatedAt: { 
+    type: Date, 
+    default: Date.now 
+  }
 });
 
 // Event Schema
@@ -704,6 +796,7 @@ WalletTransactionSchema.index({ blockNumber: -1 })
 // Prevent model overwrite error in Next.js hot reload
 export const User = mongoose.models.User || mongoose.model('User', UserSchema)
 export const UserProfile = mongoose.models.UserProfile || mongoose.model('UserProfile', UserProfileSchema)
+export const UserSettings = mongoose.models.UserSettings || mongoose.model('UserSettings', UserSettingsSchema)
 export const Event = mongoose.models.Event || mongoose.model('Event', EventSchema)
 export const TicketType = mongoose.models.TicketType || mongoose.model('TicketType', TicketTypeSchema)
 export const Order = mongoose.models.Order || mongoose.model('Order', OrderSchema)

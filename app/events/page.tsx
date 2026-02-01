@@ -319,7 +319,7 @@ export default function EventsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-background relative overflow-hidden">
+    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-950">
       {/* Decorative orbs */}
       <div className="orb-decoration orb-1"></div>
       <div className="orb-decoration orb-2"></div>
@@ -386,7 +386,7 @@ export default function EventsPage() {
             </div>
 
             {/* Price & Date Filters */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 border-2 border-gray-200 dark:border-gray-700 p-6 rounded-2xl">
               <div>
                 <h3 className="text-sm font-semibold text-text-light mb-3">Price Type</h3>
                 <div className="flex gap-2">

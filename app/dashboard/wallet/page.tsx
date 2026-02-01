@@ -1,4 +1,4 @@
-// app/dashboard/wallet/page.tsx - PRODUCTION READY FOR MAINNET
+// app/dashboard/wallet/page.tsx - MAINNET READY FOR LISK (USDC ONLY)
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
@@ -7,7 +7,7 @@ import {
   Wallet, CreditCard, ArrowUpRight, ArrowDownRight, 
   Copy, QrCode, ExternalLink, RefreshCw, 
   Send, Receipt, Shield, Loader2, AlertCircle,
-  Clock, CheckCircle, XCircle, Coins, Banknote,
+  Clock, CheckCircle, XCircle, Banknote,
   Info as InfoIcon, ChevronLeft, ChevronRight,
   CreditCard as CreditCardIcon, DollarSign, ShoppingCart
 } from 'lucide-react'
@@ -28,11 +28,8 @@ const LISK_CONFIG = {
   }
 }
 
-// Mainnet token addresses for Lisk
-const TOKEN_ADDRESSES = {
-  // USDC on Lisk Mainnet
-  USDC: '0xF2659eD92fA06117d983411e532b490409D1cc71'
-}
+// USDC Contract Address on Lisk Mainnet
+const USDC_CONTRACT_ADDRESS = '0xF242275d3a6527d877f2c927a82D9b057609cc71'
 
 // On-ramp services URLs
 const ONRAMP_SERVICES = {
@@ -40,8 +37,8 @@ const ONRAMP_SERVICES = {
   ONRAMP_MONEY: 'https://onramp.money'
 }
 
-// ABI for ERC20 tokens
-const ERC20_ABI = [
+// ABI for USDC token
+const USDC_ABI = [
   // Read functions
   "function balanceOf(address owner) view returns (uint256)",
   "function decimals() view returns (uint8)",
@@ -113,7 +110,6 @@ const apiRateLimiter = new RateLimiter(
 );
 
 interface WalletBalance {
-  eth: string
   usdc: string
   usd: string
   isLoading: boolean
@@ -122,7 +118,7 @@ interface WalletBalance {
 
 interface Transaction {
   hash: string
-  type: 'received' | 'sent' | 'purchase'
+  type: 'received' | 'sent'
   status: 'completed' | 'pending' | 'failed'
   amount: string
   currency: string
@@ -134,18 +130,6 @@ interface Transaction {
   blockNumber?: number
   gasUsed?: string
   tokenSymbol?: string
-}
-
-interface BlockscoutTransaction {
-  hash: string
-  value: string
-  from: { hash: string }
-  to: { hash: string }
-  timestamp: string
-  status: 'ok' | 'pending' | 'error'
-  block: number
-  gas_used: string
-  method: string
 }
 
 interface BlockscoutTokenTransfer {
@@ -163,7 +147,6 @@ interface BlockscoutTokenTransfer {
 
 interface BlockscoutAddressInfo {
   hash: string
-  coin_balance: string
   token_balances?: Array<{
     token: {
       contract_address: string
@@ -212,7 +195,6 @@ async function generateQRCode(walletAddress: string): Promise<string> {
     return qrCodeDataUrl;
   } catch (error) {
     console.error('Error generating QR code:', error);
-    // Fallback to placeholder
     return '';
   }
 }
@@ -240,18 +222,17 @@ async function rateLimitedFetch(url: string, options?: RequestInit): Promise<Res
   }
 }
 
-// Fetch balances from Lisk Blockscout API
-async function fetchWalletBalances(walletAddress: string): Promise<{
-  ethBalance: string;
+// Fetch USDC balance from Lisk Mainnet
+async function fetchUSDCBalance(walletAddress: string): Promise<{
   usdcBalance: string;
   usdBalance: string;
   success: boolean;
   error?: string;
 }> {
   try {
-    console.log('💰 Fetching wallet balances for:', walletAddress)
+    console.log('💰 Fetching USDC balance for:', walletAddress)
     
-    // First try Blockscout API for balance
+    // First try Blockscout API for USDC balance
     try {
       const balanceResponse = await rateLimitedFetch(
         `${LISK_CONFIG.BLOCKSCOUT_API}/addresses/${walletAddress}`
@@ -260,17 +241,12 @@ async function fetchWalletBalances(walletAddress: string): Promise<{
       if (balanceResponse.ok) {
         const data: BlockscoutAddressInfo = await balanceResponse.json()
         
-        // Convert Wei to ETH
-        const ethBalanceWei = data.coin_balance || '0'
-        const ethBalance = ethers.formatEther(ethBalanceWei)
-        const ethBalanceFormatted = parseFloat(ethBalance).toFixed(4)
-        
         // Look for USDC token balance
         let usdcBalance = '0.00'
         if (data.token_balances && data.token_balances.length > 0) {
           const usdcToken = data.token_balances.find(
             token => token.token.symbol === 'USDC' || 
-                    token.token.contract_address.toLowerCase() === TOKEN_ADDRESSES.USDC.toLowerCase()
+                    token.token.contract_address.toLowerCase() === USDC_CONTRACT_ADDRESS.toLowerCase()
           )
           
           if (usdcToken) {
@@ -281,18 +257,12 @@ async function fetchWalletBalances(walletAddress: string): Promise<{
         
         const usdcBalanceFormatted = parseFloat(usdcBalance).toFixed(2)
         
-        // Calculate USD values
-        const ethToUsdRate = 2700
-        const usdcToUsdRate = 1.00
+        // USDC is pegged to USD, so 1 USDC = 1 USD
+        const totalUsdValue = parseFloat(usdcBalance)
         
-        const ethUsdValue = parseFloat(ethBalance) * ethToUsdRate
-        const usdcUsdValue = parseFloat(usdcBalance) * usdcToUsdRate
-        const totalUsdValue = ethUsdValue + usdcUsdValue
-        
-        console.log('✅ Balances fetched from Blockscout API')
+        console.log('✅ USDC balance fetched from Blockscout API')
         
         return {
-          ethBalance: ethBalanceFormatted,
           usdcBalance: usdcBalanceFormatted,
           usdBalance: totalUsdValue.toFixed(2),
           success: true
@@ -306,53 +276,42 @@ async function fetchWalletBalances(walletAddress: string): Promise<{
     console.log('🔄 Falling back to RPC provider...')
     const provider = new ethers.JsonRpcProvider(LISK_CONFIG.RPC_URL)
     
-    // Fetch ETH balance via RPC
-    const ethBalanceWei = await provider.getBalance(walletAddress)
-    const ethBalance = ethers.formatEther(ethBalanceWei)
-    const ethBalanceFormatted = parseFloat(ethBalance).toFixed(4)
-    
     // Try to fetch USDC balance via contract call
     let usdcBalance = '0.00'
     try {
-      const usdcContract = new ethers.Contract(TOKEN_ADDRESSES.USDC, ERC20_ABI, provider)
+      const usdcContract = new ethers.Contract(USDC_CONTRACT_ADDRESS, USDC_ABI, provider)
       const decimals = await usdcContract.decimals()
       const usdcBalanceRaw = await usdcContract.balanceOf(walletAddress)
       usdcBalance = ethers.formatUnits(usdcBalanceRaw, decimals)
     } catch (tokenError) {
-      console.log('USDC token not available or contract error')
+      console.log('USDC contract error:', tokenError)
     }
     
     const usdcBalanceFormatted = parseFloat(usdcBalance).toFixed(2)
     
-    // Calculate USD values
-    const ethToUsdRate = 2700
-    const usdcToUsdRate = 1.00
-    const ethUsdValue = parseFloat(ethBalance) * ethToUsdRate
-    const usdcUsdValue = parseFloat(usdcBalance) * usdcToUsdRate
-    const totalUsdValue = ethUsdValue + usdcUsdValue
+    // USDC is pegged to USD
+    const totalUsdValue = parseFloat(usdcBalance)
     
     return {
-      ethBalance: ethBalanceFormatted,
       usdcBalance: usdcBalanceFormatted,
       usdBalance: totalUsdValue.toFixed(2),
       success: true
     }
     
   } catch (error: any) {
-    console.error('❌ Error fetching wallet balances:', error)
+    console.error('❌ Error fetching USDC balance:', error)
     
     return {
-      ethBalance: '0.0000',
       usdcBalance: '0.00',
       usdBalance: '0.00',
       success: false,
-      error: error.message || 'Failed to fetch balances from both API and RPC'
+      error: error.message || 'Failed to fetch USDC balance from both API and RPC'
     }
   }
 }
 
-// Fetch real transactions from Lisk Blockscout API with pagination
-async function fetchRealTransactions(
+// Fetch USDC transactions from Lisk Blockscout API with pagination
+async function fetchUSDCTransactions(
   walletAddress: string,
   page: number = 1,
   pageSize: number = 10
@@ -361,82 +320,13 @@ async function fetchRealTransactions(
   pagination: PaginationInfo;
 }> {
   try {
-    console.log(`📝 Fetching transactions page ${page} for:`, walletAddress)
+    console.log(`📝 Fetching USDC transactions page ${page} for:`, walletAddress)
     
     const transactions: Transaction[] = []
     let totalItems = 0
     let totalPages = 1
     
-    // Fetch normal ETH transactions
-    try {
-      const txResponse = await rateLimitedFetch(
-        `${LISK_CONFIG.BLOCKSCOUT_API}/addresses/${walletAddress}/transactions`
-      )
-      
-      if (txResponse.ok) {
-        const data = await txResponse.json()
-        
-        // Handle different response formats
-        const items = data.items || data || []
-        totalItems = data.total_count || items.length
-        totalPages = Math.ceil(totalItems / pageSize)
-        
-        if (items.length === 0) {
-          console.log('No ETH transactions found for address')
-        } else {
-          console.log(`Found ${items.length} ETH transactions`)
-          
-          // Calculate pagination slice
-          const startIndex = (page - 1) * pageSize
-          const paginatedItems = items.slice(startIndex, startIndex + pageSize)
-          
-          paginatedItems.forEach((tx: any) => {
-            try {
-              const isReceived = tx.to?.hash?.toLowerCase() === walletAddress.toLowerCase()
-              const value = ethers.formatEther(tx.value || '0')
-              const amount = parseFloat(value).toFixed(4)
-              
-              let description = isReceived ? 'Received ETH' : 'Sent ETH'
-              if (tx.method) {
-                description = `${tx.method} ${isReceived ? 'Received' : 'Sent'}`
-              }
-              
-              transactions.push({
-                hash: tx.hash,
-                type: isReceived ? 'received' : 'sent',
-                status: tx.status === 'ok' ? 'completed' : tx.status === 'pending' ? 'pending' : 'failed',
-                amount: amount,
-                currency: 'ETH',
-                description: description,
-                timestamp: tx.timestamp ? new Date(tx.timestamp).toLocaleDateString('en-US', {
-                  year: 'numeric',
-                  month: 'short',
-                  day: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit'
-                }) : 'Unknown date',
-                usdValue: `$${(parseFloat(value) * 2700).toFixed(2)}`,
-                from: tx.from?.hash || 'Unknown',
-                to: tx.to?.hash || 'Unknown',
-                blockNumber: tx.block,
-                gasUsed: tx.gas_used
-              })
-            } catch (txError) {
-              console.error('Error processing transaction:', txError)
-            }
-          })
-        }
-      } else if (txResponse.status === 422) {
-        // 422 error means invalid address format or other validation error
-        console.log('Address validation failed for ETH transactions, skipping...')
-      } else {
-        console.error('Failed to fetch ETH transactions:', txResponse.status, txResponse.statusText)
-      }
-    } catch (ethTxError) {
-      console.error('Error fetching ETH transactions:', ethTxError)
-    }
-    
-    // Fetch token transfers
+    // Fetch token transfers (USDC)
     try {
       const tokenResponse = await rateLimitedFetch(
         `${LISK_CONFIG.BLOCKSCOUT_API}/addresses/${walletAddress}/token-transfers`
@@ -448,17 +338,26 @@ async function fetchRealTransactions(
         // Handle different response formats
         const items = data.items || data || []
         
-        if (items.length > 0) {
-          console.log(`Found ${items.length} token transfers`)
+        // Filter for USDC transactions only
+        const usdcTransactions = items.filter((transfer: any) => 
+          transfer.token?.contract_address?.toLowerCase() === USDC_CONTRACT_ADDRESS.toLowerCase() ||
+          transfer.token?.symbol === 'USDC'
+        )
+        
+        totalItems = usdcTransactions.length
+        totalPages = Math.ceil(totalItems / pageSize)
+        
+        if (usdcTransactions.length > 0) {
+          console.log(`Found ${usdcTransactions.length} USDC transactions`)
           
           // Calculate pagination slice
           const startIndex = (page - 1) * pageSize
-          const paginatedItems = items.slice(startIndex, startIndex + pageSize)
+          const paginatedItems = usdcTransactions.slice(startIndex, startIndex + pageSize)
           
           paginatedItems.forEach((transfer: any) => {
             try {
               const isReceived = transfer.to?.hash?.toLowerCase() === walletAddress.toLowerCase()
-              const decimals = parseInt(transfer.token?.decimals || '18')
+              const decimals = parseInt(transfer.token?.decimals || '6') // USDC has 6 decimals
               const value = ethers.formatUnits(transfer.total?.value || '0', decimals)
               const amount = parseFloat(value).toFixed(2)
               
@@ -467,8 +366,8 @@ async function fetchRealTransactions(
                 type: isReceived ? 'received' : 'sent',
                 status: 'completed',
                 amount: amount,
-                currency: transfer.token?.symbol || 'TOKEN',
-                description: `${isReceived ? 'Received' : 'Sent'} ${transfer.token?.symbol || 'Token'}`,
+                currency: 'USDC',
+                description: `${isReceived ? 'Received' : 'Sent'} USDC`,
                 timestamp: transfer.timestamp ? new Date(transfer.timestamp).toLocaleDateString('en-US', {
                   year: 'numeric',
                   month: 'short',
@@ -476,20 +375,19 @@ async function fetchRealTransactions(
                   hour: '2-digit',
                   minute: '2-digit'
                 }) : 'Unknown date',
-                usdValue: transfer.token?.symbol === 'USDC' 
-                  ? `$${amount}`
-                  : `$${(parseFloat(value) * 1).toFixed(2)}`,
+                usdValue: `$${amount}`,
                 from: transfer.from?.hash || 'Unknown',
                 to: transfer.to?.hash || 'Unknown',
-                tokenSymbol: transfer.token?.symbol
+                tokenSymbol: 'USDC'
               })
             } catch (transferError) {
-              console.error('Error processing token transfer:', transferError)
+              console.error('Error processing USDC transfer:', transferError)
             }
           })
+        } else {
+          console.log('No USDC transactions found')
         }
       } else if (tokenResponse.status === 422) {
-        // 422 error means invalid address format or other validation error
         console.log('Address validation failed for token transfers, skipping...')
       } else {
         console.error('Failed to fetch token transfers:', tokenResponse.status, tokenResponse.statusText)
@@ -513,7 +411,7 @@ async function fetchRealTransactions(
       hasPrevPage: page > 1
     }
     
-    console.log(`✅ Fetched ${transactions.length} transactions, page ${page} of ${pagination.totalPages}`)
+    console.log(`✅ Fetched ${transactions.length} USDC transactions, page ${page} of ${pagination.totalPages}`)
     
     return {
       transactions: transactions.slice(0, pageSize),
@@ -521,7 +419,7 @@ async function fetchRealTransactions(
     }
     
   } catch (error) {
-    console.error('❌ Error fetching real transactions:', error)
+    console.error('❌ Error fetching USDC transactions:', error)
     
     return {
       transactions: [],
@@ -539,7 +437,6 @@ async function fetchRealTransactions(
 export default function WalletPage() {
   const { authenticated, ready, user } = usePrivy()
   const [balance, setBalance] = useState<WalletBalance>({
-    eth: '0.0000',
     usdc: '0.00',
     usd: '0.00',
     isLoading: true,
@@ -559,7 +456,6 @@ export default function WalletPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'send' | 'receive'>('overview')
   const [sendAmount, setSendAmount] = useState('')
   const [sendToAddress, setSendToAddress] = useState('')
-  const [sendCurrency, setSendCurrency] = useState<'ETH' | 'USDC'>('ETH')
   const [isSending, setIsSending] = useState(false)
   const [balanceUpdateTime, setBalanceUpdateTime] = useState<string>('')
   const [qrCodeUrl, setQrCodeUrl] = useState<string>('')
@@ -605,12 +501,11 @@ export default function WalletPage() {
         console.error('Failed to generate QR code:', qrError)
       }
 
-      // Fetch balances
-      const balanceData = await fetchWalletBalances(walletAddress)
+      // Fetch USDC balance
+      const balanceData = await fetchUSDCBalance(walletAddress)
       
       if (balanceData.success) {
         setBalance({
-          eth: balanceData.ethBalance,
           usdc: balanceData.usdcBalance,
           usd: balanceData.usdBalance,
           isLoading: false,
@@ -638,8 +533,8 @@ export default function WalletPage() {
         }
       }
 
-      // Fetch real transactions with pagination
-      const { transactions: txData, pagination: paginationData } = await fetchRealTransactions(walletAddress, page)
+      // Fetch USDC transactions with pagination
+      const { transactions: txData, pagination: paginationData } = await fetchUSDCTransactions(walletAddress, page)
       setTransactions(txData)
       setPagination(paginationData)
 
@@ -723,50 +618,25 @@ export default function WalletPage() {
       const provider = new ethers.BrowserProvider(window.ethereum)
       const signer = await provider.getSigner()
 
-      if (sendCurrency === 'ETH') {
-        // Send ETH transaction
-        const tx = await signer.sendTransaction({
-          to: sendToAddress,
-          value: ethers.parseEther(sendAmount)
-        })
+      // Send USDC token transaction
+      const usdcContract = new ethers.Contract(USDC_CONTRACT_ADDRESS, USDC_ABI, signer)
+      
+      // Get decimals (USDC has 6 decimals)
+      const decimals = await usdcContract.decimals()
+      const amount = ethers.parseUnits(sendAmount, decimals)
+      
+      // Send token transfer
+      const tx = await usdcContract.transfer(sendToAddress, amount)
+      
+      toast.success('USDC Transfer sent!', {
+        description: `Hash: ${tx.hash.slice(0, 10)}...`
+      })
 
-        toast.success('Transaction sent!', {
-          description: `Hash: ${tx.hash.slice(0, 10)}...`
-        })
-
-        // Wait for confirmation
-        const receipt = await tx.wait()
-        if (receipt?.status === 1) {
-          toast.success('Transaction confirmed!')
-        } else {
-          toast.error('Transaction failed')
-        }
-
+      const receipt = await tx.wait()
+      if (receipt?.status === 1) {
+        toast.success('USDC Transfer confirmed!')
       } else {
-        // Send USDC token transaction
-        if (!TOKEN_ADDRESSES.USDC || TOKEN_ADDRESSES.USDC === '0x0000000000000000000000000000000000000000') {
-          throw new Error('USDC token contract address not configured')
-        }
-        
-        const usdcContract = new ethers.Contract(TOKEN_ADDRESSES.USDC, ERC20_ABI, signer)
-        
-        // Get decimals
-        const decimals = await usdcContract.decimals()
-        const amount = ethers.parseUnits(sendAmount, decimals)
-        
-        // Send token transfer
-        const tx = await usdcContract.transfer(sendToAddress, amount)
-        
-        toast.success('USDC Transfer sent!', {
-          description: `Hash: ${tx.hash.slice(0, 10)}...`
-        })
-
-        const receipt = await tx.wait()
-        if (receipt?.status === 1) {
-          toast.success('USDC Transfer confirmed!')
-        } else {
-          toast.error('USDC Transfer failed')
-        }
+        toast.error('USDC Transfer failed')
       }
 
       // Reset form and refresh data
@@ -799,7 +669,6 @@ export default function WalletPage() {
   const handleOnrampRedirect = (url: string) => {
     const walletAddress = getWalletAddressFromUser(user)
     if (walletAddress) {
-      // Some on-ramp services accept wallet address as parameter
       window.open(url, '_blank')
     } else {
       toast.error('Wallet address not available')
@@ -812,12 +681,11 @@ export default function WalletPage() {
   const walletAddress = getWalletAddress()
 
   return (
-    <div className="min-h-screen bg-gradient-background relative overflow-hidden">
+    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-950">
       <div className="container mx-auto px-4 py-6 max-w-6xl">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-2xl font-bold mb-2">Wallet</h1>
-          <p className="text-text-light">Manage your funds and transactions</p>
+          <h1 className="text-2xl font-bold mb-2">Fund Wallet</h1>
         </div>
 
         {/* Tabs */}
@@ -878,7 +746,7 @@ export default function WalletPage() {
                   </div>
                   
                   {balance.isLoading ? (
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 font-bold">
                       <div className="h-8 w-32 bg-white/20 rounded animate-pulse"></div>
                     </div>
                   ) : balance.error ? (
@@ -888,15 +756,14 @@ export default function WalletPage() {
                     </div>
                   ) : (
                     <div>
-                      <div className="flex items-baseline gap-2">
+                      <div className="flex items-baseline gap-2 font-bold">
                         <p className="text-3xl font-bold mt-1">${balance.usd}</p>
                         <p className="text-sm opacity-80">
-                          ({balance.eth} ETH + {balance.usdc} USDC)
+                          (USDC)
                         </p>
                       </div>
-                      <div className="flex gap-4 text-xs opacity-70 mt-2">
-                        <span>1 ETH = $2,700.00</span>
-                        <span>1 USDC = $1.00</span>
+                      <div className="text-xs opacity-70 mt-2 font-bold">
+                        <span>1 USDC = $1.00 (Stablecoin)</span>
                       </div>
                     </div>
                   )}
@@ -928,63 +795,22 @@ export default function WalletPage() {
                   className="flex-1 py-3 bg-white text-primary font-semibold rounded-xl text-center hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
                 >
                   <Send className="h-4 w-4" />
-                  Send
+                  Send USDC
                 </button>
                 <button
                   onClick={() => setActiveTab('receive')}
                   className="flex-1 py-3 bg-white/20 text-white rounded-xl text-center hover:bg-white/30 transition-colors flex items-center justify-center gap-2"
                 >
                   <Receipt className="h-4 w-4" />
-                  Receive
+                  Receive USDC
                 </button>
               </div>
             </div>
 
-            {/* Balances Breakdown */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-              <div className="card rounded-2xl p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-text-light text-sm">ETH</p>
-                  <div className="w-8 h-8 bg-purple-500/10 rounded-lg flex items-center justify-center">
-                    <Coins className="w-4 h-4 text-purple-500" />
-                  </div>
-                </div>
-                {balance.isLoading ? (
-                  <div className="h-8 w-24 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"></div>
-                ) : (
-                  <>
-                    <p className="text-xl font-bold">{balance.eth} ETH</p>
-                    <p className="text-sm text-text-light">
-                      ≈ ${(parseFloat(balance.eth) * 2700).toFixed(2)}
-                    </p>
-                  </>
-                )}
-              </div>
-
-              <div className="card rounded-2xl p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-text-light text-sm">USDC</p>
-                  <div className="w-8 h-8 bg-blue-500/10 rounded-lg flex items-center justify-center">
-                    <Banknote className="w-4 h-4 text-blue-500" />
-                  </div>
-                </div>
-                {balance.isLoading ? (
-                  <div className="h-8 w-24 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"></div>
-                ) : (
-                  <>
-                    <p className="text-xl font-bold">{balance.usdc} USDC</p>
-                    <p className="text-sm text-text-light">
-                      ≈ ${(parseFloat(balance.usdc) * 1).toFixed(2)}
-                    </p>
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* Recent Transactions */}
+            {/* Recent USDC Transactions */}
             <div className="mb-8">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold">Recent Transactions</h2>
+                <h2 className="text-xl font-bold">Recent USDC Transactions</h2>
                 <button 
                   onClick={refreshData}
                   disabled={isRefreshing}
@@ -1047,15 +873,15 @@ export default function WalletPage() {
                     <div className="w-12 h-12 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center">
                       <Clock className="h-6 w-6 text-gray-400" />
                     </div>
-                    <p className="text-text-light">No transactions yet</p>
+                    <p className="text-text-light">No USDC transactions yet</p>
                     <p className="text-sm text-text-light max-w-md">
-                      Your transaction history will appear here once you send or receive funds on the Lisk network.
+                      Your USDC transaction history will appear here once you send or receive USDC on Lisk Mainnet.
                     </p>
                     <button 
                       onClick={() => setActiveTab('receive')}
                       className="btn-primary mt-4 px-4 py-2 text-sm"
                     >
-                      Add Funds to Get Started
+                      Add USDC to Get Started
                     </button>
                   </div>
                 </div>
@@ -1067,36 +893,13 @@ export default function WalletPage() {
         {activeTab === 'send' && (
           <div className="flex justify-center">
             <div className="card p-8 w-full max-w-md">
-              <h2 className="text-2xl font-bold mb-6 text-center">Send Funds</h2>
+              <h2 className="text-2xl font-bold mb-6 text-center">Send USDC</h2>
               
               <div className="space-y-6">
-                {/* Currency Selection */}
-                <div>
-                  <label className="block text-sm font-medium mb-2">
-                    Currency
-                  </label>
-                  <div className="flex gap-3">
-                    {['ETH', 'USDC'].map((currency) => (
-                      <button
-                        key={currency}
-                        type="button"
-                        onClick={() => setSendCurrency(currency as 'ETH' | 'USDC')}
-                        className={`px-4 py-3 rounded-xl font-medium transition-all flex-1 ${
-                          sendCurrency === currency
-                            ? 'bg-primary text-white'
-                            : 'bg-gray-100 dark:bg-gray-800 text-text'
-                        }`}
-                      >
-                        {currency}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
                 {/* Amount */}
                 <div>
                   <label className="block text-sm font-medium mb-2">
-                    Amount
+                    Amount (USDC)
                   </label>
                   <div className="relative">
                     <input
@@ -1105,18 +908,18 @@ export default function WalletPage() {
                       onChange={(e) => setSendAmount(e.target.value)}
                       placeholder="0.00"
                       min="0"
-                      step={sendCurrency === 'ETH' ? "0.0001" : "0.01"}
+                      step="0.01"
                       className="input-field pl-4 pr-20"
                     />
                     <div className="absolute right-4 top-1/2 transform -translate-y-1/2">
-                      <span className="font-medium">{sendCurrency}</span>
+                      <span className="font-medium">USDC</span>
                     </div>
                   </div>
                   <div className="flex justify-between text-sm text-text-light mt-2">
-                    <span>Available: {sendCurrency === 'ETH' ? balance.eth : balance.usdc} {sendCurrency}</span>
+                    <span>Available: {balance.usdc} USDC</span>
                     <button
                       type="button"
-                      onClick={() => setSendAmount(sendCurrency === 'ETH' ? balance.eth : balance.usdc)}
+                      onClick={() => setSendAmount(balance.usdc)}
                       className="text-primary hover:underline"
                     >
                       Max
@@ -1145,16 +948,16 @@ export default function WalletPage() {
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between">
                         <span className="text-text-light">Amount</span>
-                        <span>{sendAmount} {sendCurrency}</span>
+                        <span>{sendAmount} USDC</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-text-light">Network Fee</span>
-                        <span>~0.001 ETH</span>
+                        <span className="text-text-light">Network</span>
+                        <span>Lisk Mainnet</span>
                       </div>
                       <div className="border-t pt-2">
                         <div className="flex justify-between font-medium">
                           <span>Total</span>
-                          <span>{sendAmount} {sendCurrency}</span>
+                          <span>{sendAmount} USDC</span>
                         </div>
                       </div>
                     </div>
@@ -1180,12 +983,12 @@ export default function WalletPage() {
                         Sending...
                       </>
                     ) : (
-                      'Send Transaction'
+                      'Send USDC'
                     )}
                   </button>
                 </div>
 
-                {/* Security Warning with Blue Color (matching "How to receive funds") */}
+                {/* Security Warning */}
                 <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800">
                   <div className="flex items-start gap-3">
                     <Shield className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5" />
@@ -1194,7 +997,7 @@ export default function WalletPage() {
                         Security Warning
                       </p>
                       <p className="text-blue-600 dark:text-blue-400 mt-1">
-                        Always verify the recipient address. Transactions on blockchain are irreversible.
+                        Always verify the recipient address. USDC transactions on Lisk Mainnet are irreversible.
                         Make sure you're connected to Lisk Mainnet (Chain ID: {LISK_CONFIG.CHAIN_ID}).
                       </p>
                     </div>
@@ -1208,7 +1011,7 @@ export default function WalletPage() {
         {activeTab === 'receive' && (
           <div className="flex justify-center">
             <div className="card p-8 w-full max-w-2xl">
-              <h2 className="text-2xl font-bold mb-6 text-center">Receive Funds</h2>
+              <h2 className="text-2xl font-bold mb-6 text-center">Receive USDC</h2>
               
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 {/* Left Column: QR Code, Address, and Instructions */}
@@ -1229,7 +1032,7 @@ export default function WalletPage() {
                       )}
                     </div>
                     
-                    <label className="block text-sm font-medium mb-2 text-center">
+                    <label className="block text-sm font-medium mb-2 text-primary dark:text-primary-light">
                       Your Wallet Address
                     </label>
                     <div className="bg-gray-100 dark:bg-gray-800 rounded-xl p-4 mb-3">
@@ -1251,24 +1054,24 @@ export default function WalletPage() {
                   </div>
 
                   {/* Instructions with Network Information */}
-                  <div className="space-y-4">
-                    <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl">
-                      <h3 className="font-medium mb-2 flex items-center gap-2">
+                  <div className="space-y-4 ">
+                    <div className="p-4 bg-blue-50 dark:bg-black-800 rounded-xl pb-7">
+                      <h3 className="font-medium mb-2 flex items-center gap-2 text-primary dark:text-primary-light">
                         <InfoIcon className="h-4 w-4" />
-                        How to receive funds
+                        How to receive USDC
                       </h3>
                       <ol className="list-decimal pl-5 space-y-2 text-sm text-text-light">
                         <li>Share your wallet address with the sender</li>
-                        <li>Only send ETH or supported ERC-20 tokens to this address</li>
-                        <li>Funds will appear in your wallet after network confirmation</li>
+                        <li>Only send USDC to this address on Lisk Mainnet</li>
+                        <li>USDC will appear in your wallet after network confirmation</li>
                         <li>Double-check the address before sharing</li>
                       </ol>
                     </div>
 
-                    {/* Network Information Moved Here */}
+                    {/* Network Information */}
                     <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-xl">
-                      <h3 className="font-medium mb-2">Network Information</h3>
-                      <div className="text-sm text-text-light space-y-1">
+                      <h3 className="font-medium mb-4">Network Information</h3>
+                      <div className="text-sm text-text-light space-y-1 text-gray-700 dark:text-gray-300">
                         <div className="flex justify-between">
                           <span>Network</span>
                           <span className="font-mono">Lisk Mainnet</span>
@@ -1278,18 +1081,19 @@ export default function WalletPage() {
                           <span className="font-mono">{LISK_CONFIG.CHAIN_ID}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span>Currency</span>
-                          <span className="font-mono">ETH & ERC-20 Tokens</span>
+                          <span>Token</span>
+                          <span className="font-mono">USDC</span>
                         </div>
                         <div className="flex justify-between">
-                          <span>Block Explorer</span>
+                          <span>Contract Address</span>
                           <a 
-                            href="https://blockscout.lisk.com" 
+                            href={`https://blockscout.lisk.com/token/${USDC_CONTRACT_ADDRESS}`}
                             target="_blank" 
                             rel="noopener noreferrer"
-                            className="text-primary hover:underline"
+                            className="text-primary hover:underline text-xs truncate max-w-[150px]"
+                            title={USDC_CONTRACT_ADDRESS}
                           >
-                            blockscout.lisk.com
+                            {USDC_CONTRACT_ADDRESS.slice(0, 10)}...{USDC_CONTRACT_ADDRESS.slice(-8)}
                           </a>
                         </div>
                       </div>
@@ -1301,10 +1105,10 @@ export default function WalletPage() {
                 <div>
                   <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
                     <CreditCardIcon className="h-5 w-5" />
-                    Fund Your Wallet
+                    Buy USDC
                   </h3>
                   <p className="text-text-light mb-6">
-                    Use these services to buy USDC or ETH with your credit card or bank transfer
+                    Use these services to buy USDC with your credit card or bank transfer
                   </p>
                   
                   {/* On-ramp Services Cards */}
@@ -1321,7 +1125,7 @@ export default function WalletPage() {
                             Buy USDC directly with credit card or bank transfer. Supports multiple payment methods.
                           </p>
                           <div className="flex flex-wrap gap-2 mb-4">
-                                                        <span className="px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-700 rounded text-xs font-medium">
+                            <span className="px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-700 rounded text-xs font-medium">
                               Instant
                             </span>
                             <span className="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-700 rounded text-xs font-medium">
@@ -1330,14 +1134,13 @@ export default function WalletPage() {
                             <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-700 rounded text-xs font-medium">
                               Bank Transfer
                             </span>
-
                           </div>
                           <button
                             onClick={() => handleOnrampRedirect(ONRAMP_SERVICES.RAMP_NOW)}
                             className="btn-primary w-full py-3 flex items-center justify-center gap-2"
                           >
                             <ShoppingCart className="h-4 w-4" />
-                            Buy on RampNow
+                            Buy USDC on RampNow
                           </button>
                         </div>
                       </div>
@@ -1352,19 +1155,18 @@ export default function WalletPage() {
                         <div className="flex-1">
                           <h4 className="font-bold mb-1">Onramp.money</h4>
                           <p className="text-sm text-text-light mb-3">
-                            Fund your wallet with fiat across multiple countries. Supports multiple currencies.
+                            Fund your wallet with USDC using fiat across multiple countries.
                           </p>
                           <div className="flex flex-wrap gap-2 mb-4">
                             <span className="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-700 rounded text-xs font-medium">
                               Global
                             </span>
-                                                        <span className="px-2 py-1 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-700 rounded text-xs font-medium">
+                            <span className="px-2 py-1 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-700 rounded text-xs font-medium">
                               KYC Required
                             </span>
                             <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-700 rounded text-xs font-medium">
                               Multiple Currencies
                             </span>
-
                           </div>
                           <button
                             onClick={() => handleOnrampRedirect(ONRAMP_SERVICES.ONRAMP_MONEY)}
@@ -1380,12 +1182,12 @@ export default function WalletPage() {
 
                   {/* Additional Tips */}
                   <div className="mt-6 p-4 bg-gradient-to-r from-primary/10 to-primary-dark/10 rounded-xl">
-                    <h4 className="font-medium mb-2 text-primary">💡 Tips for Funding Your Wallet</h4>
+                    <h4 className="font-medium mb-2 text-primary">💡 Tips for Receiving USDC</h4>
                     <ul className="text-sm text-text-light space-y-1">
-                       <li>• Ensure you're using the correct wallet address to avoid loss of funds</li>
-
-                      <li>• Transactions may take a few minutes to appear in your wallet</li>
-
+                      <li>• Ensure you're sharing the correct wallet address</li>
+                      <li>• USDC transactions on Lisk Mainnet typically confirm within minutes</li>
+                      <li>• Verify the sender is sending USDC on Lisk Mainnet, not other networks</li>
+                      <li>• Keep your private keys secure and never share them</li>
                     </ul>
                   </div>
                 </div>
@@ -1422,8 +1224,6 @@ function TransactionItem({
         return <ArrowDownRight className="h-4 w-4 text-green-500" />
       case 'sent':
         return <ArrowUpRight className="h-4 w-4 text-red-500" />
-      case 'purchase':
-        return <CreditCard className="h-4 w-4 text-blue-500" />
     }
   }
 
@@ -1463,7 +1263,7 @@ function TransactionItem({
               : 'text-red-500'
           }`}>
             {transaction.type === 'received' ? '+' : '-'}
-            {transaction.amount} {transaction.currency}
+            {transaction.amount} USDC
           </div>
           <div className="text-sm text-text-light">{transaction.usdValue}</div>
           <button 
