@@ -1,4 +1,4 @@
-// /app/api/tickets/mint/route.ts - COMPLETE FIXED VERSION
+// /app/api/tickets/mint/route.ts -
 import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
 import { CackPassCoreABI } from '@/lib/contracts/abis/CackPassCore'

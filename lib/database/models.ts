@@ -1,4 +1,4 @@
-// lib/database/models.ts - UPDATED WITH TRANSFER HISTORY AND PAYMENT SCHEMA
+// lib/database/models.ts - COMPLETE FIX
 import mongoose from 'mongoose'
 
 // User Schema with simplified fields
@@ -42,7 +42,7 @@ const UserProfileSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now },
 });
 
-// Event Schema
+// Event Schema - FIXED
 const EventSchema = new mongoose.Schema({
   organizerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   organizerWallet: { type: String, required: true }, // Wallet address from Privy
@@ -98,12 +98,27 @@ const EventSchema = new mongoose.Schema({
   unlimitedCapacity: { type: Boolean, default: true },
   capacity: { type: Number },
   
-  // Blockchain integration
-  onChainId: Number,
-  isOnChain: { type: Boolean, default: false },
-  transactionHash: String,
-  gaslessWallet: String, // Address that paid gas for gasless transactions
-  ticketId: Number, // For single-ticket events (alternative to TicketType model)
+  // Blockchain integration - FIXED
+  onChainId: {
+    type: Number,
+    sparse: true // Allow null for free events
+  },
+  isOnChain: { 
+    type: Boolean, 
+    default: false 
+  },
+  transactionHash: { 
+    type: String,
+    sparse: true
+  },
+  gaslessWallet: { 
+    type: String,
+    sparse: true
+  }, // Address that paid gas for gasless transactions
+  ticketId: { 
+    type: Number,
+    sparse: true
+  }, // For single-ticket events
   
   // Status
   status: { 
@@ -259,15 +274,6 @@ const PaymentSchema = new mongoose.Schema({
   }
 })
 
-// Add indexes for Payment schema
-PaymentSchema.index({ userId: 1 })
-PaymentSchema.index({ eventId: 1 })
-PaymentSchema.index({ paymentReference: 1 })
-PaymentSchema.index({ paymentStatus: 1 })
-PaymentSchema.index({ createdAt: -1 })
-PaymentSchema.index({ approvalId: 1 }, { sparse: true })
-PaymentSchema.index({ transactionHash: 1 }, { sparse: true })
-
 // Whitelist Schema
 const WhitelistSchema = new mongoose.Schema({
   eventId: { type: mongoose.Schema.Types.ObjectId, ref: 'Event', required: true },
@@ -411,15 +417,6 @@ const myTicketSchema = new mongoose.Schema({
   }
 })
 
-// Add indexes for MyTicket schema
-myTicketSchema.index({ userId: 1 })
-myTicketSchema.index({ eventId: 1 })
-myTicketSchema.index({ orderId: 1 })
-myTicketSchema.index({ ticketNumber: 1 })
-myTicketSchema.index({ status: 1 })
-myTicketSchema.index({ createdAt: -1 })
-myTicketSchema.index({ transferredTo: 1 }, { sparse: true })
-
 // ========================
 // TRANSFER HISTORY SCHEMA
 // ========================
@@ -488,15 +485,6 @@ const TransferHistorySchema = new mongoose.Schema({
   timestamps: true
 })
 
-// Indexes for better query performance
-TransferHistorySchema.index({ fromUserId: 1, status: 1 })
-TransferHistorySchema.index({ toUserId: 1, status: 1 })
-TransferHistorySchema.index({ ticketId: 1 })
-TransferHistorySchema.index({ ticketNumber: 1 })
-TransferHistorySchema.index({ eventId: 1 })
-TransferHistorySchema.index({ createdAt: -1 })
-TransferHistorySchema.index({ transferredAt: -1 })
-
 // ========================
 // RESALE LISTING SCHEMA
 // ========================
@@ -553,14 +541,6 @@ const ResaleListingSchema = new mongoose.Schema({
 }, {
   timestamps: true
 })
-
-// Add indexes for ResaleListing schema
-ResaleListingSchema.index({ ticketId: 1, status: 1 })
-ResaleListingSchema.index({ sellerId: 1, status: 1 })
-ResaleListingSchema.index({ buyerId: 1 })
-ResaleListingSchema.index({ status: 1 })
-ResaleListingSchema.index({ expiresAt: 1 })
-ResaleListingSchema.index({ createdAt: -1 })
 
 // ========================
 // RESALE PURCHASE SCHEMA
@@ -634,14 +614,6 @@ const ResalePurchaseSchema = new mongoose.Schema({
   timestamps: true
 })
 
-// Add indexes for ResalePurchase schema
-ResalePurchaseSchema.index({ listingId: 1 })
-ResalePurchaseSchema.index({ buyerId: 1 })
-ResalePurchaseSchema.index({ sellerId: 1 })
-ResalePurchaseSchema.index({ ticketId: 1 })
-ResalePurchaseSchema.index({ paymentStatus: 1 })
-ResalePurchaseSchema.index({ createdAt: -1 })
-
 // ========================
 // TRANSACTION LOG SCHEMA
 // ========================
@@ -688,13 +660,6 @@ const TransactionLogSchema = new mongoose.Schema({
     default: Date.now 
   }
 })
-
-// Add indexes for TransactionLog schema
-TransactionLogSchema.index({ userId: 1, type: 1 })
-TransactionLogSchema.index({ status: 1 })
-TransactionLogSchema.index({ createdAt: -1 })
-TransactionLogSchema.index({ transactionHash: 1 }, { sparse: true })
-TransactionLogSchema.index({ referenceId: 1 }, { sparse: true })
 
 // ========================
 // WALLET TRANSACTION SCHEMA
@@ -760,16 +725,8 @@ const WalletTransactionSchema = new mongoose.Schema({
   }
 })
 
-// Add indexes for WalletTransaction schema
-WalletTransactionSchema.index({ userId: 1 })
-WalletTransactionSchema.index({ walletAddress: 1 })
-WalletTransactionSchema.index({ transactionHash: 1 })
-WalletTransactionSchema.index({ type: 1, status: 1 })
-WalletTransactionSchema.index({ createdAt: -1 })
-WalletTransactionSchema.index({ blockNumber: -1 })
-
 // ========================
-// GASLESS APPROVAL SCHEMA
+// GASLESS APPROVAL SCHEMA - COMPLETE FIX
 // ========================
 const GaslessApprovalSchema = new mongoose.Schema({
   userId: { 
@@ -788,11 +745,41 @@ const GaslessApprovalSchema = new mongoose.Schema({
   },
   amount: { 
     type: Number, 
-    required: true 
+    required: true,
+    min: 1
   },
   price: { 
     type: Number, 
-    required: true 
+    required: true,
+    min: 0,
+    set: function(val: any) {
+      // Handle BigInt, string, and number inputs
+      if (typeof val === 'bigint') {
+        // Convert BigInt to number (handle large wei values by converting to ether)
+        const bigIntVal = Number(val)
+        if (bigIntVal > 1e12) { // If it's likely wei (large number), convert to ether
+          return bigIntVal / 1e18
+        }
+        return bigIntVal
+      } else if (typeof val === 'string') {
+        // If it's a string with 'n' at the end (BigInt string), remove it
+        if (val.endsWith('n')) {
+          val = val.slice(0, -1)
+        }
+        // Parse the string
+        const numVal = parseFloat(val)
+        if (isNaN(numVal)) {
+          return 0
+        }
+        // If it's a very large number (wei), convert to ether
+        if (numVal > 1e12) {
+          return numVal / 1e18
+        }
+        return numVal
+      }
+      // If it's already a number, return as is
+      return val
+    }
   },
   currency: { 
     type: String, 
@@ -809,11 +796,17 @@ const GaslessApprovalSchema = new mongoose.Schema({
   },
   recipient: { 
     type: String, 
-    required: true 
+    required: true,
+    validate: {
+      validator: function(v: string) {
+        return /^0x[a-fA-F0-9]{40}$/.test(v)
+      },
+      message: 'Invalid Ethereum address'
+    }
   },
   validUntil: { 
     type: Date, 
-    required: true 
+    required: true
   },
   status: { 
     type: String, 
@@ -839,14 +832,6 @@ const GaslessApprovalSchema = new mongoose.Schema({
     default: Date.now 
   }
 })
-
-// Add indexes for GaslessApproval schema
-GaslessApprovalSchema.index({ userId: 1 })
-GaslessApprovalSchema.index({ eventId: 1 })
-GaslessApprovalSchema.index({ approvalId: 1 })
-GaslessApprovalSchema.index({ status: 1 })
-GaslessApprovalSchema.index({ validUntil: 1 })
-GaslessApprovalSchema.index({ createdAt: -1 })
 
 // ========================
 // BACKEND SIGNER SCHEMA
@@ -890,13 +875,142 @@ const BackendSignerSchema = new mongoose.Schema({
   }
 })
 
-// Add indexes for BackendSigner schema
-BackendSignerSchema.index({ address: 1 })
+// ========================
+// INDEXES - FIXED (NO DUPLICATES)
+// ========================
+
+// Event Schema Indexes
+EventSchema.index({ onChainId: 1 }, { sparse: true })
+EventSchema.index({ organizerWallet: 1 })
+EventSchema.index({ status: 1 })
+EventSchema.index({ startDate: 1 })
+EventSchema.index({ category: 1 })
+EventSchema.index({ isFree: 1 })
+EventSchema.index({ isVirtual: 1 })
+EventSchema.index({ createdAt: -1 })
+
+// Payment Schema Indexes (NO DUPLICATES)
+PaymentSchema.index({ userId: 1 })
+PaymentSchema.index({ eventId: 1 })
+PaymentSchema.index({ paymentReference: 1 }, { unique: true }) // ONLY ONE unique index
+PaymentSchema.index({ paymentStatus: 1 })
+PaymentSchema.index({ createdAt: -1 })
+PaymentSchema.index({ approvalId: 1 }, { sparse: true })
+PaymentSchema.index({ transactionHash: 1 }, { sparse: true })
+
+// MyTicket Schema Indexes (NO DUPLICATES)
+myTicketSchema.index({ userId: 1 })
+myTicketSchema.index({ eventId: 1 })
+myTicketSchema.index({ orderId: 1 })
+myTicketSchema.index({ ticketNumber: 1 }, { unique: true }) // ONLY ONE unique index
+myTicketSchema.index({ status: 1 })
+myTicketSchema.index({ createdAt: -1 })
+myTicketSchema.index({ transferredTo: 1 }, { sparse: true })
+
+// Transfer History Schema Indexes
+TransferHistorySchema.index({ fromUserId: 1, status: 1 })
+TransferHistorySchema.index({ toUserId: 1, status: 1 })
+TransferHistorySchema.index({ ticketId: 1 })
+TransferHistorySchema.index({ ticketNumber: 1 })
+TransferHistorySchema.index({ eventId: 1 })
+TransferHistorySchema.index({ createdAt: -1 })
+TransferHistorySchema.index({ transferredAt: -1 })
+
+// Resale Listing Schema Indexes
+ResaleListingSchema.index({ ticketId: 1, status: 1 })
+ResaleListingSchema.index({ sellerId: 1, status: 1 })
+ResaleListingSchema.index({ buyerId: 1 })
+ResaleListingSchema.index({ status: 1 })
+ResaleListingSchema.index({ expiresAt: 1 })
+ResaleListingSchema.index({ createdAt: -1 })
+
+// Resale Purchase Schema Indexes
+ResalePurchaseSchema.index({ listingId: 1 })
+ResalePurchaseSchema.index({ buyerId: 1 })
+ResalePurchaseSchema.index({ sellerId: 1 })
+ResalePurchaseSchema.index({ ticketId: 1 })
+ResalePurchaseSchema.index({ paymentStatus: 1 })
+ResalePurchaseSchema.index({ createdAt: -1 })
+
+// Transaction Log Schema Indexes
+TransactionLogSchema.index({ userId: 1, type: 1 })
+TransactionLogSchema.index({ status: 1 })
+TransactionLogSchema.index({ createdAt: -1 })
+TransactionLogSchema.index({ transactionHash: 1 }, { sparse: true })
+TransactionLogSchema.index({ referenceId: 1 }, { sparse: true })
+
+// Wallet Transaction Schema Indexes
+WalletTransactionSchema.index({ userId: 1 })
+WalletTransactionSchema.index({ walletAddress: 1 })
+WalletTransactionSchema.index({ transactionHash: 1 }, { unique: true })
+WalletTransactionSchema.index({ type: 1, status: 1 })
+WalletTransactionSchema.index({ createdAt: -1 })
+WalletTransactionSchema.index({ blockNumber: -1 })
+
+// Gasless Approval Schema Indexes (NO DUPLICATES)
+GaslessApprovalSchema.index({ approvalId: 1 }, { unique: true }) // ONLY ONE unique index
+GaslessApprovalSchema.index({ userId: 1 })
+GaslessApprovalSchema.index({ eventId: 1 })
+GaslessApprovalSchema.index({ status: 1 })
+GaslessApprovalSchema.index({ validUntil: 1 })
+GaslessApprovalSchema.index({ createdAt: -1 })
+GaslessApprovalSchema.index({ recipient: 1 })
+
+// Backend Signer Schema Indexes
+BackendSignerSchema.index({ address: 1 }, { unique: true })
 BackendSignerSchema.index({ contractType: 1 })
 BackendSignerSchema.index({ isActive: 1 })
 BackendSignerSchema.index({ createdAt: -1 })
 
-// Prevent model overwrite error in Next.js hot reload
+// Whitelist Schema Indexes
+WhitelistSchema.index({ eventId: 1 })
+WhitelistSchema.index({ isActive: 1 })
+
+// Market Listing Schema Indexes
+MarketListingSchema.index({ sellerId: 1 })
+MarketListingSchema.index({ ticketId: 1 })
+MarketListingSchema.index({ isActive: 1 })
+
+// Payout Schema Indexes
+PayoutSchema.index({ eventId: 1 })
+PayoutSchema.index({ organizerId: 1 })
+PayoutSchema.index({ status: 1 })
+
+// CheckIn Schema Indexes
+CheckInSchema.index({ eventId: 1 })
+CheckInSchema.index({ ticketId: 1 })
+CheckInSchema.index({ userId: 1 })
+CheckInSchema.index({ isVerified: 1 })
+
+// Notification Schema Indexes
+NotificationSchema.index({ userId: 1 })
+NotificationSchema.index({ isRead: 1 })
+NotificationSchema.index({ type: 1 })
+
+// Order Schema Indexes
+OrderSchema.index({ userId: 1 })
+OrderSchema.index({ eventId: 1 })
+OrderSchema.index({ paymentStatus: 1 })
+OrderSchema.index({ mintStatus: 1 })
+OrderSchema.index({ createdAt: -1 })
+
+// Ticket Type Schema Indexes
+TicketTypeSchema.index({ eventId: 1 })
+TicketTypeSchema.index({ isActive: 1 })
+TicketTypeSchema.index({ category: 1 })
+
+// User Schema Indexes
+UserSchema.index({ privyId: 1 }, { unique: true })
+UserSchema.index({ walletAddress: 1 })
+UserSchema.index({ email: 1 }, { sparse: true })
+UserSchema.index({ isOrganizer: 1 })
+
+// UserProfile Schema Indexes
+UserProfileSchema.index({ userId: 1 }, { unique: true })
+
+// ========================
+// PREVENT MODEL OVERWRITE ERROR
+// ========================
 export const User = mongoose.models.User || mongoose.model('User', UserSchema)
 export const UserProfile = mongoose.models.UserProfile || mongoose.model('UserProfile', UserProfileSchema)
 export const Event = mongoose.models.Event || mongoose.model('Event', EventSchema)

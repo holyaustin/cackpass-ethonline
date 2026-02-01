@@ -1,4 +1,4 @@
-// /app/dashboard/create-ticket/page.tsx - COMPLETE FIXED VERSION
+// app/dashboard/create-ticket/page.tsx - COMPLETE PRODUCTION FIX
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
@@ -11,7 +11,7 @@ import {
   Bold, Italic, Link as LinkIcon, Smile, Save,
   Loader2, Map, Building, Home, Coffee, Zap,
   Youtube, Mic, Monitor, MessageSquare, Cloud,
-  Info, Trophy
+  Info, Trophy, Flag
 } from 'lucide-react'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { toast } from 'sonner'
@@ -56,7 +56,7 @@ const LOCATION_TYPES = [
   { id: 'custom_link', label: 'Custom Link', icon: LinkIcon, description: 'Your own virtual link' },
 ]
 
-// Venue types for in-person events - Now 6 items with Stadium added
+// Venue types for in-person events
 const VENUE_TYPES = [
   { id: 'conference_center', label: 'Conference Center', icon: Building },
   { id: 'hotel', label: 'Hotel', icon: Home },
@@ -66,12 +66,34 @@ const VENUE_TYPES = [
   { id: 'other_venue', label: 'Other Venue', icon: Map },
 ]
 
+// Country options (replacing text input with dropdown)
+const COUNTRIES = [
+  { value: 'USA', label: 'United States', flag: '🇺🇸' },
+  { value: 'Nigeria', label: 'Nigeria', flag: '🇳🇬' },
+  { value: 'UK', label: 'United Kingdom', flag: '🇬🇧' },
+  { value: 'Kenya', label: 'Kenya', flag: '🇰🇪' },
+  { value: 'Ghana', label: 'Ghana', flag: '🇬🇭' },
+  { value: 'South Africa', label: 'South Africa', flag: '🇿🇦' },
+  { value: 'Canada', label: 'Canada', flag: '🇨🇦' },
+  { value: 'Germany', label: 'Germany', flag: '🇩🇪' },
+  { value: 'France', label: 'France', flag: '🇫🇷' },
+  { value: 'Australia', label: 'Australia', flag: '🇦🇺' },
+  { value: 'Japan', label: 'Japan', flag: '🇯🇵' },
+  { value: 'China', label: 'China', flag: '🇨🇳' },
+  { value: 'India', label: 'India', flag: '🇮🇳' },
+  { value: 'Brazil', label: 'Brazil', flag: '🇧🇷' },
+  { value: 'Other', label: 'Other Country', flag: '🌍' },
+]
+
 // Currency options
 const CURRENCIES = [
   { value: 'USD', label: 'USD', symbol: '$' },
   { value: 'EUR', label: 'EUR', symbol: '€' },
   { value: 'GBP', label: 'GBP', symbol: '£' },
   { value: 'NGN', label: 'NGN', symbol: '₦' },
+  { value: 'KES', label: 'KES', symbol: 'KSh' },
+  { value: 'GHS', label: 'GHS', symbol: 'GH₵' },
+  { value: 'ZAR', label: 'ZAR', symbol: 'R' },
 ]
 
 // Ticket types enum (for paid events)
@@ -143,7 +165,7 @@ export default function CreateTicketPage() {
     venueType: 'conference_center',
     address: '',
     city: '',
-    country: '',
+    country: 'USA', // Default country
     virtualLink: '',
     youtubeLink: '',
     twitchLink: '',
@@ -396,7 +418,7 @@ export default function CreateTicketPage() {
     }
   }
 
-  // FIXED: Main form submission handler with API endpoints
+  // FIXED: Main form submission handler with corrected API endpoints
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
@@ -540,7 +562,7 @@ export default function CreateTicketPage() {
         currency: formData.currency,
         ticketType: formData.ticketType,
         unlimitedCapacity: formData.unlimitedCapacity,
-        capacity: formData.unlimitedCapacity ? undefined : parseInt(formData.capacity),
+        capacity: formData.unlimitedCapacity ? undefined : parseInt(formData.capacity || '0'),
         isVirtual: locationType !== 'in_person',
         virtualOptions: {
           zoomMeeting: locationType === 'zoom',
@@ -562,8 +584,8 @@ export default function CreateTicketPage() {
         updatedAt: new Date().toISOString()
       }
 
-      // Save to MongoDB
-      const dbResponse = await fetch('/api/events/create', {
+      // FIXED: Save to MongoDB - USING POST /api/events (not /api/events/create)
+      const dbResponse = await fetch('/api/events', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -574,7 +596,7 @@ export default function CreateTicketPage() {
       const dbResult = await dbResponse.json()
       
       if (!dbResponse.ok || !dbResult.success) {
-        throw new Error(dbResult.error || 'Failed to save to database')
+        throw new Error(dbResult.error || 'Failed to save to database: ' + JSON.stringify(dbResult))
       }
 
       const savedEventId = dbResult.eventId
@@ -670,7 +692,7 @@ export default function CreateTicketPage() {
           const approvalId = generateApprovalId()
           const validUntil = Math.floor(Date.now() / 1000) + 3600 // Valid for 1 hour
           
-          // Generate signature using the new API - FIXED: Using correct price
+          // Generate signature using the API - FIXED: Using correct price
           const signatureResponse = await fetch('/api/tickets/signature', {
             method: 'POST',
             headers: {
@@ -681,14 +703,16 @@ export default function CreateTicketPage() {
               eventId,
               ticketCategory,
               amount: 1, // Creating one ticket for now
-              price: ticketPrice.toString(),
+              price: ticketPrice.toString(), // Already in wei
               validUntil,
               approvalId
             })
           })
 
           if (!signatureResponse.ok) {
-            throw new Error(`Signature API returned ${signatureResponse.status}`)
+            const errorText = await signatureResponse.text()
+            console.error('Signature API error response:', errorText)
+            throw new Error(`Signature API returned ${signatureResponse.status}: ${errorText}`)
           }
 
           const signatureData = await signatureResponse.json()
@@ -739,21 +763,36 @@ export default function CreateTicketPage() {
         setUploadProgress(prev => ({ ...prev, total: 100 }))
       }
 
-      // Update database with blockchain info
+      // FIXED: Update database with blockchain info - USING PUT /api/events (not /api/events/update)
       if (!isFreeEvent && eventId > 0) {
-        await fetch('/api/events/update', {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            eventId: savedEventId,
-            onChainId: eventId,
-            transactionHash,
-            ticketId,
-            isOnChain: true
+        try {
+          const updateResponse = await fetch('/api/events', {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              _id: savedEventId, // MongoDB _id
+              onChainId: eventId,
+              transactionHash,
+              ticketId,
+              isOnChain: true,
+              updatedAt: new Date().toISOString()
+            })
           })
-        })
+
+          const updateResult = await updateResponse.json()
+          
+          if (!updateResponse.ok || !updateResult.success) {
+            console.warn('Could not update event with blockchain info:', updateResult.error)
+            // Don't fail the whole process
+          } else {
+            console.log('✅ Event updated with blockchain info')
+          }
+        } catch (updateError) {
+          console.warn('Event update warning:', updateError)
+          // Continue anyway
+        }
       }
 
       // Success!
@@ -869,13 +908,26 @@ export default function CreateTicketPage() {
                 <label className="block text-sm font-medium mb-2">
                   Country
                 </label>
-                <input
-                  type="text"
-                  value={locationDetails.country || ''}
-                  onChange={(e) => handleLocationDetailsChange('country', e.target.value)}
-                  placeholder="Country"
-                  className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
-                />
+                <div className="relative">
+                  <Flag className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <select
+                    value={locationDetails.country || ''}
+                    onChange={(e) => handleLocationDetailsChange('country', e.target.value)}
+                    className="w-full pl-10 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary appearance-none"
+                  >
+                    <option value="">Select country...</option>
+                    {COUNTRIES.map((country) => (
+                      <option key={country.value} value={country.value}>
+                        {country.flag} {country.label}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
+                    <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -1377,7 +1429,7 @@ export default function CreateTicketPage() {
                     <select
                       value={formData.currency}
                       onChange={(e) => setFormData(prev => ({ ...prev, currency: e.target.value }))}
-                      className="w-full px-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
+                      className="w-full px-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary appearance-none"
                     >
                       {CURRENCIES.map((currency) => (
                         <option key={currency.value} value={currency.value}>
