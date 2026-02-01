@@ -1,4 +1,4 @@
-// /app/components/tickets/PurchaseModal.tsx - UPDATED VERSION
+// /app/components/tickets/PurchaseModal.tsx
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -9,13 +9,12 @@ import {
   ExternalLink, AlertCircle, ChevronRight
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { ethers } from 'ethers'
 
-// Update the interface to include onChainId
+// Simplified interface for production
 interface PurchaseModalProps {
   isOpen: boolean
   onClose: () => void
-  onSuccess: (ticketId: string) => void
+  onSuccess?: (ticketId?: string) => void  // Make parameter optional
   event: {
     id: string
     title: string
@@ -25,12 +24,22 @@ interface PurchaseModalProps {
     price: number
     currency: string
     imageCid?: string
-    onChainId?: number // Add this
+    onChainId?: number
+    description?: string
+    endDate?: string
+    isVirtual?: boolean
+    category?: string
+    // Only include properties that exist in EventData
+    organizer?: {
+      name?: string
+      avatar?: string
+    }
   }
   ticketType?: {
-    _id: string
+    id?: string
+    _id?: string
     name: string
-    category: string
+    category?: string
     price: number
     maxSupply: number
     currentSupply: number
@@ -65,15 +74,12 @@ export default function PurchaseModal({
       const token = localStorage.getItem('privy_token')
       setUserToken(token)
       
-      // Try to get wallet address from various sources
+      // Try to get wallet address
       const getWalletAddress = async () => {
         if (token) {
           try {
-            // Try to get from auth/user API
             const response = await fetch('/api/auth/user', {
-              headers: {
-                'Authorization': `Bearer ${token}`
-              }
+              headers: { 'Authorization': `Bearer ${token}` }
             })
             
             if (response.ok) {
@@ -88,7 +94,7 @@ export default function PurchaseModal({
           }
         }
         
-        // Check for embedded wallet in localStorage
+        // Check for embedded wallet
         const embeddedWallet = localStorage.getItem('embedded_wallet')
         if (embeddedWallet) {
           try {
@@ -122,13 +128,21 @@ export default function PurchaseModal({
   ]
 
   const totalAmount = event.isFree ? 0 : (ticketType?.price || event.price) * quantity
-  const formattedDate = event.startDate ? new Date(event.startDate).toLocaleDateString('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  }) : 'TBD'
+  
+  const formatDate = (dateString: string) => {
+    try {
+      const date = new Date(dateString)
+      return date.toLocaleDateString('en-US', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    } catch {
+      return 'TBD'
+    }
+  }
 
   const handlePayment = async () => {
     setIsProcessing(true)
@@ -138,22 +152,21 @@ export default function PurchaseModal({
       let paymentResult
 
       if (selectedMethod === 'wallet') {
-        // Embedded wallet payment
         paymentResult = await processWalletPayment()
       } else {
-        // Paystack payment (dummy for now)
         paymentResult = await processPaystackPayment()
       }
 
       if (paymentResult.success) {
-        // Mint ticket after successful payment
         const mintResult = await mintTicket(paymentResult.paymentId)
         
         if (mintResult.success) {
           setStep('success')
           toast.success('Ticket purchased successfully!')
           setTimeout(() => {
-            onSuccess(mintResult.ticketId)
+            if (onSuccess) {
+              onSuccess(mintResult.ticketId || '')
+            }
             onClose()
           }, 2000)
         } else {
@@ -177,7 +190,6 @@ export default function PurchaseModal({
     }
 
     try {
-      // Get approval for gasless minting
       const approvalResponse = await fetch('/api/payment/approval', {
         method: 'POST',
         headers: {
@@ -187,7 +199,7 @@ export default function PurchaseModal({
         body: JSON.stringify({
           walletAddress,
           eventId: event.id,
-          onChainId: event.onChainId, // Include onChainId
+          onChainId: event.onChainId,
           amount: quantity,
           price: totalAmount,
           method: 'wallet'
@@ -200,7 +212,8 @@ export default function PurchaseModal({
         throw new Error(approvalData.error || 'Failed to get payment approval')
       }
 
-      // Process payment
+      const ticketTypeId = ticketType?._id || ticketType?.id
+
       const paymentResponse = await fetch('/api/payment/process', {
         method: 'POST',
         headers: {
@@ -216,7 +229,7 @@ export default function PurchaseModal({
           currency: event.currency,
           eventId: event.id,
           quantity,
-          ticketTypeId: ticketType?._id
+          ticketTypeId: ticketTypeId
         })
       })
 
@@ -234,7 +247,6 @@ export default function PurchaseModal({
   }
 
   const processPaystackPayment = async () => {
-    // Dummy implementation
     return new Promise(resolve => {
       setTimeout(() => {
         resolve({
@@ -248,6 +260,8 @@ export default function PurchaseModal({
 
   const mintTicket = async (paymentId: string) => {
     try {
+      const ticketTypeId = ticketType?._id || ticketType?.id
+
       const response = await fetch('/api/tickets/mint', {
         method: 'POST',
         headers: {
@@ -260,7 +274,7 @@ export default function PurchaseModal({
           paymentId,
           quantity,
           method: selectedMethod,
-          ticketTypeId: ticketType?._id
+          ticketTypeId: ticketTypeId
         })
       })
 
@@ -280,10 +294,6 @@ export default function PurchaseModal({
   const formatPrice = (amount: number) => {
     if (event.isFree) return 'FREE'
     return `${event.currency} ${amount.toFixed(2)}`
-  }
-
-  const getExplorerUrl = (txHash: string) => {
-    return `https://blockscout.lisk.com/tx/${txHash}`
   }
 
   if (!isOpen) return null
@@ -318,7 +328,7 @@ export default function PurchaseModal({
                 <div className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
                   <div className="flex items-center gap-2">
                     <Calendar className="h-4 w-4" />
-                    <span>{formattedDate}</span>
+                    <span>{formatDate(event.startDate)}</span>
                   </div>
                   {event.venue && (
                     <div className="flex items-center gap-2">

@@ -1,4 +1,4 @@
-// types/events.ts
+// types/index.ts
 export interface EventData {
   id: string
   title: string

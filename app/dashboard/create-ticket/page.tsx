@@ -25,6 +25,14 @@ import {
   TicketCategory
 } from '@/lib/blockchain/client-helpers'
 
+const LISK_MAINNET_CONFIG = {
+  CHAIN_ID: 1135,
+  RPC_URL: 'https://rpc.api.lisk.com',
+  EXPLORER_URL: 'https://blockscout.lisk.com',
+  NATIVE_CURRENCY: 'ETH',
+  CHAIN_NAME: 'LISK Mainnet'
+}
+
 // Category options with icons
 const CATEGORIES = [
   { value: 'music', label: 'Music & Concerts', icon: '🎵' },

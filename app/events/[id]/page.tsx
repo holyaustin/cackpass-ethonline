@@ -1,4 +1,4 @@
-// /app/events/[id]/page.tsx - COMPLETE PRODUCTION READY VERSION
+// /app/events/[id]/page.tsx - FINAL PRODUCTION VERSION
 'use client'
 
 import { useState, useEffect, Suspense } from 'react'
@@ -11,57 +11,13 @@ import {
   AlertCircle, ArrowRight, ExternalLink, User,
   Building, Video, Youtube, Twitch, Link as LinkIcon
 } from 'lucide-react'
-import Image from 'next/image'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import PurchaseModal from '@/components/tickets/PurchaseModal'
 import { usePrivy } from '@privy-io/react-auth'
 import { format } from 'date-fns'
-
-// Define interfaces based on existing database models
-interface EventData {
-  _id: string
-  title: string
-  description: string
-  venue: string
-  location?: {
-    address?: string
-    city?: string
-    country?: string
-  }
-  startDate: string
-  endDate: string
-  startDateTime?: string
-  endDateTime?: string
-  imageCid?: string
-  bannerImage?: string
-  isVirtual: boolean
-  isFree: boolean
-  price: number
-  currency: string
-  category: string
-  customCategory?: string
-  isOnChain?: boolean
-  isActive?: boolean
-  status?: string
-  organizerId?: any
-  organizerWallet?: string
-  onChainId?: number
-  transactionHash?: string
-  createdAt?: string
-  updatedAt?: string
-  virtualOptions?: {
-    zoomMeeting?: boolean
-    googleMeet?: boolean
-    hasVirtualLink?: boolean
-    virtualLink?: string
-    youtubeLink?: string
-    twitchLink?: string
-    platform?: string
-    meetingId?: string
-  }
-}
+import type { EventData } from '@/types/events'
 
 interface TicketTypeData {
   _id: string
@@ -76,16 +32,6 @@ interface TicketTypeData {
   metadataURI?: string
   createdAt?: string
   updatedAt?: string
-}
-
-interface UserData {
-  _id: string
-  firstName?: string
-  lastName?: string
-  username?: string
-  walletAddress?: string
-  email?: string
-  isOrganizer?: boolean
 }
 
 // Main component wrapper
@@ -112,7 +58,6 @@ function EventPageContent() {
   const [imageError, setImageError] = useState(false)
   const [showFullDescription, setShowFullDescription] = useState(false)
   const [isFavorite, setIsFavorite] = useState(false)
-  const [organizer, setOrganizer] = useState<UserData | null>(null)
   const [hasLinkedAccounts, setHasLinkedAccounts] = useState(false)
   
   const eventId = params.id as string
@@ -177,29 +122,6 @@ function EventPageContent() {
               setSelectedTicketType(ticketsData.ticketTypes[0])
             }
           }
-        }
-        
-        // Fetch organizer info if available
-        if (eventData.event.organizerId) {
-          try {
-            const orgResponse = await fetch(`/api/users/${eventData.event.organizerId}`)
-            if (orgResponse.ok) {
-              const orgData = await orgResponse.json()
-              if (orgData.success && orgData.user) {
-                setOrganizer(orgData.user)
-              }
-            }
-          } catch (error) {
-            console.error('Failed to fetch organizer:', error)
-          }
-        } else if (eventData.event.organizerWallet) {
-          // Create organizer object from wallet address
-          setOrganizer({
-            _id: 'wallet-' + eventData.event.organizerWallet,
-            walletAddress: eventData.event.organizerWallet,
-            username: eventData.event.organizerWallet.slice(2, 8),
-            isOrganizer: true
-          })
         }
         
         // Check if event is in favorites
@@ -375,15 +297,13 @@ function EventPageContent() {
 
   // Get total price
   const getTotalPrice = () => {
-    if (!selectedTicketType || event?.isFree) return 0
-    return (selectedTicketType.price * selectedQuantity).toFixed(2)
+    if (!selectedTicketType || !event?.isFree) return (selectedTicketType?.price || 0 * selectedQuantity).toFixed(2)
+    return '0.00'
   }
 
   // Render virtual event info
   const renderVirtualInfo = () => {
     if (!event?.isVirtual) return null
-    
-    const virtualOptions = event.virtualOptions || {}
     
     return (
       <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl">
@@ -391,67 +311,9 @@ function EventPageContent() {
           <Globe className="h-5 w-5 text-blue-500" />
           <span className="font-semibold">Virtual Event</span>
         </div>
-        
-        {virtualOptions.youtubeLink ? (
-          <div className="flex items-center gap-2 text-sm">
-            <Youtube className="h-4 w-4" />
-            <a 
-              href={virtualOptions.youtubeLink} 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="text-blue-600 dark:text-blue-400 hover:underline"
-            >
-              Watch on YouTube
-            </a>
-          </div>
-        ) : virtualOptions.twitchLink ? (
-          <div className="flex items-center gap-2 text-sm">
-            <Twitch className="h-4 w-4" />
-            <a 
-              href={virtualOptions.twitchLink} 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="text-blue-600 dark:text-blue-400 hover:underline"
-            >
-              Watch on Twitch
-            </a>
-          </div>
-        ) : virtualOptions.virtualLink ? (
-          <div className="flex items-center gap-2 text-sm">
-            <LinkIcon className="h-4 w-4" />
-            <a 
-              href={virtualOptions.virtualLink} 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="text-blue-600 dark:text-blue-400 hover:underline truncate"
-            >
-              Join virtual event
-            </a>
-          </div>
-        ) : virtualOptions.zoomMeeting ? (
-          <div className="text-sm">
-            <div className="flex items-center gap-2">
-              <Video className="h-4 w-4" />
-              <span>Zoom Meeting</span>
-            </div>
-            {virtualOptions.meetingId && (
-              <p className="mt-1 text-gray-600 dark:text-gray-400">
-                Meeting ID: {virtualOptions.meetingId}
-              </p>
-            )}
-          </div>
-        ) : virtualOptions.googleMeet ? (
-          <div className="text-sm">
-            <div className="flex items-center gap-2">
-              <Video className="h-4 w-4" />
-              <span>Google Meet</span>
-            </div>
-          </div>
-        ) : (
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            Joining details will be provided after ticket purchase
-          </p>
-        )}
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          Joining details will be provided after ticket purchase
+        </p>
       </div>
     )
   }
@@ -546,7 +408,7 @@ function EventPageContent() {
                         Virtual
                       </span>
                     )}
-                    {event.isOnChain && (
+                    {event.onChainId && (
                       <span className="px-3 py-1.5 bg-green-500 text-white text-xs font-bold rounded-full flex items-center gap-1.5">
                         <Shield className="h-3.5 w-3.5" />
                         On-Chain Ticket
@@ -628,13 +490,13 @@ function EventPageContent() {
                     <div>
                       <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Start</p>
                       <p className="font-medium">
-                        {formatDateTime(event.startDateTime || event.startDate)}
+                        {formatDateTime(event.startDate)}
                       </p>
                     </div>
                     <div>
                       <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">End</p>
                       <p className="font-medium">
-                        {formatDateTime(event.endDateTime || event.endDate)}
+                        {formatDateTime(event.endDate)}
                       </p>
                     </div>
                   </div>
@@ -652,14 +514,7 @@ function EventPageContent() {
                   </h3>
                   <div>
                     {!event.isVirtual ? (
-                      <>
-                        <p className="font-medium">{event.venue || 'Location TBD'}</p>
-                        {event.location?.address && (
-                          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                            {event.location.address}
-                          </p>
-                        )}
-                      </>
+                      <p className="font-medium">{event.venue || 'Location TBD'}</p>
                     ) : (
                       renderVirtualInfo()
                     )}
@@ -679,38 +534,27 @@ function EventPageContent() {
                     <span className="inline-block px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full text-sm">
                       {event.category.charAt(0).toUpperCase() + event.category.slice(1)}
                     </span>
-                    {event.customCategory && (
-                      <span className="inline-block px-3 py-1.5 bg-primary/10 text-primary rounded-full text-sm">
-                        {event.customCategory}
-                      </span>
-                    )}
                   </div>
                 </div>
                 
                 {/* Organizer Info */}
-                {organizer && (
-                  <div>
-                    <h3 className="font-semibold mb-3">Organizer</h3>
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center flex-shrink-0">
-                        <User className="h-6 w-6 text-primary" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="font-medium truncate">
-                          {organizer.firstName && organizer.lastName 
-                            ? `${organizer.firstName} ${organizer.lastName}`
-                            : organizer.username || 'Event Organizer'
-                          }
-                        </p>
-                        {organizer.walletAddress && (
-                          <p className="text-sm text-gray-600 dark:text-gray-400 truncate font-mono">
-                            {organizer.walletAddress.slice(0, 8)}...{organizer.walletAddress.slice(-4)}
-                          </p>
-                        )}
-                      </div>
+                <div>
+                  <h3 className="font-semibold mb-3">Organizer</h3>
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center flex-shrink-0">
+                      <img
+                        src={event.organizer.avatar || '/placeholder-avatar.jpg'}
+                        alt={event.organizer.name}
+                        className="w-10 h-10 rounded-full"
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-medium truncate">
+                        {event.organizer.name}
+                      </p>
                     </div>
                   </div>
-                )}
+                </div>
               </div>
             </div>
             
@@ -958,7 +802,7 @@ function EventPageContent() {
               </div>
               
               {/* Blockchain Info */}
-              {event.isOnChain && event.transactionHash && (
+              {event.onChainId && (
                 <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl">
                   <div className="flex items-center gap-2 mb-2">
                     <Shield className="h-4 w-4 text-blue-500" />
@@ -967,13 +811,6 @@ function EventPageContent() {
                   <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">
                     This ticket is stored on the blockchain for maximum security.
                   </p>
-                  <button
-                    onClick={() => window.open(`https://blockscout.lisk.com/tx/${event.transactionHash}`, '_blank')}
-                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
-                  >
-                    View on blockchain explorer
-                    <ExternalLink className="h-3 w-3" />
-                  </button>
                 </div>
               )}
             </div>
@@ -986,12 +823,12 @@ function EventPageContent() {
         <PurchaseModal
           isOpen={showPurchaseModal}
           onClose={() => setShowPurchaseModal(false)}
-          onSuccess={(ticketId) => {
+          onSuccess={() => {
             toast.success('Ticket purchased successfully!')
             router.push(`/dashboard/tickets`)
           }}
           event={{
-            id: event._id,
+            id: event.id,
             title: event.title,
             startDate: event.startDate,
             venue: event.venue,
@@ -999,9 +836,22 @@ function EventPageContent() {
             price: selectedTicketType.price,
             currency: event.currency,
             imageCid: event.imageCid,
-            onChainId: event.onChainId
+            onChainId: event.onChainId,
+            description: event.description,
+            endDate: event.endDate,
+            isVirtual: event.isVirtual,
+            category: event.category,
+            organizer: event.organizer
           }}
-          ticketType={selectedTicketType}
+          ticketType={{
+            _id: selectedTicketType._id,
+            id: selectedTicketType._id,
+            name: selectedTicketType.name,
+            category: selectedTicketType.category,
+            price: selectedTicketType.price,
+            maxSupply: selectedTicketType.maxSupply,
+            currentSupply: selectedTicketType.currentSupply
+          }}
           quantity={selectedQuantity}
         />
       )}

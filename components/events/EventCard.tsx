@@ -1,9 +1,9 @@
-// components/events/EventCard.tsx
+// components/events/EventCard.tsx - FINAL VERSION
 'use client'
 
 import { useState } from 'react'
 import { Calendar, MapPin, Users, Ticket as TicketIcon, Clock, Star, Globe } from 'lucide-react'
-import { PurchaseModal } from '@/components/tickets/PurchaseModal'
+import PurchaseModal from '@/components/tickets/PurchaseModal' 
 import type { EventData } from '@/types/events'
 
 interface EventCardProps {
@@ -15,27 +15,61 @@ export function EventCard({ event }: EventCardProps) {
   const [selectedTicketType, setSelectedTicketType] = useState(event.ticketTypes[0])
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    })
+    try {
+      const date = new Date(dateString)
+      return date.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      })
+    } catch {
+      return 'Date TBD'
+    }
   }
 
   const formatTime = (dateString: string) => {
-    const date = new Date(dateString)
-    return date.toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-    })
+    try {
+      const date = new Date(dateString)
+      return date.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    } catch {
+      return 'Time TBD'
+    }
   }
 
   const getAvailableTickets = (ticketType: any) => {
-    return ticketType.maxSupply - ticketType.currentSupply
+    return (ticketType.maxSupply || 0) - (ticketType.currentSupply || 0)
   }
 
-  const isSoldOut = getAvailableTickets(selectedTicketType) === 0
+  const isSoldOut = selectedTicketType ? getAvailableTickets(selectedTicketType) === 0 : true
+
+  const handlePurchaseSuccess = (ticketId?: string) => {
+    console.log('Purchase successful!', ticketId)
+    // Optionally refresh the UI or show a success message
+  }
+
+  // Map EventData to PurchaseModal's expected format
+  const mapEventToPurchaseModal = () => {
+    return {
+      id: event.id,
+      title: event.title,
+      startDate: event.startDate,
+      venue: event.venue,
+      isFree: event.isFree,
+      price: selectedTicketType?.price || event.price,
+      currency: event.currency,
+      imageCid: event.imageCid,
+      onChainId: event.onChainId,
+      description: event.description,
+      endDate: event.endDate,
+      isVirtual: event.isVirtual,
+      category: event.category,
+      // Pass the organizer from EventData
+      organizer: event.organizer || { name: '', avatar: '' }
+    }
+  }
 
   return (
     <>
@@ -51,7 +85,7 @@ export function EventCard({ event }: EventCardProps) {
           {/* Category Badge */}
           <div className="absolute top-4 left-4">
             <span className="px-3 py-1 bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm rounded-full text-sm font-medium capitalize">
-              {event.category}
+              {event.category || 'Event'}
             </span>
           </div>
           
@@ -68,7 +102,7 @@ export function EventCard({ event }: EventCardProps) {
           {/* Rating */}
           <div className="absolute bottom-4 left-4 flex items-center bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm px-3 py-1 rounded-full">
             <Star className="h-4 w-4 text-yellow-500 fill-current mr-1" />
-            <span className="font-semibold">{event.rating.toFixed(1)}</span>
+            <span className="font-semibold">{event.rating?.toFixed(1) || '0.0'}</span>
           </div>
         </div>
 
@@ -81,11 +115,11 @@ export function EventCard({ event }: EventCardProps) {
             </h3>
             <div className="flex items-center text-gray-600 dark:text-gray-400">
               <img
-                src={event.organizer.avatar}
-                alt={event.organizer.name}
+                src={event.organizer.avatar || '/placeholder-avatar.jpg'}
+                alt={event.organizer.name || 'Organizer'}
                 className="w-6 h-6 rounded-full mr-2"
               />
-              <span className="text-sm">{event.organizer.name}</span>
+              <span className="text-sm">{event.organizer.name || 'Organizer'}</span>
             </div>
           </div>
 
@@ -106,14 +140,14 @@ export function EventCard({ event }: EventCardProps) {
             <div className="flex items-center text-gray-600 dark:text-gray-400">
               <MapPin className="h-4 w-4 mr-2 flex-shrink-0" />
               <span className="text-sm line-clamp-1">
-                {event.venue}
+                {event.venue || 'Location not specified'}
               </span>
             </div>
             
             <div className="flex items-center text-gray-600 dark:text-gray-400">
               <Users className="h-4 w-4 mr-2 flex-shrink-0" />
               <span className="text-sm">
-                {event.attendees.toLocaleString()} attending
+                {(event.attendees || 0).toLocaleString()} attending
               </span>
             </div>
           </div>
@@ -126,14 +160,14 @@ export function EventCard({ event }: EventCardProps) {
                 <span className="text-sm font-medium">Available Tickets</span>
               </div>
               
-              {event.ticketTypes.length > 1 && (
+              {event.ticketTypes && event.ticketTypes.length > 1 && (
                 <select
                   className="text-sm bg-gray-100 dark:bg-gray-700 rounded-lg px-3 py-1"
                   onChange={(e) => {
                     const type = event.ticketTypes.find(t => t.id === e.target.value)
                     if (type) setSelectedTicketType(type)
                   }}
-                  value={selectedTicketType.id}
+                  value={selectedTicketType?.id || ''}
                 >
                   {event.ticketTypes.map((type) => (
                     <option key={type.id} value={type.id}>
@@ -147,23 +181,25 @@ export function EventCard({ event }: EventCardProps) {
             <div className="flex items-center justify-between">
               <div>
                 <span className="text-2xl font-bold text-primary">
-                  ${selectedTicketType.price}
+                  ${selectedTicketType?.price || 0}
                 </span>
                 <span className="text-gray-500 text-sm ml-2">per ticket</span>
               </div>
               
               <div className="text-right">
                 <div className="text-sm text-gray-600 dark:text-gray-400">
-                  {getAvailableTickets(selectedTicketType)} remaining
+                  {selectedTicketType ? getAvailableTickets(selectedTicketType) : 0} remaining
                 </div>
-                <div className="w-32 bg-gray-200 dark:bg-gray-700 rounded-full h-2 mt-1">
-                  <div 
-                    className="bg-primary h-full rounded-full"
-                    style={{ 
-                      width: `${(selectedTicketType.currentSupply / selectedTicketType.maxSupply) * 100}%` 
-                    }}
-                  />
-                </div>
+                {selectedTicketType && (
+                  <div className="w-32 bg-gray-200 dark:bg-gray-700 rounded-full h-2 mt-1">
+                    <div 
+                      className="bg-primary h-full rounded-full"
+                      style={{ 
+                        width: `${((selectedTicketType.currentSupply || 0) / (selectedTicketType.maxSupply || 1)) * 100}%` 
+                      }}
+                    />
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -191,13 +227,13 @@ export function EventCard({ event }: EventCardProps) {
       </div>
 
       {/* Purchase Modal */}
-      {showPurchaseModal && (
-        <PurchaseModal
-          event={event}
-          ticketType={selectedTicketType}
-          onClose={() => setShowPurchaseModal(false)}
-        />
-      )}
+      <PurchaseModal
+        isOpen={showPurchaseModal}
+        event={mapEventToPurchaseModal()}
+        ticketType={selectedTicketType}
+        onClose={() => setShowPurchaseModal(false)}
+        onSuccess={handlePurchaseSuccess}
+      />
     </>
   )
 }
