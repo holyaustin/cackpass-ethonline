@@ -1,3 +1,2 @@
 1. How do i send an email to organizers automatically after they have created an event with the events url or link for sharing on socials.
 
-1. 

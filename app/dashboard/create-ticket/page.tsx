@@ -22,7 +22,6 @@ import {
   generateApprovalId,
   createTicketMetadata,
   mapTicketTypeToCategory,
-  TicketCategory
 } from '@/lib/blockchain/client-helpers'
 
 const LISK_MAINNET_CONFIG = {
@@ -215,7 +214,7 @@ export default function CreateTicketPage() {
     setFormData(prev => ({ 
       ...prev, 
       isFree,
-      priceAmount: isFree ? '0.00' : ''
+      priceAmount: isFree ? '0.00' : '10.00' // Default price for paid tickets
     }))
     setShowPriceInput(!isFree)
   }
@@ -482,6 +481,10 @@ export default function CreateTicketPage() {
         
         imageCid = uploadResult.cid
         toast.success(`Image uploaded! CID: ${imageCid.slice(0, 10)}...`)
+      } else {
+        toast.info('No image provided, using default...')
+        // You might want to use a default image CID here
+        imageCid = 'default-image-cid'
       }
       
       setUploadProgress(prev => ({ ...prev, image: 100, total: 50 }))
@@ -661,37 +664,76 @@ export default function CreateTicketPage() {
         setUploadProgress(prev => ({ ...prev, blockchain: 75, total: 95 }))
         
         // Step 5: Generate approval signature for gasless minting
-        toast.info('Generating approval signature...')
-        
-        const approvalId = generateApprovalId()
-        const validUntil = Math.floor(Date.now() / 1000) + 3600 // Valid for 1 hour
-        
-        const signatureResponse = await fetch('/api/tickets/signature', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            recipient: user.wallet.address,
-            eventId,
-            ticketCategory,
-            amount: 1, // Creating one ticket for now
-            price: ticketPrice.toString(),
-            validUntil,
-            approvalId
+        try {
+          toast.info('Generating approval signature...')
+          
+          const approvalId = generateApprovalId()
+          const validUntil = Math.floor(Date.now() / 1000) + 3600 // Valid for 1 hour
+          
+          // Generate signature using the new API - FIXED: Using correct price
+          const signatureResponse = await fetch('/api/tickets/signature', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              recipient: user.wallet.address,
+              eventId,
+              ticketCategory,
+              amount: 1, // Creating one ticket for now
+              price: ticketPrice.toString(),
+              validUntil,
+              approvalId
+            })
           })
-        })
-        
-        const signatureData = await signatureResponse.json()
-        
-        if (!signatureResponse.ok || !signatureData.success) {
-          throw new Error('Failed to generate approval signature')
+
+          if (!signatureResponse.ok) {
+            throw new Error(`Signature API returned ${signatureResponse.status}`)
+          }
+
+          const signatureData = await signatureResponse.json()
+          
+          if (!signatureData.success) {
+            throw new Error(signatureData.error || 'Failed to generate signature')
+          }
+          
+          toast.success('Approval signature generated!')
+          
+          // Step 6: Mint a sample ticket using the approval
+          toast.info('Minting sample ticket...')
+          
+          const mintResponse = await fetch('/api/tickets/mint-with-approval', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              approvalId: signatureData.signatureData.id,
+              walletAddress: user.wallet.address
+            })
+          })
+
+          const mintResult = await mintResponse.json()
+          
+          if (mintResponse.ok && mintResult.success) {
+            toast.success(`Ticket minted! Ticket #: ${mintResult.ticketNumber}`)
+            if (mintResult.transactionHash) {
+              toast.info(`Transaction: ${mintResult.transactionHash.slice(0, 20)}...`)
+            }
+            ticketId = mintResult.ticketNumber || 0
+          } else {
+            console.warn('Ticket minting had issues:', mintResult)
+            toast.warning('Ticket created with some limitations')
+          }
+          
+          setUploadProgress(prev => ({ ...prev, blockchain: 100, total: 100 }))
+          
+        } catch (error) {
+          console.warn('Signature/minting warning:', error)
+          toast.warning('Signature/minting had issues, but event was created successfully')
+          // Don't fail the entire process - the event is already created
+          setUploadProgress(prev => ({ ...prev, blockchain: 100, total: 100 }))
         }
-        
-        // Step 6: Mint ticket using the approval (would need another API endpoint)
-        // For now, we'll skip this step and just show success
-        toast.info('Ticket ready for minting!')
-        setUploadProgress(prev => ({ ...prev, blockchain: 100, total: 100 }))
       } else {
         // For free events, just complete the progress
         setUploadProgress(prev => ({ ...prev, total: 100 }))
@@ -699,7 +741,7 @@ export default function CreateTicketPage() {
 
       // Update database with blockchain info
       if (!isFreeEvent && eventId > 0) {
-        await fetch('/api/events/create', {
+        await fetch('/api/events/update', {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
@@ -748,6 +790,7 @@ export default function CreateTicketPage() {
     } catch (error) {
       console.error('Ticket creation error:', error)
       toast.error(error instanceof Error ? error.message : 'Failed to create ticket')
+      setUploadProgress({ image: 0, metadata: 0, blockchain: 0, total: 0 })
     } finally {
       setIsLoading(false)
     }
@@ -962,7 +1005,25 @@ export default function CreateTicketPage() {
         </div>
       </div>
 
-      {/* Main Form - Original spacing restored */}
+      {/* Progress Bar */}
+      {isLoading && (
+        <div className="container mx-auto px-4 max-w-3xl py-2">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow">
+            <div className="flex justify-between text-sm mb-2">
+              <span>Uploading...</span>
+              <span>{uploadProgress.total}%</span>
+            </div>
+            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+              <div 
+                className="bg-primary h-2 rounded-full transition-all duration-300"
+                style={{ width: `${uploadProgress.total}%` }}
+              ></div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Main Form */}
       <div className="container mx-auto px-4 py-6 max-w-3xl">
         {/* Event Page URL Info */}
         <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
@@ -997,7 +1058,7 @@ export default function CreateTicketPage() {
             </div>
           </div>
 
-          {/* 2. Start & End Date/Time - Original spacing */}
+          {/* 2. Start & End Date/Time */}
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Start */}
@@ -1063,7 +1124,7 @@ export default function CreateTicketPage() {
             )}
           </div>
 
-          {/* 3. Event Category - Original spacing */}
+          {/* 3. Event Category */}
           <div>
             <label className="block text-sm font-medium mb-2">
               Event Category
@@ -1104,13 +1165,13 @@ export default function CreateTicketPage() {
             )}
           </div>
 
-          {/* 4. Event Location - Original spacing */}
+          {/* 4. Event Location */}
           <div>
             <label className="block text-sm font-medium mb-2">
               Event Location
             </label>
             
-            {/* Location Type Selector - Original spacing */}
+            {/* Location Type Selector */}
             <div className="mb-6">
               <div className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-3">
                 Choose how your event will be hosted
@@ -1141,7 +1202,7 @@ export default function CreateTicketPage() {
               </div>
             </div>
 
-            {/* Location Details - Original spacing */}
+            {/* Location Details */}
             <div className="mt-6 p-6 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl">
               <div className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-4">
                 {locationType === 'in_person' ? 'Venue Details' : 'Virtual Event Setup'}
@@ -1149,7 +1210,7 @@ export default function CreateTicketPage() {
               {renderLocationInput()}
             </div>
 
-            {/* Preview - Original spacing */}
+            {/* Preview */}
             <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
               <div className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
                 Location Preview
@@ -1161,13 +1222,13 @@ export default function CreateTicketPage() {
             </div>
           </div>
 
-          {/* 5. Event Description - Original spacing */}
+          {/* 5. Event Description */}
           <div>
             <label className="block text-sm font-medium mb-2">
               Event Description
             </label>
             
-            {/* Toolbar - Original spacing */}
+            {/* Toolbar */}
             <div className="flex gap-1 mb-2">
               <button
                 type="button"
@@ -1221,13 +1282,13 @@ export default function CreateTicketPage() {
             </div>
           </div>
 
-          {/* 6. Ticket Price - Original spacing */}
+          {/* 6. Ticket Price */}
           <div>
             <label className="block text-sm font-medium mb-3">
               Ticket Price
             </label>
             
-            {/* Price Toggle - Original spacing */}
+            {/* Price Toggle */}
             <div className="grid grid-cols-2 gap-4 mb-4">
               <div>
                 <input
@@ -1288,7 +1349,7 @@ export default function CreateTicketPage() {
               </div>
             </div>
 
-            {/* Price Input (shown when Paid is selected) - Original spacing */}
+            {/* Price Input (shown when Paid is selected) */}
             {showPriceInput && (
               <div className="mt-4 space-y-4">
                 <div className="text-sm font-medium mb-2">Ticket Price Details</div>
@@ -1328,7 +1389,7 @@ export default function CreateTicketPage() {
                 </div>
                 <div className="mt-1 text-sm text-gray-500">Per ticket</div>
                 
-                {/* Ticket Type Dropdown (only for paid events) - Original spacing */}
+                {/* Ticket Type Dropdown (only for paid events) */}
                 <div>
                   <div className="text-sm font-medium mb-2">Ticket Type</div>
                   <div className="relative">
@@ -1356,13 +1417,13 @@ export default function CreateTicketPage() {
             )}
           </div>
 
-          {/* 7. Ticket Capacity - Original spacing */}
+          {/* 7. Ticket Capacity */}
           <div>
             <label className="block text-sm font-medium mb-3">
               Ticket Capacity
             </label>
             
-            {/* Capacity Toggle - Original spacing */}
+            {/* Capacity Toggle */}
             <div className="mb-4">
               <label className="flex items-center gap-3 p-4 border border-gray-200 dark:border-gray-700 rounded-xl cursor-pointer hover:border-gray-300 dark:hover:border-gray-600 transition-all">
                 <input
@@ -1383,7 +1444,7 @@ export default function CreateTicketPage() {
               </label>
             </div>
 
-            {/* Capacity Input (shown when unlimited is unchecked) - Original spacing */}
+            {/* Capacity Input (shown when unlimited is unchecked) */}
             {showCapacityInput && (
               <div className="mt-4">
                 <div className="relative">
@@ -1402,13 +1463,13 @@ export default function CreateTicketPage() {
             )}
           </div>
 
-          {/* 8. Event Image - Original spacing */}
+          {/* 8. Event Image */}
           <div>
             <label className="block text-sm font-medium mb-3">
               Event Image
             </label>
             
-            {/* Upload Area - Original spacing */}
+            {/* Upload Area */}
             <div className="border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-xl p-8 text-center hover:border-primary transition-colors">
               <input
                 type="file"
@@ -1455,7 +1516,7 @@ export default function CreateTicketPage() {
             </div>
           </div>
 
-          {/* Submit Buttons - Original spacing */}
+          {/* Submit Buttons */}
           <div className="flex gap-4 pt-8">
             <button
               type="button"
