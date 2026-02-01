@@ -249,5 +249,11 @@ See [LICENSE](LICENSE) for details.
    ✅ Deployed: 0x49e7127A28c153CC69e196344799E873303a8424
    ⏳ Waiting 60s for confirmation...
 
-📄 Deployment info saved to: /home/augustineonuora/Dapps-Empty/2026/Jan2026/cackpass/smart-contracts-verify-old/deployments/lisk/deployment.json
 🎉 Deployment Complete!
+
+https://blockscout.lisk.com/address/0xA2Aea35523a71EFf81283E32F52151F12D5CBB7F
+https://blockscout.lisk.com/address/0xFB69D0fb9C892F3565D66bcA92360Ca19B8D9780
+https://blockscout.lisk.com/address/0xcc68Ce1342B91cC9A1F97e8863c77465910f2e63
+https://blockscout.lisk.com/address/0x589C1494089889C077d7AbBA17B40575E961cC8c
+https://blockscout.lisk.com/address/0x7b954082151F7a44B2E42Ef9225393ea4f16c482
+https://blockscout.lisk.com/address/0x49e7127A28c153CC69e196344799E873303a8424

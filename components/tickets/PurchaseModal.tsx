@@ -1,193 +1,521 @@
-// components/tickets/PurchaseModal.tsx
+// /app/components/tickets/PurchaseModal.tsx - UPDATED VERSION
 'use client'
 
-import { useState } from 'react'
-import { X, Ticket, CreditCard, Smartphone, Globe } from 'lucide-react'
-import { usePrivy } from '@privy-io/react-auth'
+import { useState, useEffect } from 'react'
+import { 
+  X, Wallet, CreditCard, Ticket, CheckCircle, 
+  Loader2, ArrowRight, Shield, Globe, QrCode,
+  Clock, Calendar, MapPin, Hash, User,
+  ExternalLink, AlertCircle, ChevronRight
+} from 'lucide-react'
+import { toast } from 'sonner'
+import { ethers } from 'ethers'
 
+// Update the interface to include onChainId
 interface PurchaseModalProps {
-  event: any
-  ticketType: any
+  isOpen: boolean
   onClose: () => void
+  onSuccess: (ticketId: string) => void
+  event: {
+    id: string
+    title: string
+    startDate: string
+    venue: string
+    isFree: boolean
+    price: number
+    currency: string
+    imageCid?: string
+    onChainId?: number // Add this
+  }
+  ticketType?: {
+    _id: string
+    name: string
+    category: string
+    price: number
+    maxSupply: number
+    currentSupply: number
+  }
+  quantity?: number
 }
 
-export function PurchaseModal({ event, ticketType, onClose }: PurchaseModalProps) {
-  const [quantity, setQuantity] = useState(1)
-  const [paymentMethod, setPaymentMethod] = useState<'crypto' | 'paystack' | 'flutterwave' | 'ussd'>('crypto')
+interface PaymentMethod {
+  id: 'wallet' | 'paystack'
+  name: string
+  description: string
+  icon: React.ReactNode
+}
+
+export default function PurchaseModal({ 
+  isOpen, 
+  onClose, 
+  onSuccess,
+  event,
+  ticketType,
+  quantity = 1
+}: PurchaseModalProps) {
+  const [selectedMethod, setSelectedMethod] = useState<'wallet' | 'paystack'>('wallet')
   const [isProcessing, setIsProcessing] = useState(false)
-  const { user } = usePrivy()
+  const [step, setStep] = useState<'method' | 'confirm' | 'processing' | 'success'>('method')
+  const [walletAddress, setWalletAddress] = useState<string | null>(null)
+  const [userToken, setUserToken] = useState<string | null>(null)
 
-  const totalPrice = ticketType.price * quantity
+  // Get user token and wallet address
+  useEffect(() => {
+    if (isOpen) {
+      const token = localStorage.getItem('privy_token')
+      setUserToken(token)
+      
+      // Try to get wallet address from various sources
+      const getWalletAddress = async () => {
+        if (token) {
+          try {
+            // Try to get from auth/user API
+            const response = await fetch('/api/auth/user', {
+              headers: {
+                'Authorization': `Bearer ${token}`
+              }
+            })
+            
+            if (response.ok) {
+              const data = await response.json()
+              if (data.user?.walletAddress) {
+                setWalletAddress(data.user.walletAddress)
+                return
+              }
+            }
+          } catch (error) {
+            console.error('Failed to fetch wallet address:', error)
+          }
+        }
+        
+        // Check for embedded wallet in localStorage
+        const embeddedWallet = localStorage.getItem('embedded_wallet')
+        if (embeddedWallet) {
+          try {
+            const walletData = JSON.parse(embeddedWallet)
+            if (walletData.address) {
+              setWalletAddress(walletData.address)
+            }
+          } catch (error) {
+            console.error('Failed to parse embedded wallet:', error)
+          }
+        }
+      }
+      
+      getWalletAddress()
+    }
+  }, [isOpen])
 
-  const handlePurchase = async () => {
+  const paymentMethods: PaymentMethod[] = [
+    {
+      id: 'wallet',
+      name: 'Embedded Wallet',
+      description: 'Pay directly from your embedded wallet',
+      icon: <Wallet className="h-5 w-5" />
+    },
+    {
+      id: 'paystack',
+      name: 'Card Payment',
+      description: 'Pay with credit/debit card or bank transfer',
+      icon: <CreditCard className="h-5 w-5" />
+    }
+  ]
+
+  const totalAmount = event.isFree ? 0 : (ticketType?.price || event.price) * quantity
+  const formattedDate = event.startDate ? new Date(event.startDate).toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  }) : 'TBD'
+
+  const handlePayment = async () => {
     setIsProcessing(true)
+    setStep('processing')
+
     try {
-      const response = await fetch('/api/tickets/purchase', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('privy_token')}`,
-        },
-        body: JSON.stringify({
-          ticketTypeId: ticketType._id,
-          quantity,
-          paymentMethod,
-          paymentData: {
-            walletAddress: user?.wallet?.address,
-            email: user?.email?.address,
-          },
-        }),
-      })
+      let paymentResult
 
-      const data = await response.json()
+      if (selectedMethod === 'wallet') {
+        // Embedded wallet payment
+        paymentResult = await processWalletPayment()
+      } else {
+        // Paystack payment (dummy for now)
+        paymentResult = await processPaystackPayment()
+      }
 
-      if (data.paymentUrl) {
-        // Redirect to payment URL for fiat payments
-        window.location.href = data.paymentUrl
-      } else if (data.success) {
-        // Crypto payment - show success
-        alert('Ticket purchased successfully!')
-        onClose()
+      if (paymentResult.success) {
+        // Mint ticket after successful payment
+        const mintResult = await mintTicket(paymentResult.paymentId)
+        
+        if (mintResult.success) {
+          setStep('success')
+          toast.success('Ticket purchased successfully!')
+          setTimeout(() => {
+            onSuccess(mintResult.ticketId)
+            onClose()
+          }, 2000)
+        } else {
+          throw new Error('Failed to mint ticket')
+        }
+      } else {
+        throw new Error(paymentResult.error || 'Payment failed')
       }
     } catch (error) {
-      console.error('Purchase error:', error)
-      alert('Failed to purchase ticket')
+      console.error('Payment error:', error)
+      toast.error(error instanceof Error ? error.message : 'Payment failed')
+      setStep('method')
     } finally {
       setIsProcessing(false)
     }
   }
 
+  const processWalletPayment = async () => {
+    if (!walletAddress) {
+      throw new Error('Wallet address not found')
+    }
+
+    try {
+      // Get approval for gasless minting
+      const approvalResponse = await fetch('/api/payment/approval', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': userToken ? `Bearer ${userToken}` : ''
+        },
+        body: JSON.stringify({
+          walletAddress,
+          eventId: event.id,
+          onChainId: event.onChainId, // Include onChainId
+          amount: quantity,
+          price: totalAmount,
+          method: 'wallet'
+        })
+      })
+
+      const approvalData = await approvalResponse.json()
+
+      if (!approvalResponse.ok || !approvalData.success) {
+        throw new Error(approvalData.error || 'Failed to get payment approval')
+      }
+
+      // Process payment
+      const paymentResponse = await fetch('/api/payment/process', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': userToken ? `Bearer ${userToken}` : ''
+        },
+        body: JSON.stringify({
+          method: 'wallet',
+          approvalId: approvalData.approvalId,
+          signature: approvalData.signature,
+          walletAddress,
+          amount: totalAmount,
+          currency: event.currency,
+          eventId: event.id,
+          quantity,
+          ticketTypeId: ticketType?._id
+        })
+      })
+
+      const paymentData = await paymentResponse.json()
+
+      if (!paymentResponse.ok || !paymentData.success) {
+        throw new Error(paymentData.error || 'Payment processing failed')
+      }
+
+      return paymentData
+
+    } catch (error) {
+      throw error
+    }
+  }
+
+  const processPaystackPayment = async () => {
+    // Dummy implementation
+    return new Promise(resolve => {
+      setTimeout(() => {
+        resolve({
+          success: true,
+          paymentId: `paystack_dummy_${Date.now()}`,
+          message: 'Payment processed successfully'
+        })
+      }, 1500)
+    })
+  }
+
+  const mintTicket = async (paymentId: string) => {
+    try {
+      const response = await fetch('/api/tickets/mint', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': userToken ? `Bearer ${userToken}` : ''
+        },
+        body: JSON.stringify({
+          walletAddress,
+          eventId: event.id,
+          paymentId,
+          quantity,
+          method: selectedMethod,
+          ticketTypeId: ticketType?._id
+        })
+      })
+
+      const data = await response.json()
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to mint ticket')
+      }
+
+      return data
+
+    } catch (error) {
+      throw error
+    }
+  }
+
+  const formatPrice = (amount: number) => {
+    if (event.isFree) return 'FREE'
+    return `${event.currency} ${amount.toFixed(2)}`
+  }
+
+  const getExplorerUrl = (txHash: string) => {
+    return `https://blockscout.lisk.com/tx/${txHash}`
+  }
+
+  if (!isOpen) return null
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md">
+      <div className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-md overflow-hidden">
         {/* Header */}
-        <div className="p-6 border-b">
+        <div className="p-6 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between">
-            <h3 className="text-xl font-bold">Purchase Tickets</h3>
-            <button onClick={onClose} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
+            <h2 className="text-xl font-bold">Purchase Ticket</h2>
+            <button
+              onClick={onClose}
+              disabled={isProcessing}
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg disabled:opacity-50 transition-colors"
+            >
               <X className="h-5 w-5" />
             </button>
           </div>
-          <p className="text-gray-600 dark:text-gray-400 mt-2">
-            {event.title} - {ticketType.name}
+          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+            Complete your ticket purchase
           </p>
         </div>
 
-        {/* Quantity Selector */}
-        <div className="p-6 border-b">
-          <div className="flex items-center justify-between mb-4">
-            <span className="font-medium">Quantity</span>
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                className="w-8 h-8 rounded-full border flex items-center justify-center"
-              >
-                -
-              </button>
-              <span className="text-xl font-bold">{quantity}</span>
-              <button
-                onClick={() => setQuantity(quantity + 1)}
-                className="w-8 h-8 rounded-full border flex items-center justify-center"
-              >
-                +
-              </button>
-            </div>
-          </div>
-          
-          <div className="text-right">
-            <div className="text-2xl font-bold text-primary">
-              ${(totalPrice).toFixed(2)}
-            </div>
-            <div className="text-sm text-gray-500">
-              ${ticketType.price} each
-            </div>
-          </div>
-        </div>
-
-        {/* Payment Methods */}
-        <div className="p-6 border-b">
-          <h4 className="font-medium mb-4">Payment Method</h4>
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              onClick={() => setPaymentMethod('crypto')}
-              className={`p-4 rounded-xl border-2 flex flex-col items-center ${
-                paymentMethod === 'crypto' 
-                  ? 'border-primary bg-primary/5' 
-                  : 'border-gray-200'
-              }`}
-            >
-              <Globe className="h-6 w-6 mb-2" />
-              <span>Crypto</span>
-              <span className="text-xs text-gray-500 mt-1">Gasless</span>
-            </button>
-
-            <button
-              onClick={() => setPaymentMethod('paystack')}
-              className={`p-4 rounded-xl border-2 flex flex-col items-center ${
-                paymentMethod === 'paystack' 
-                  ? 'border-primary bg-primary/5' 
-                  : 'border-gray-200'
-              }`}
-            >
-              <CreditCard className="h-6 w-6 mb-2" />
-              <span>Paystack</span>
-              <span className="text-xs text-gray-500 mt-1">NGN Cards</span>
-            </button>
-
-            <button
-              onClick={() => setPaymentMethod('flutterwave')}
-              className={`p-4 rounded-xl border-2 flex flex-col items-center ${
-                paymentMethod === 'flutterwave' 
-                  ? 'border-primary bg-primary/5' 
-                  : 'border-gray-200'
-              }`}
-            >
-              <CreditCard className="h-6 w-6 mb-2" />
-              <span>Flutterwave</span>
-              <span className="text-xs text-gray-500 mt-1">Pan-Africa</span>
-            </button>
-
-            <button
-              onClick={() => setPaymentMethod('ussd')}
-              className={`p-4 rounded-xl border-2 flex flex-col items-center ${
-                paymentMethod === 'ussd' 
-                  ? 'border-primary bg-primary/5' 
-                  : 'border-gray-200'
-              }`}
-            >
-              <Smartphone className="h-6 w-6 mb-2" />
-              <span>USSD</span>
-              <span className="text-xs text-gray-500 mt-1">Nigeria</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Action Buttons */}
+        {/* Content */}
         <div className="p-6">
-          <button
-            onClick={handlePurchase}
-            disabled={isProcessing}
-            className="w-full py-4 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark disabled:opacity-50 flex items-center justify-center gap-2"
-          >
-            {isProcessing ? (
-              <>
-                <div className="h-5 w-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                Processing...
-              </>
-            ) : (
-              <>
-                <Ticket className="h-5 w-5" />
-                Purchase {quantity} Ticket{quantity > 1 ? 's' : ''}
-              </>
-            )}
-          </button>
-          
-          <p className="text-center text-sm text-gray-500 mt-4">
-            {paymentMethod === 'crypto' 
-              ? 'No gas fees required - powered by Biconomy' 
-              : 'You will be redirected to complete payment'}
-          </p>
+          {step === 'method' && (
+            <>
+              {/* Event Info */}
+              <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-xl">
+                <h3 className="font-semibold mb-2">{event.title}</h3>
+                <div className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4" />
+                    <span>{formattedDate}</span>
+                  </div>
+                  {event.venue && (
+                    <div className="flex items-center gap-2">
+                      <MapPin className="h-4 w-4" />
+                      <span>{event.venue}</span>
+                    </div>
+                  )}
+                  {ticketType && (
+                    <div className="flex items-center gap-2">
+                      <Ticket className="h-4 w-4" />
+                      <span>{ticketType.name} • {quantity} ticket{quantity > 1 ? 's' : ''}</span>
+                    </div>
+                  )}
+                </div>
+                <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-600 dark:text-gray-400">Total Amount</span>
+                    <span className="text-2xl font-bold text-primary">
+                      {formatPrice(totalAmount)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Payment Methods */}
+              <div className="mb-6">
+                <h3 className="font-semibold mb-3">Select Payment Method</h3>
+                <div className="space-y-3">
+                  {paymentMethods.map((method) => (
+                    <button
+                      key={method.id}
+                      onClick={() => setSelectedMethod(method.id)}
+                      disabled={method.id === 'wallet' && !walletAddress}
+                      className={`w-full p-4 rounded-xl border flex items-start gap-3 text-left transition-all ${
+                        selectedMethod === method.id
+                          ? 'border-primary bg-primary/5'
+                          : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                      } ${method.id === 'wallet' && !walletAddress ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                      <div className={`p-2 rounded-lg ${
+                        selectedMethod === method.id 
+                          ? 'bg-primary text-white' 
+                          : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
+                      }`}>
+                        {method.icon}
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-semibold">{method.name}</div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400">
+                          {method.description}
+                          {method.id === 'wallet' && !walletAddress && (
+                            <span className="text-red-500 block mt-1">
+                              No wallet connected
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      {selectedMethod === method.id && (
+                        <CheckCircle className="h-5 w-5 text-primary flex-shrink-0 mt-1" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Next Button */}
+              <button
+                onClick={() => setStep('confirm')}
+                disabled={selectedMethod === 'wallet' && !walletAddress}
+                className="w-full py-3 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
+              >
+                Continue to Payment
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            </>
+          )}
+
+          {step === 'confirm' && (
+            <>
+              {/* Confirmation */}
+              <div className="text-center mb-6">
+                <div className="w-16 h-16 mx-auto mb-4 bg-primary/10 rounded-full flex items-center justify-center">
+                  <Shield className="h-8 w-8 text-primary" />
+                </div>
+                <h3 className="text-lg font-semibold mb-2">Confirm Payment</h3>
+                <p className="text-gray-600 dark:text-gray-400 mb-6">
+                  You're about to purchase {quantity} ticket{quantity > 1 ? 's' : ''} for {event.title}
+                </p>
+                
+                <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-xl mb-6">
+                  <div className="text-3xl font-bold text-primary mb-2">
+                    {formatPrice(totalAmount)}
+                  </div>
+                  <div className="text-sm text-gray-600 dark:text-gray-400">
+                    Total amount to be paid
+                  </div>
+                </div>
+
+                {/* Payment Method Info */}
+                <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-xl mb-6">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-gray-600 dark:text-gray-400">Payment Method</span>
+                    <span className="font-semibold flex items-center gap-2">
+                      {selectedMethod === 'wallet' ? <Wallet className="h-4 w-4" /> : <CreditCard className="h-4 w-4" />}
+                      {selectedMethod === 'wallet' ? 'Embedded Wallet' : 'Card Payment'}
+                    </span>
+                  </div>
+                  {selectedMethod === 'wallet' && walletAddress && (
+                    <div className="text-xs text-gray-500 bg-gray-100 dark:bg-gray-800 p-2 rounded-lg mt-2 font-mono">
+                      {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => setStep('method')}
+                  className="py-3 border border-gray-300 dark:border-gray-600 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                  disabled={isProcessing}
+                >
+                  Back
+                </button>
+                <button
+                  onClick={handlePayment}
+                  disabled={isProcessing}
+                  className="py-3 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark disabled:opacity-50 flex items-center justify-center gap-2 transition-colors"
+                >
+                  {isProcessing ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    'Confirm & Pay'
+                  )}
+                </button>
+              </div>
+            </>
+          )}
+
+          {step === 'processing' && (
+            <div className="text-center py-8">
+              <div className="relative">
+                <div className="h-16 w-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <Ticket className="h-8 w-8 text-primary animate-pulse" />
+                </div>
+              </div>
+              <h3 className="text-lg font-semibold mb-2">Processing Payment</h3>
+              <p className="text-gray-600 dark:text-gray-400">
+                Please wait while we process your payment...
+              </p>
+            </div>
+          )}
+
+          {step === 'success' && (
+            <div className="text-center py-8">
+              <div className="w-16 h-16 mx-auto mb-4 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center">
+                <CheckCircle className="h-8 w-8 text-green-600 dark:text-green-400" />
+              </div>
+              <h3 className="text-lg font-semibold mb-2">Payment Successful!</h3>
+              <p className="text-gray-600 dark:text-gray-400 mb-6">
+                Your ticket has been purchased and minted successfully.
+              </p>
+              <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-xl mb-6">
+                <div className="flex items-center justify-center gap-2">
+                  <Ticket className="h-5 w-5 text-green-600" />
+                  <span className="font-semibold">Ticket Ready</span>
+                </div>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+                  You can view your ticket in the "My Tickets" section
+                </p>
+              </div>
+              <button
+                onClick={onClose}
+                className="w-full py-3 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors"
+              >
+                Done
+              </button>
+            </div>
+          )}
         </div>
+
+        {/* Footer */}
+        {step !== 'success' && (
+          <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+            <div className="flex items-center justify-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+              <Shield className="h-4 w-4" />
+              <span>Secure payment • Encrypted connection</span>
+            </div>
+            {event.onChainId && (
+              <div className="flex items-center justify-center gap-2 text-sm text-blue-600 dark:text-blue-400 mt-2">
+                <Shield className="h-3 w-3" />
+                <span>On-chain ticket • Blockchain secured</span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

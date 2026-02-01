@@ -1,4 +1,4 @@
-// lib/database/models.ts - UPDATED WITH ENHANCED USER PROFILE AND USER SETTINGS
+// lib/database/models.ts - UPDATED WITH TRANSFER HISTORY AND PAYMENT SCHEMA
 import mongoose from 'mongoose'
 
 // User Schema with simplified fields
@@ -28,110 +28,18 @@ const UserSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now },
 })
 
-// Enhanced UserProfile schema with social links and preferences
+// Update UserProfile schema to be optional
 const UserProfileSchema = new mongoose.Schema({
-  userId: { 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: 'User', 
-    required: true,
-    unique: true 
-  },
-  fullName: { 
-    type: String 
-  },
-  bio: { 
-    type: String, 
-    default: '' 
-  },
-  location: { 
-    type: String, 
-    default: '' 
-  },
-  dateOfBirth: { 
-    type: Date, 
-    default: null 
-  },
-  interests: [{ 
-    type: String 
-  }],
-  profilePicture: { 
-    type: String, 
-    default: '' 
-  },
-  socialLinks: {
-    twitter: { type: String, default: '' },
-    instagram: { type: String, default: '' },
-    linkedin: { type: String, default: '' },
-    website: { type: String, default: '' }
-  },
-  notificationPreferences: {
-    email: { type: Boolean, default: true },
-    push: { type: Boolean, default: true },
-    ticketUpdates: { type: Boolean, default: true },
-    eventReminders: { type: Boolean, default: true },
-    promotional: { type: Boolean, default: true }
-  },
-  privacySettings: {
-    showEmail: { type: Boolean, default: false },
-    showPhone: { type: Boolean, default: false },
-    showLocation: { type: Boolean, default: false }
-  },
-  createdAt: { 
-    type: Date, 
-    default: Date.now 
-  },
-  updatedAt: { 
-    type: Date, 
-    default: Date.now 
-  }
-});
-
-// UserSettings model for app preferences
-const UserSettingsSchema = new mongoose.Schema({
-  userId: { 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: 'User', 
-    required: true,
-    unique: true 
-  },
-  theme: { 
-    type: String, 
-    enum: ['light', 'dark', 'system'], 
-    default: 'system' 
-  },
-  language: { 
-    type: String, 
-    default: 'en' 
-  },
-  currency: { 
-    type: String, 
-    default: 'USD' 
-  },
-  notifications: {
-    email: { type: Boolean, default: true },
-    push: { type: Boolean, default: true },
-    ticketUpdates: { type: Boolean, default: true },
-    eventReminders: { type: Boolean, default: true },
-    promotional: { type: Boolean, default: true }
-  },
-  security: {
-    twoFactorAuth: { type: Boolean, default: false },
-    biometricLogin: { type: Boolean, default: false },
-    sessionTimeout: { type: Number, default: 3600 } // seconds
-  },
-  emailPreferences: {
-    updates: { type: Boolean, default: true },
-    marketing: { type: Boolean, default: true },
-    weeklyDigest: { type: Boolean, default: true }
-  },
-  createdAt: { 
-    type: Date, 
-    default: Date.now 
-  },
-  updatedAt: { 
-    type: Date, 
-    default: Date.now 
-  }
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  firstName: { type: String },
+  lastName: { type: String },
+  bio: { type: String, default: '' },
+  location: { type: String, default: '' },
+  dateOfBirth: { type: Date, default: null },
+  interests: [{ type: String }],
+  profilePicture: { type: String, default: '' },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
 });
 
 // Event Schema
@@ -228,6 +136,7 @@ const TicketTypeSchema = new mongoose.Schema({
   onChainCategoryId: Number,
 })
 
+// Order Schema
 const OrderSchema = new mongoose.Schema({
   userId: { 
     type: mongoose.Schema.Types.ObjectId, 
@@ -292,6 +201,72 @@ const OrderSchema = new mongoose.Schema({
 }, {
   timestamps: true  // Added to automatically handle createdAt and updatedAt
 });
+
+// ========================
+// PAYMENT SCHEMA
+// ========================
+const PaymentSchema = new mongoose.Schema({
+  userId: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'User', 
+    required: true 
+  },
+  eventId: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'Event', 
+    required: true 
+  },
+  amount: { 
+    type: Number, 
+    required: true 
+  },
+  currency: { 
+    type: String, 
+    default: 'USD' 
+  },
+  paymentMethod: { 
+    type: String, 
+    enum: ['wallet', 'paystack', 'crypto', 'free'], 
+    required: true 
+  },
+  paymentStatus: { 
+    type: String, 
+    enum: ['pending', 'completed', 'failed', 'refunded'], 
+    default: 'pending' 
+  },
+  paymentReference: { 
+    type: String, 
+    required: true, 
+    unique: true 
+  },
+  approvalId: { 
+    type: String 
+  }, // For gasless minting approvals
+  transactionHash: { 
+    type: String 
+  }, // For blockchain payments
+  metadata: { 
+    type: mongoose.Schema.Types.Mixed, 
+    default: {} 
+  },
+  createdAt: { 
+    type: Date, 
+    default: Date.now 
+  },
+  updatedAt: { 
+    type: Date, 
+    default: Date.now 
+  }
+})
+
+// Add indexes for Payment schema
+PaymentSchema.index({ userId: 1 })
+PaymentSchema.index({ eventId: 1 })
+PaymentSchema.index({ paymentReference: 1 })
+PaymentSchema.index({ paymentStatus: 1 })
+PaymentSchema.index({ createdAt: -1 })
+PaymentSchema.index({ approvalId: 1 }, { sparse: true })
+PaymentSchema.index({ transactionHash: 1 }, { sparse: true })
 
 // Whitelist Schema
 const WhitelistSchema = new mongoose.Schema({
@@ -793,13 +768,141 @@ WalletTransactionSchema.index({ type: 1, status: 1 })
 WalletTransactionSchema.index({ createdAt: -1 })
 WalletTransactionSchema.index({ blockNumber: -1 })
 
+// ========================
+// GASLESS APPROVAL SCHEMA
+// ========================
+const GaslessApprovalSchema = new mongoose.Schema({
+  userId: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'User', 
+    required: true 
+  },
+  eventId: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'Event', 
+    required: true 
+  },
+  ticketTypeId: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'TicketType' 
+  },
+  amount: { 
+    type: Number, 
+    required: true 
+  },
+  price: { 
+    type: Number, 
+    required: true 
+  },
+  currency: { 
+    type: String, 
+    default: 'USD' 
+  },
+  approvalId: { 
+    type: String, 
+    required: true, 
+    unique: true 
+  },
+  signature: { 
+    type: String, 
+    required: true 
+  },
+  recipient: { 
+    type: String, 
+    required: true 
+  },
+  validUntil: { 
+    type: Date, 
+    required: true 
+  },
+  status: { 
+    type: String, 
+    enum: ['pending', 'used', 'expired', 'cancelled'], 
+    default: 'pending' 
+  },
+  usedAt: { 
+    type: Date 
+  },
+  transactionHash: { 
+    type: String 
+  },
+  metadata: { 
+    type: mongoose.Schema.Types.Mixed, 
+    default: {} 
+  },
+  createdAt: { 
+    type: Date, 
+    default: Date.now 
+  },
+  updatedAt: { 
+    type: Date, 
+    default: Date.now 
+  }
+})
+
+// Add indexes for GaslessApproval schema
+GaslessApprovalSchema.index({ userId: 1 })
+GaslessApprovalSchema.index({ eventId: 1 })
+GaslessApprovalSchema.index({ approvalId: 1 })
+GaslessApprovalSchema.index({ status: 1 })
+GaslessApprovalSchema.index({ validUntil: 1 })
+GaslessApprovalSchema.index({ createdAt: -1 })
+
+// ========================
+// BACKEND SIGNER SCHEMA
+// ========================
+const BackendSignerSchema = new mongoose.Schema({
+  name: { 
+    type: String, 
+    required: true 
+  },
+  address: { 
+    type: String, 
+    required: true, 
+    unique: true 
+  },
+  contractType: { 
+    type: String, 
+    enum: ['CackPassCore', 'TicketMarket', 'RoyaltyEngine', 'VoucherVerifier'], 
+    required: true 
+  },
+  privateKeyEncrypted: { 
+    type: String 
+  },
+  isActive: { 
+    type: Boolean, 
+    default: true 
+  },
+  lastUsed: { 
+    type: Date 
+  },
+  metadata: { 
+    type: mongoose.Schema.Types.Mixed, 
+    default: {} 
+  },
+  createdAt: { 
+    type: Date, 
+    default: Date.now 
+  },
+  updatedAt: { 
+    type: Date, 
+    default: Date.now 
+  }
+})
+
+// Add indexes for BackendSigner schema
+BackendSignerSchema.index({ address: 1 })
+BackendSignerSchema.index({ contractType: 1 })
+BackendSignerSchema.index({ isActive: 1 })
+BackendSignerSchema.index({ createdAt: -1 })
+
 // Prevent model overwrite error in Next.js hot reload
 export const User = mongoose.models.User || mongoose.model('User', UserSchema)
 export const UserProfile = mongoose.models.UserProfile || mongoose.model('UserProfile', UserProfileSchema)
-export const UserSettings = mongoose.models.UserSettings || mongoose.model('UserSettings', UserSettingsSchema)
 export const Event = mongoose.models.Event || mongoose.model('Event', EventSchema)
 export const TicketType = mongoose.models.TicketType || mongoose.model('TicketType', TicketTypeSchema)
 export const Order = mongoose.models.Order || mongoose.model('Order', OrderSchema)
+export const Payment = mongoose.models.Payment || mongoose.model('Payment', PaymentSchema)
 export const Whitelist = mongoose.models.Whitelist || mongoose.model('Whitelist', WhitelistSchema)
 export const MarketListing = mongoose.models.MarketListing || mongoose.model('MarketListing', MarketListingSchema)
 export const Payout = mongoose.models.Payout || mongoose.model('Payout', PayoutSchema)
@@ -811,3 +914,5 @@ export const ResaleListing = mongoose.models.ResaleListing || mongoose.model('Re
 export const ResalePurchase = mongoose.models.ResalePurchase || mongoose.model('ResalePurchase', ResalePurchaseSchema)
 export const TransactionLog = mongoose.models.TransactionLog || mongoose.model('TransactionLog', TransactionLogSchema)
 export const WalletTransaction = mongoose.models.WalletTransaction || mongoose.model('WalletTransaction', WalletTransactionSchema)
+export const GaslessApproval = mongoose.models.GaslessApproval || mongoose.model('GaslessApproval', GaslessApprovalSchema)
+export const BackendSigner = mongoose.models.BackendSigner || mongoose.model('BackendSigner', BackendSignerSchema)
