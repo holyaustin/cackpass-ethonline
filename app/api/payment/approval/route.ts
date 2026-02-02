@@ -1,13 +1,32 @@
+// /app/api/payment/approval/route.ts - UPDATED WITH FREE EVENT HANDLING
 import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
 import { CackPassCoreABI } from '@/lib/contracts/abis/CackPassCore'
 import { connectDB } from '@/lib/database/connection'
 import { User, Event, TicketType } from '@/lib/database/models'
 
+// Helper function to serialize BigInt values
+function serializeBigInt(obj: any): any {
+  if (typeof obj === 'bigint') {
+    return obj.toString()
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(serializeBigInt)
+  }
+  if (obj !== null && typeof obj === 'object') {
+    const newObj: any = {}
+    for (const key in obj) {
+      newObj[key] = serializeBigInt(obj[key])
+    }
+    return newObj
+  }
+  return obj
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { walletAddress, eventId, amount, price, method } = body
+    const { walletAddress, eventId, amount, price = 0, method } = body
 
     if (!walletAddress || !eventId || !amount) {
       return NextResponse.json(
@@ -43,13 +62,17 @@ export async function POST(request: NextRequest) {
     // For now, we'll create a dummy signature
     const validUntil = Math.floor(Date.now() / 1000) + 3600 // Valid for 1 hour
     
+    // Handle free events - price might be 0
+    const priceValue = price || 0
+    const priceInWei = ethers.parseEther(priceValue.toString())
+    
     // Create signature data (matching contract's MintApproval struct)
     const signatureData = {
       recipient: walletAddress,
       eventId: event.onChainId || 1, // Use on-chain event ID if available
       ticketCategory: 0, // GeneralAdmission by default
-      amount: amount,
-      price: ethers.parseEther(price?.toString() || '0'),
+      amount: Number(amount),
+      price: priceInWei,
       validUntil: validUntil,
       id: approvalId
     }
@@ -60,19 +83,19 @@ export async function POST(request: NextRequest) {
     // Store approval in database
     // This would be stored in a PaymentApproval collection in production
 
-    return NextResponse.json({
+    return NextResponse.json(serializeBigInt({
       success: true,
       approvalId,
       signature,
       signatureData,
       validUntil,
       message: 'Payment approval generated'
-    })
+    }))
 
   } catch (error: any) {
     console.error('Approval generation error:', error)
     return NextResponse.json(
-      { success: false, error: 'Failed to generate approval' },
+      { success: false, error: 'Failed to generate approval: ' + error.message },
       { status: 500 }
     )
   }

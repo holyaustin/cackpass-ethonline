@@ -7,11 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "db:connect-test": "node scripts/test-mongodb-connection.js",
-    "db:check-collections": "node scripts/check-collections.js",
-    "test:create-event": "node scripts/test-create-event.js",
-    "test:full-flow": "node scripts/test-full-flow.js",
-    "db:seed-test-data": "node scripts/seed-test-data.js"
+     "cleanup:indexes": "tsx scripts/cleanup-duplicate-indexes.ts" 
   },
   "dependencies": {
     "@biconomy/account": "^4.5.7",

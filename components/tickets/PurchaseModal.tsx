@@ -1,7 +1,7 @@
-// /app/components/tickets/PurchaseModal.tsx
+// /app/components/tickets/PurchaseModal.tsx - SIMPLIFIED FIXED VERSION
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { 
   X, Wallet, CreditCard, Ticket, CheckCircle, 
   Loader2, ArrowRight, Shield, Globe, QrCode,
@@ -9,6 +9,7 @@ import {
   ExternalLink, AlertCircle, ChevronRight
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { usePrivy } from '@privy-io/react-auth'
 
 // Simplified interface for production
 interface PurchaseModalProps {
@@ -16,7 +17,8 @@ interface PurchaseModalProps {
   onClose: () => void
   onSuccess?: (ticketId?: string) => void  // Make parameter optional
   event: {
-    id: string
+    id?: string  // Make optional since we might get _id
+    _id?: string // Add _id field
     title: string
     startDate: string
     venue: string
@@ -29,7 +31,6 @@ interface PurchaseModalProps {
     endDate?: string
     isVirtual?: boolean
     category?: string
-    // Only include properties that exist in EventData
     organizer?: {
       name?: string
       avatar?: string
@@ -54,6 +55,37 @@ interface PaymentMethod {
   icon: React.ReactNode
 }
 
+// Helper function to extract wallet address from Privy user (from dashboard)
+function getWalletAddressFromUser(user: any): string | null {
+  if (!user) return null
+  
+  // Check direct wallet object (for embedded wallets)
+  if (user.wallet?.address && typeof user.wallet.address === 'string') {
+    return user.wallet.address
+  }
+  
+  // Check linked accounts
+  const linkedAccounts = user.linkedAccounts || []
+  
+  // Look for embedded wallet in linked accounts
+  const embeddedWallet = linkedAccounts.find(
+    (acc: any) => acc.type === 'wallet' && acc.walletClientType === 'privy'
+  )
+  
+  if (embeddedWallet?.address) {
+    return embeddedWallet.address
+  }
+  
+  // Try to find any wallet address
+  for (const account of linkedAccounts) {
+    if (account.type === 'wallet' && account.address) {
+      return account.address
+    }
+  }
+  
+  return null
+}
+
 export default function PurchaseModal({ 
   isOpen, 
   onClose, 
@@ -62,55 +94,73 @@ export default function PurchaseModal({
   ticketType,
   quantity = 1
 }: PurchaseModalProps) {
+  const { user, authenticated, ready, getAccessToken } = usePrivy()
   const [selectedMethod, setSelectedMethod] = useState<'wallet' | 'paystack'>('wallet')
   const [isProcessing, setIsProcessing] = useState(false)
   const [step, setStep] = useState<'method' | 'confirm' | 'processing' | 'success'>('method')
   const [walletAddress, setWalletAddress] = useState<string | null>(null)
   const [userToken, setUserToken] = useState<string | null>(null)
+  const [hasEmbeddedWallet, setHasEmbeddedWallet] = useState(false)
 
-  // Get user token and wallet address
+  // Helper function to get event ID (handles both id and _id)
+  const getEventId = useCallback(() => {
+    // Try multiple possible ID fields
+    return event._id || event.id
+  }, [event._id, event.id])
+
+  // Get user token and wallet address from Privy
   useEffect(() => {
     if (isOpen) {
-      const token = localStorage.getItem('privy_token')
-      setUserToken(token)
-      
-      // Try to get wallet address
-      const getWalletAddress = async () => {
-        if (token) {
-          try {
-            const response = await fetch('/api/auth/user', {
-              headers: { 'Authorization': `Bearer ${token}` }
-            })
+      const fetchUserData = async () => {
+        try {
+          if (authenticated && ready && user) {
+            // Get access token
+            const token = await getAccessToken()
+            setUserToken(token)
             
-            if (response.ok) {
-              const data = await response.json()
-              if (data.user?.walletAddress) {
-                setWalletAddress(data.user.walletAddress)
-                return
-              }
+            // Extract wallet address from user object
+            const address = getWalletAddressFromUser(user)
+            if (address) {
+              setWalletAddress(address)
+              setHasEmbeddedWallet(true)
+            } else {
+              // No embedded wallet found
+              setHasEmbeddedWallet(false)
+              setSelectedMethod('paystack') // Default to paystack if no wallet
             }
-          } catch (error) {
-            console.error('Failed to fetch wallet address:', error)
+          } else {
+            // User not authenticated
+            setHasEmbeddedWallet(false)
+            setSelectedMethod('paystack')
           }
-        }
-        
-        // Check for embedded wallet
-        const embeddedWallet = localStorage.getItem('embedded_wallet')
-        if (embeddedWallet) {
-          try {
-            const walletData = JSON.parse(embeddedWallet)
-            if (walletData.address) {
-              setWalletAddress(walletData.address)
-            }
-          } catch (error) {
-            console.error('Failed to parse embedded wallet:', error)
-          }
+        } catch (error) {
+          console.error('Failed to fetch user data:', error)
+          setHasEmbeddedWallet(false)
+          setSelectedMethod('paystack')
         }
       }
       
-      getWalletAddress()
+      fetchUserData()
     }
-  }, [isOpen])
+  }, [isOpen, authenticated, ready, user, getAccessToken])
+
+  // Debug: Log event data when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      const eventId = getEventId()
+      console.log('PurchaseModal event data:', {
+        eventId: eventId,
+        event: event,
+        allEventFields: Object.keys(event),
+        hasEmbeddedWallet: hasEmbeddedWallet,
+        walletAddress: walletAddress
+      })
+      
+      if (!eventId) {
+        console.error('Event ID is missing! Available fields:', event)
+      }
+    }
+  }, [isOpen, getEventId, event, hasEmbeddedWallet, walletAddress])
 
   const paymentMethods: PaymentMethod[] = [
     {
@@ -129,7 +179,7 @@ export default function PurchaseModal({
 
   const totalAmount = event.isFree ? 0 : (ticketType?.price || event.price) * quantity
   
-  const formatDate = (dateString: string) => {
+  const formatDate = useCallback((dateString: string) => {
     try {
       const date = new Date(dateString)
       return date.toLocaleDateString('en-US', {
@@ -142,123 +192,194 @@ export default function PurchaseModal({
     } catch {
       return 'TBD'
     }
+  }, [])
+
+const handlePayment = async () => {
+  if (selectedMethod === 'wallet' && !walletAddress) {
+    toast.error('Please connect your embedded wallet first')
+    return
   }
 
-  const handlePayment = async () => {
-    setIsProcessing(true)
-    setStep('processing')
+  const eventId = getEventId()
+  if (!eventId) {
+    toast.error('Event ID is missing. Please try refreshing the page.')
+    console.error('Event ID missing in PurchaseModal. Event object:', event)
+    return
+  }
 
-    try {
-      let paymentResult
+  setIsProcessing(true)
+  setStep('processing')
 
-      if (selectedMethod === 'wallet') {
-        paymentResult = await processWalletPayment()
-      } else {
-        paymentResult = await processPaystackPayment()
-      }
+  try {
+    let paymentResult
 
-      if (paymentResult.success) {
-        const mintResult = await mintTicket(paymentResult.paymentId)
-        
-        if (mintResult.success) {
-          setStep('success')
-          toast.success('Ticket purchased successfully!')
-          setTimeout(() => {
-            if (onSuccess) {
-              onSuccess(mintResult.ticketId || '')
-            }
-            onClose()
-          }, 2000)
-        } else {
-          throw new Error('Failed to mint ticket')
-        }
-      } else {
-        throw new Error(paymentResult.error || 'Payment failed')
-      }
-    } catch (error) {
-      console.error('Payment error:', error)
-      toast.error(error instanceof Error ? error.message : 'Payment failed')
-      setStep('method')
-    } finally {
-      setIsProcessing(false)
+    if (selectedMethod === 'wallet') {
+      paymentResult = await processWalletPayment(eventId)
+    } else {
+      paymentResult = await processPaystackPayment(eventId)
     }
+
+    // Handle Paystack redirect
+    if (paymentResult.requiresRedirect) {
+      toast.info('Redirecting to payment gateway...')
+      return // Redirect will happen via window.location
+    }
+
+    if (paymentResult.success) {
+      const mintResult = await mintTicket(eventId, paymentResult.paymentId)
+      
+      if (mintResult.success) {
+        setStep('success')
+        toast.success('Ticket purchased successfully!')
+        setTimeout(() => {
+          if (onSuccess) {
+            onSuccess(mintResult.ticketId || '')
+          }
+          onClose()
+        }, 2000)
+      } else {
+        throw new Error('Failed to mint ticket')
+      }
+    } else {
+      throw new Error(paymentResult.error || 'Payment failed')
+    }
+  } catch (error) {
+    console.error('Payment error:', error)
+    toast.error(error instanceof Error ? error.message : 'Payment failed')
+    setStep('method')
+  } finally {
+    setIsProcessing(false)
+  }
+}
+
+const processWalletPayment = async (eventId: string) => {
+  if (!walletAddress) {
+    throw new Error('Wallet address not found')
   }
 
-  const processWalletPayment = async () => {
+  try {
+    console.log('Starting wallet payment process for event:', eventId)
+    
+    // First get payment approval
+    const approvalResponse = await fetch('/api/payment/approval', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': userToken ? `Bearer ${userToken}` : ''
+      },
+      body: JSON.stringify({
+        walletAddress,
+        eventId: eventId,
+        onChainId: event.onChainId,
+        amount: quantity,
+        price: totalAmount,
+        paymentMethod: 'wallet' // Make sure this matches
+      })
+    })
+
+    const approvalData = await approvalResponse.json()
+
+    if (!approvalResponse.ok || !approvalData.success) {
+      console.error('Approval failed:', approvalData)
+      throw new Error(approvalData.error || 'Failed to get payment approval')
+    }
+
+    console.log('Approval received:', approvalData.approvalId)
+
+    const ticketTypeId = ticketType?._id || ticketType?.id
+
+    // Process the payment with ALL required fields
+    const paymentPayload = {
+      paymentMethod: 'wallet', // This should match what the API expects
+      approvalId: approvalData.approvalId,
+      signature: approvalData.signature,
+      walletAddress: walletAddress,
+      amount: totalAmount,
+      currency: event.currency || 'USD',
+      eventId: eventId,
+      quantity: quantity,
+      ticketTypeId: ticketTypeId,
+      signatureData: approvalData.signatureData || null,
+      validUntil: approvalData.validUntil || null
+    }
+
+    console.log('Sending payment payload:', paymentPayload)
+
+    const paymentResponse = await fetch('/api/payment/process', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': userToken ? `Bearer ${userToken}` : ''
+      },
+      body: JSON.stringify(paymentPayload)
+    })
+
+    const paymentData = await paymentResponse.json()
+
+    if (!paymentResponse.ok || !paymentData.success) {
+      console.error('Payment failed:', paymentData)
+      throw new Error(paymentData.error || paymentData.details || 'Payment processing failed')
+    }
+
+    console.log('Payment successful:', paymentData.paymentId)
+    return paymentData
+
+  } catch (error) {
+    console.error('Wallet payment error:', error)
+    throw error
+  }
+}
+
+const processPaystackPayment = async (eventId: string) => {
+  const ticketTypeId = ticketType?._id || ticketType?.id
+
+  try {
+    console.log('Starting Paystack payment for event:', eventId)
+    
+    const response = await fetch('/api/payment/process', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': userToken ? `Bearer ${userToken}` : ''
+      },
+      body: JSON.stringify({
+        method: 'paystack',
+        walletAddress: walletAddress || 'card-payment',
+        amount: totalAmount,
+        currency: event.currency || 'NGN', // Paystack typically uses NGN
+        eventId: eventId,
+        quantity: quantity,
+        ticketTypeId: ticketTypeId
+      })
+    })
+
+    const data = await response.json()
+
+    if (!response.ok || !data.success) {
+      console.error('Paystack payment failed:', data)
+      throw new Error(data.error || data.details || 'Paystack payment failed')
+    }
+
+    console.log('Paystack payment initiated:', data)
+    
+    // If Paystack returns a payment URL, redirect to it
+    if (data.paymentUrl && data.requiresRedirect) {
+      window.location.href = data.paymentUrl
+      return { success: true, requiresRedirect: true }
+    }
+
+    return data
+  } catch (error) {
+    console.error('Paystack payment error:', error)
+    throw error
+  }
+}
+
+  const mintTicket = async (eventId: string, paymentId: string) => {
     if (!walletAddress) {
       throw new Error('Wallet address not found')
     }
 
-    try {
-      const approvalResponse = await fetch('/api/payment/approval', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': userToken ? `Bearer ${userToken}` : ''
-        },
-        body: JSON.stringify({
-          walletAddress,
-          eventId: event.id,
-          onChainId: event.onChainId,
-          amount: quantity,
-          price: totalAmount,
-          method: 'wallet'
-        })
-      })
-
-      const approvalData = await approvalResponse.json()
-
-      if (!approvalResponse.ok || !approvalData.success) {
-        throw new Error(approvalData.error || 'Failed to get payment approval')
-      }
-
-      const ticketTypeId = ticketType?._id || ticketType?.id
-
-      const paymentResponse = await fetch('/api/payment/process', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': userToken ? `Bearer ${userToken}` : ''
-        },
-        body: JSON.stringify({
-          method: 'wallet',
-          approvalId: approvalData.approvalId,
-          signature: approvalData.signature,
-          walletAddress,
-          amount: totalAmount,
-          currency: event.currency,
-          eventId: event.id,
-          quantity,
-          ticketTypeId: ticketTypeId
-        })
-      })
-
-      const paymentData = await paymentResponse.json()
-
-      if (!paymentResponse.ok || !paymentData.success) {
-        throw new Error(paymentData.error || 'Payment processing failed')
-      }
-
-      return paymentData
-
-    } catch (error) {
-      throw error
-    }
-  }
-
-  const processPaystackPayment = async () => {
-    return new Promise(resolve => {
-      setTimeout(() => {
-        resolve({
-          success: true,
-          paymentId: `paystack_dummy_${Date.now()}`,
-          message: 'Payment processed successfully'
-        })
-      }, 1500)
-    })
-  }
-
-  const mintTicket = async (paymentId: string) => {
     try {
       const ticketTypeId = ticketType?._id || ticketType?.id
 
@@ -270,7 +391,7 @@ export default function PurchaseModal({
         },
         body: JSON.stringify({
           walletAddress,
-          eventId: event.id,
+          eventId: eventId,
           paymentId,
           quantity,
           method: selectedMethod,
@@ -291,16 +412,18 @@ export default function PurchaseModal({
     }
   }
 
-  const formatPrice = (amount: number) => {
+  const formatPrice = useCallback((amount: number) => {
     if (event.isFree) return 'FREE'
     return `${event.currency} ${amount.toFixed(2)}`
-  }
+  }, [event.isFree, event.currency])
 
   if (!isOpen) return null
 
+  const eventId = getEventId()
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-md overflow-hidden">
+      <div className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-md overflow-hidden max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="p-6 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between">
@@ -361,12 +484,12 @@ export default function PurchaseModal({
                     <button
                       key={method.id}
                       onClick={() => setSelectedMethod(method.id)}
-                      disabled={method.id === 'wallet' && !walletAddress}
+                      disabled={method.id === 'wallet' && !hasEmbeddedWallet}
                       className={`w-full p-4 rounded-xl border flex items-start gap-3 text-left transition-all ${
                         selectedMethod === method.id
                           ? 'border-primary bg-primary/5'
                           : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
-                      } ${method.id === 'wallet' && !walletAddress ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      } ${method.id === 'wallet' && !hasEmbeddedWallet ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
                       <div className={`p-2 rounded-lg ${
                         selectedMethod === method.id 
@@ -379,10 +502,12 @@ export default function PurchaseModal({
                         <div className="font-semibold">{method.name}</div>
                         <div className="text-sm text-gray-600 dark:text-gray-400">
                           {method.description}
-                          {method.id === 'wallet' && !walletAddress && (
-                            <span className="text-red-500 block mt-1">
-                              No wallet connected
-                            </span>
+                          {method.id === 'wallet' && !hasEmbeddedWallet && (
+                            <div className="mt-1">
+                              <span className="text-red-500 text-xs">
+                                No embedded wallet found. Please set up your wallet first.
+                              </span>
+                            </div>
                           )}
                         </div>
                       </div>
@@ -394,15 +519,25 @@ export default function PurchaseModal({
                 </div>
               </div>
 
-              {/* Next Button */}
-              <button
-                onClick={() => setStep('confirm')}
-                disabled={selectedMethod === 'wallet' && !walletAddress}
-                className="w-full py-3 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
-              >
-                Continue to Payment
-                <ArrowRight className="h-4 w-4" />
-              </button>
+              {/* Action Buttons */}
+              <div className="space-y-3">
+                <button
+                  onClick={() => setStep('confirm')}
+                  disabled={(selectedMethod === 'wallet' && !hasEmbeddedWallet) || isProcessing || !eventId}
+                  className="w-full py-3 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
+                >
+                  Continue to Payment
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+                
+                <button
+                  onClick={onClose}
+                  disabled={isProcessing}
+                  className="w-full py-3 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
             </>
           )}
 
@@ -441,28 +576,37 @@ export default function PurchaseModal({
                       {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
                     </div>
                   )}
+                  {selectedMethod === 'paystack' && (
+                    <div className="text-xs text-gray-500 bg-gray-100 dark:bg-gray-800 p-2 rounded-lg mt-2">
+                      You'll be redirected to Paystack to complete payment
+                    </div>
+                  )}
                 </div>
               </div>
 
               {/* Action Buttons */}
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  onClick={() => setStep('method')}
-                  className="py-3 border border-gray-300 dark:border-gray-600 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                  disabled={isProcessing}
-                >
-                  Back
-                </button>
+              <div className="space-y-3">
                 <button
                   onClick={handlePayment}
-                  disabled={isProcessing}
-                  className="py-3 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark disabled:opacity-50 flex items-center justify-center gap-2 transition-colors"
+                  disabled={isProcessing || !eventId}
+                  className="w-full py-3 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark disabled:opacity-50 flex items-center justify-center gap-2 transition-colors"
                 >
                   {isProcessing ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Processing...
+                    </>
                   ) : (
                     'Confirm & Pay'
                   )}
+                </button>
+                
+                <button
+                  onClick={() => setStep('method')}
+                  className="w-full py-3 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                  disabled={isProcessing}
+                >
+                  Back
                 </button>
               </div>
             </>
@@ -480,6 +624,15 @@ export default function PurchaseModal({
               <p className="text-gray-600 dark:text-gray-400">
                 Please wait while we process your payment...
               </p>
+              <div className="mt-6">
+                <button
+                  onClick={onClose}
+                  disabled={true}
+                  className="py-2 px-4 border border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 rounded-lg opacity-50 cursor-not-allowed"
+                >
+                  Cancel (Processing...)
+                </button>
+              </div>
             </div>
           )}
 
@@ -501,18 +654,34 @@ export default function PurchaseModal({
                   You can view your ticket in the "My Tickets" section
                 </p>
               </div>
-              <button
-                onClick={onClose}
-                className="w-full py-3 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors"
-              >
-                Done
-              </button>
+              <div className="space-y-3">
+                <button
+                  onClick={() => {
+                    if (onSuccess) {
+                      onSuccess()
+                    }
+                    onClose()
+                  }}
+                  className="w-full py-3 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors"
+                >
+                  Done
+                </button>
+                
+                <button
+                  onClick={() => {
+                    window.location.href = '/dashboard/tickets'
+                  }}
+                  className="w-full py-3 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                >
+                  View My Tickets
+                </button>
+              </div>
             </div>
           )}
         </div>
 
         {/* Footer */}
-        {step !== 'success' && (
+        {step !== 'success' && step !== 'processing' && (
           <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
             <div className="flex items-center justify-center gap-2 text-sm text-gray-600 dark:text-gray-400">
               <Shield className="h-4 w-4" />

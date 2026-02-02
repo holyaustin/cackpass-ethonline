@@ -808,7 +808,7 @@ export default function CreateTicketPage() {
       
       // Add event page URL information
       const eventSlug = formData.eventName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
-      const eventUrl = `${window.location.origin}/event/${savedEventId}/${eventSlug}`
+      const eventUrl = `${window.location.origin}/event/${savedEventId}`
       
       toast.info(
         <div className="space-y-2">
@@ -1082,7 +1082,7 @@ export default function CreateTicketPage() {
           <div className="flex items-start gap-3">
             <Info className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
             <div className="text-sm">
-              <span className="font-medium">Event Page URL:</span> After creating your event, you'll receive a unique URL to share with attendees (e.g., https://yourapp.com/event/123/event-name)
+              <span className="font-medium">Event Page URL:</span> After creating your event, you'll receive a unique URL to share with attendees (e.g., https://cackpass.vercel.app/event/123)
             </div>
           </div>
         </div>

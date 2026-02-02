@@ -1,3 +1,7 @@
 1. How do i send an email to organizers automatically after they have created an event with the events url or link for sharing on socials.
 
 http://localhost:3000/event/697fb876d6dbf1d1ad61409c/ai-x-blockchain-africa-summit-2026-nairobi
+
+http://localhost:3000/event/697fccaa844dc2d56377fde7/afro-fest-2026
+
+

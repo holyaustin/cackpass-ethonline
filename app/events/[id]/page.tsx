@@ -1,4 +1,4 @@
-// /app/events/[id]/page.tsx - FINAL PRODUCTION VERSION
+// /app/events/[id]/page.tsx - UPDATED VERSION
 'use client'
 
 import { useState, useEffect, Suspense } from 'react'
@@ -17,7 +17,6 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import PurchaseModal from '@/components/tickets/PurchaseModal'
 import { usePrivy } from '@privy-io/react-auth'
 import { format } from 'date-fns'
-import type { EventData } from '@/types/events'
 
 interface TicketTypeData {
   _id: string
@@ -34,6 +33,73 @@ interface TicketTypeData {
   updatedAt?: string
 }
 
+// Update EventData interface to include both id and _id
+interface EventDataWithId {
+  id: string
+  _id?: string
+  title: string
+  description: string
+  startDate: string
+  endDate: string
+  venue: string
+  isVirtual: boolean
+  isFree: boolean
+  price: number
+  currency: string
+  category: string
+  imageCid?: string
+  bannerImage?: string
+  onChainId?: number
+  organizer: {
+    name: string
+    avatar: string
+  }
+  attendees: number
+  rating: number
+  ticketTypes: Array<{
+    id: string
+    name: string
+    price: number
+    maxSupply: number
+    currentSupply: number
+  }>
+}
+
+// Default organizer object with cackpas.jpg fallback
+const DEFAULT_ORGANIZER = {
+  name: 'Event Organizer',
+  avatar: '/cackpas.jpg'
+}
+
+// Helper function to get safe organizer data
+const getSafeOrganizer = (organizer?: { name?: string; avatar?: string }) => {
+  if (!organizer) return DEFAULT_ORGANIZER
+  
+  return {
+    name: organizer.name || DEFAULT_ORGANIZER.name,
+    avatar: organizer.avatar || DEFAULT_ORGANIZER.avatar
+  }
+}
+
+// Helper function to get safe avatar URL with fallback
+const getSafeAvatarUrl = (avatar?: string) => {
+  if (!avatar || avatar.trim() === '') {
+    return '/cackpas.jpg'
+  }
+  
+  // Check if avatar is a valid URL or path
+  if (avatar.startsWith('http') || avatar.startsWith('/')) {
+    return avatar
+  }
+  
+  // If it's a relative path without leading slash, add it
+  if (!avatar.startsWith('/')) {
+    return `/${avatar}`
+  }
+  
+  return '/cackpas.jpg'
+}
+
 // Main component wrapper
 export default function EventPage() {
   return (
@@ -48,7 +114,7 @@ function EventPageContent() {
   const router = useRouter()
   const { authenticated, ready, user, getAccessToken } = usePrivy()
   
-  const [event, setEvent] = useState<EventData | null>(null)
+  const [event, setEvent] = useState<EventDataWithId | null>(null)
   const [ticketTypes, setTicketTypes] = useState<TicketTypeData[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isLoadingTickets, setIsLoadingTickets] = useState(false)
@@ -61,6 +127,11 @@ function EventPageContent() {
   const [hasLinkedAccounts, setHasLinkedAccounts] = useState(false)
   
   const eventId = params.id as string
+
+  // Get safe organizer data - handles undefined organizer
+  const getOrganizer = () => {
+    return getSafeOrganizer(event?.organizer)
+  }
 
   // Check if user has linked accounts (for wallet)
   useEffect(() => {
@@ -109,7 +180,23 @@ function EventPageContent() {
           throw new Error('Event not found')
         }
         
-        setEvent(eventData.event)
+        // Transform event data to ensure it has both id and _id fields
+        const transformedEvent = {
+          ...eventData.event,
+          // Ensure we have both id and _id fields
+          id: eventData.event._id || eventData.event.id, // Use _id if available
+          _id: eventData.event._id,
+          // Ensure organizer exists
+          organizer: getSafeOrganizer(eventData.event.organizer)
+        }
+        
+        console.log('Transformed event for state:', {
+          id: transformedEvent.id,
+          _id: transformedEvent._id,
+          hasOrganizer: !!transformedEvent.organizer
+        })
+        
+        setEvent(transformedEvent)
         
         // Fetch ticket types
         setIsLoadingTickets(true)
@@ -346,6 +433,9 @@ function EventPageContent() {
     )
   }
 
+  const organizer = getOrganizer()
+  const organizerAvatar = getSafeAvatarUrl(organizer.avatar)
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-950">
       {/* Back Navigation */}
@@ -541,16 +631,20 @@ function EventPageContent() {
                 <div>
                   <h3 className="font-semibold mb-3">Organizer</h3>
                   <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center flex-shrink-0">
+                    <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden">
                       <img
-                        src={event.organizer.avatar || '/placeholder-avatar.jpg'}
-                        alt={event.organizer.name}
-                        className="w-10 h-10 rounded-full"
+                        src={organizerAvatar}
+                        alt={organizer.name}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          // Fallback to cackpas.jpg if the original avatar fails
+                          (e.target as HTMLImageElement).src = '/cackpas.jpg'
+                        }}
                       />
                     </div>
                     <div className="min-w-0">
                       <p className="font-medium truncate">
-                        {event.organizer.name}
+                        {organizer.name}
                       </p>
                     </div>
                   </div>
@@ -818,7 +912,7 @@ function EventPageContent() {
         </div>
       </div>
 
-      {/* Purchase Modal */}
+      {/* Purchase Modal - SIMPLIFIED */}
       {event && selectedTicketType && (
         <PurchaseModal
           isOpen={showPurchaseModal}
@@ -827,22 +921,7 @@ function EventPageContent() {
             toast.success('Ticket purchased successfully!')
             router.push(`/dashboard/tickets`)
           }}
-          event={{
-            id: event.id,
-            title: event.title,
-            startDate: event.startDate,
-            venue: event.venue,
-            isFree: event.isFree,
-            price: selectedTicketType.price,
-            currency: event.currency,
-            imageCid: event.imageCid,
-            onChainId: event.onChainId,
-            description: event.description,
-            endDate: event.endDate,
-            isVirtual: event.isVirtual,
-            category: event.category,
-            organizer: event.organizer
-          }}
+          event={event} // Pass the entire event object directly
           ticketType={{
             _id: selectedTicketType._id,
             id: selectedTicketType._id,

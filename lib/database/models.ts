@@ -1,12 +1,10 @@
-// lib/database/models.ts - COMPLETE FIX
+// lib/database/models.ts - COMPLETE FIX (NO DUPLICATE INDEXES)
 import mongoose from 'mongoose'
 
-// User Schema with simplified fields
+// User Schema with simplified fields (NO field-level indexes)
 const UserSchema = new mongoose.Schema({
-  privyId: { type: String, required: true, unique: true },
-  // Embedded wallet address (provided by Privy)
+  privyId: { type: String, required: true, unique: true }, // unique: true is OK, but no index: true
   walletAddress: { type: String, default: null },
-  // User info from Privy
   loginMethod: { 
     type: String, 
     enum: ['email', 'google', 'twitter'], 
@@ -16,13 +14,10 @@ const UserSchema = new mongoose.Schema({
   firstName: { type: String },
   lastName: { type: String },
   username: { type: String },
-  
-  // Profile info (user provided)
   isOrganizer: { type: Boolean, default: false },
   country: { type: String, default: '' },
   phoneNumber: { type: String, default: '' },
   isProfileComplete: { type: Boolean, default: false },
-  
   admin: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
@@ -42,22 +37,18 @@ const UserProfileSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now },
 });
 
-// Event Schema - FIXED
+// Event Schema - NO field-level indexes
 const EventSchema = new mongoose.Schema({
   organizerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  organizerWallet: { type: String, required: true }, // Wallet address from Privy
+  organizerWallet: { type: String, required: true },
   title: { type: String, required: true },
   description: String,
-  
-  // Location fields
   venue: String,
   location: {
     lat: Number,
     lng: Number,
     address: String,
   },
-  
-  // Virtual event support
   isVirtual: { type: Boolean, default: false },
   virtualOptions: {
     zoomMeeting: { type: Boolean, default: false },
@@ -65,70 +56,37 @@ const EventSchema = new mongoose.Schema({
     hasVirtualLink: { type: Boolean, default: false },
     virtualLink: { type: String, default: '' }
   },
-  
-  // Date and time
   startDate: { type: Date, required: true },
   endDate: { type: Date, required: true },
-  startDateTime: { type: Date }, // Combined start date + time
-  endDateTime: { type: Date },   // Combined end date + time
-  
-  // Category
+  startDateTime: { type: Date },
+  endDateTime: { type: Date },
   category: { type: String, required: true },
   customCategory: { type: String },
-  
-  // Image and metadata
   bannerImage: String,
-  imageCid: String, // IPFS CID for uploaded image
+  imageCid: String,
   metadataURI: String,
-  metadataCid: String, // IPFS CID for metadata
-  
-  // Pricing
+  metadataCid: String,
   isFree: { type: Boolean, default: false },
   price: { type: Number, default: 0 },
   currency: { type: String, default: 'USD' },
-  
-  // Ticket type (for events with single ticket type)
   ticketType: { 
     type: String, 
     enum: ['GeneralAdmission', 'ReservedSeating', 'VIPPremium', 'Others'],
     default: 'GeneralAdmission'
   },
-  
-  // Capacity management
   unlimitedCapacity: { type: Boolean, default: true },
   capacity: { type: Number },
-  
-  // Blockchain integration - FIXED
-  onChainId: {
-    type: Number,
-    sparse: true // Allow null for free events
-  },
-  isOnChain: { 
-    type: Boolean, 
-    default: false 
-  },
-  transactionHash: { 
-    type: String,
-    sparse: true
-  },
-  gaslessWallet: { 
-    type: String,
-    sparse: true
-  }, // Address that paid gas for gasless transactions
-  ticketId: { 
-    type: Number,
-    sparse: true
-  }, // For single-ticket events
-  
-  // Status
+  onChainId: { type: Number, sparse: true }, // NO index: true
+  isOnChain: { type: Boolean, default: false },
+  transactionHash: { type: String, sparse: true }, // NO index: true
+  gaslessWallet: { type: String, sparse: true },
+  ticketId: { type: Number, sparse: true },
   status: { 
     type: String, 
     enum: ['draft', 'published', 'cancelled', 'completed'],
     default: 'published'
   },
   isActive: { type: Boolean, default: true },
-  
-  // Timestamps
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 })
@@ -171,60 +129,71 @@ const OrderSchema = new mongoose.Schema({
   quantity: { 
     type: Number, 
     required: true,
-    min: 1  // Added from first schema
+    min: 1
   },
   totalAmount: { 
     type: Number, 
     required: true,
-    min: 0  // Added from first schema
+    min: 0
   },
   currency: { 
     type: String, 
-    enum: ['NGN', 'USD', 'ETH', 'USDC'],  // From second schema (superior)
+    enum: ['NGN', 'USD', 'ETH', 'USDC'],
     default: 'NGN' 
   },
   paymentMethod: { 
     type: String, 
-    enum: ['paystack', 'flutterwave', 'ussd', 'crypto', 'free'],  // From second schema (superior)
+    enum: ['paystack', 'flutterwave', 'ussd', 'crypto', 'free'],
     required: true 
   },
   paymentStatus: { 
     type: String, 
-    enum: ['pending', 'paid', 'failed', 'refunded'],  // Using 'paid' instead of 'completed' from second schema
+    enum: ['pending', 'paid', 'failed', 'refunded'],
     default: 'pending' 
   },
-  paymentReference: String,
+  paymentReference: String, // NO index: true
   mintStatus: { 
     type: String, 
     enum: ['pending', 'minted', 'failed'], 
     default: 'pending' 
   },
-  transactionHash: String,
-  ticketIds: [Number],  // From second schema (new field)
+  transactionHash: String, // NO index: true
+  ticketIds: [Number],
   metadata: {
     type: mongoose.Schema.Types.Mixed,
-    default: {}  // From first schema (added as optional)
+    default: {}
   },
   createdAt: { 
     type: Date, 
     default: Date.now 
   },
-  updatedAt: {  // From first schema (added field)
+  updatedAt: { 
     type: Date, 
     default: Date.now 
   }
 }, {
-  timestamps: true  // Added to automatically handle createdAt and updatedAt
-});
+  timestamps: true
+})
 
 // ========================
-// PAYMENT SCHEMA
+// PAYMENT SCHEMA - UPDATED (FIXED VERSION)
 // ========================
 const PaymentSchema = new mongoose.Schema({
+  paymentMethod: { 
+    type: String, 
+    enum: ['wallet', 'paystack', 'crypto', 'free'], 
+    required: true 
+  },
   userId: { 
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'User', 
-    required: true 
+    required: false
+  },
+  walletAddress: { 
+    type: String,
+    required: function() {
+      return this.paymentMethod === 'wallet' || this.paymentMethod === 'crypto';
+    }
   },
   eventId: { 
     type: mongoose.Schema.Types.ObjectId, 
@@ -239,10 +208,14 @@ const PaymentSchema = new mongoose.Schema({
     type: String, 
     default: 'USD' 
   },
-  paymentMethod: { 
-    type: String, 
-    enum: ['wallet', 'paystack', 'crypto', 'free'], 
-    required: true 
+  quantity: { 
+    type: Number,
+    required: true,
+    default: 1
+  },
+  ticketTypeId: { 
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'TicketType'
   },
   paymentStatus: { 
     type: String, 
@@ -251,27 +224,20 @@ const PaymentSchema = new mongoose.Schema({
   },
   paymentReference: { 
     type: String, 
-    required: true, 
-    unique: true 
+    required: false,
+    unique: true // unique: true is OK, but no index: true
   },
-  approvalId: { 
-    type: String 
-  }, // For gasless minting approvals
-  transactionHash: { 
-    type: String 
-  }, // For blockchain payments
+  approvalId: { type: String }, // NO index: true
+  signature: { type: String },
+  transactionHash: { type: String }, // NO index: true
+  signatureData: { type: mongoose.Schema.Types.Mixed },
+  validUntil: { type: Date },
   metadata: { 
     type: mongoose.Schema.Types.Mixed, 
     default: {} 
   },
-  createdAt: { 
-    type: Date, 
-    default: Date.now 
-  },
-  updatedAt: { 
-    type: Date, 
-    default: Date.now 
-  }
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
 })
 
 // Whitelist Schema
@@ -300,7 +266,7 @@ const MarketListingSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
 })
 
-// Additional models
+// Payout Schema
 const PayoutSchema = new mongoose.Schema({
   eventId: { type: mongoose.Schema.Types.ObjectId, ref: 'Event', required: true },
   organizerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
@@ -317,6 +283,7 @@ const PayoutSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
 })
 
+// CheckIn Schema
 const CheckInSchema = new mongoose.Schema({
   eventId: { type: mongoose.Schema.Types.ObjectId, ref: 'Event', required: true },
   ticketId: { type: Number, required: true },
@@ -331,6 +298,7 @@ const CheckInSchema = new mongoose.Schema({
   isVerified: { type: Boolean, default: false },
 })
 
+// Notification Schema
 const NotificationSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   title: { type: String, required: true },
@@ -345,9 +313,7 @@ const NotificationSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
 })
 
-// ========================
-// MY TICKET SCHEMA
-// ========================
+// My Ticket Schema
 const myTicketSchema = new mongoose.Schema({
   orderId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -372,7 +338,7 @@ const myTicketSchema = new mongoose.Schema({
   ticketNumber: {
     type: String,
     required: true,
-    unique: true
+    unique: true // unique: true is OK, but no index: true
   },
   qrCode: {
     type: String,
@@ -417,9 +383,7 @@ const myTicketSchema = new mongoose.Schema({
   }
 })
 
-// ========================
-// TRANSFER HISTORY SCHEMA
-// ========================
+// Transfer History Schema
 const TransferHistorySchema = new mongoose.Schema({
   ticketId: { 
     type: mongoose.Schema.Types.ObjectId, 
@@ -485,9 +449,7 @@ const TransferHistorySchema = new mongoose.Schema({
   timestamps: true
 })
 
-// ========================
-// RESALE LISTING SCHEMA
-// ========================
+// Resale Listing Schema
 const ResaleListingSchema = new mongoose.Schema({
   ticketId: { 
     type: mongoose.Schema.Types.ObjectId, 
@@ -542,9 +504,7 @@ const ResaleListingSchema = new mongoose.Schema({
   timestamps: true
 })
 
-// ========================
-// RESALE PURCHASE SCHEMA
-// ========================
+// Resale Purchase Schema
 const ResalePurchaseSchema = new mongoose.Schema({
   listingId: { 
     type: mongoose.Schema.Types.ObjectId, 
@@ -614,9 +574,7 @@ const ResalePurchaseSchema = new mongoose.Schema({
   timestamps: true
 })
 
-// ========================
-// TRANSACTION LOG SCHEMA
-// ========================
+// Transaction Log Schema
 const TransactionLogSchema = new mongoose.Schema({
   userId: { 
     type: mongoose.Schema.Types.ObjectId, 
@@ -661,9 +619,7 @@ const TransactionLogSchema = new mongoose.Schema({
   }
 })
 
-// ========================
-// WALLET TRANSACTION SCHEMA
-// ========================
+// Wallet Transaction Schema
 const WalletTransactionSchema = new mongoose.Schema({
   userId: { 
     type: mongoose.Schema.Types.ObjectId, 
@@ -695,7 +651,7 @@ const WalletTransactionSchema = new mongoose.Schema({
   },
   transactionHash: { 
     type: String, 
-    unique: true 
+    unique: true // unique: true is OK, but no index: true
   },
   blockNumber: { 
     type: Number 
@@ -725,9 +681,7 @@ const WalletTransactionSchema = new mongoose.Schema({
   }
 })
 
-// ========================
-// GASLESS APPROVAL SCHEMA - COMPLETE FIX
-// ========================
+// Gasless Approval Schema
 const GaslessApprovalSchema = new mongoose.Schema({
   userId: { 
     type: mongoose.Schema.Types.ObjectId, 
@@ -753,31 +707,25 @@ const GaslessApprovalSchema = new mongoose.Schema({
     required: true,
     min: 0,
     set: function(val: any) {
-      // Handle BigInt, string, and number inputs
       if (typeof val === 'bigint') {
-        // Convert BigInt to number (handle large wei values by converting to ether)
         const bigIntVal = Number(val)
-        if (bigIntVal > 1e12) { // If it's likely wei (large number), convert to ether
+        if (bigIntVal > 1e12) {
           return bigIntVal / 1e18
         }
         return bigIntVal
       } else if (typeof val === 'string') {
-        // If it's a string with 'n' at the end (BigInt string), remove it
         if (val.endsWith('n')) {
           val = val.slice(0, -1)
         }
-        // Parse the string
         const numVal = parseFloat(val)
         if (isNaN(numVal)) {
           return 0
         }
-        // If it's a very large number (wei), convert to ether
         if (numVal > 1e12) {
           return numVal / 1e18
         }
         return numVal
       }
-      // If it's already a number, return as is
       return val
     }
   },
@@ -788,7 +736,7 @@ const GaslessApprovalSchema = new mongoose.Schema({
   approvalId: { 
     type: String, 
     required: true, 
-    unique: true 
+    unique: true // unique: true is OK, but no index: true
   },
   signature: { 
     type: String, 
@@ -833,9 +781,7 @@ const GaslessApprovalSchema = new mongoose.Schema({
   }
 })
 
-// ========================
-// BACKEND SIGNER SCHEMA
-// ========================
+// Backend Signer Schema
 const BackendSignerSchema = new mongoose.Schema({
   name: { 
     type: String, 
@@ -844,7 +790,7 @@ const BackendSignerSchema = new mongoose.Schema({
   address: { 
     type: String, 
     required: true, 
-    unique: true 
+    unique: true // unique: true is OK, but no index: true
   },
   contractType: { 
     type: String, 
@@ -876,7 +822,7 @@ const BackendSignerSchema = new mongoose.Schema({
 })
 
 // ========================
-// INDEXES - FIXED (NO DUPLICATES)
+// INDEXES - ALL IN ONE PLACE (NO DUPLICATES)
 // ========================
 
 // Event Schema Indexes
@@ -889,20 +835,22 @@ EventSchema.index({ isFree: 1 })
 EventSchema.index({ isVirtual: 1 })
 EventSchema.index({ createdAt: -1 })
 
-// Payment Schema Indexes (NO DUPLICATES)
+// Payment Schema Indexes
 PaymentSchema.index({ userId: 1 })
 PaymentSchema.index({ eventId: 1 })
-PaymentSchema.index({ paymentReference: 1 }, { unique: true }) // ONLY ONE unique index
+PaymentSchema.index({ paymentReference: 1 }, { unique: true, sparse: true })
 PaymentSchema.index({ paymentStatus: 1 })
 PaymentSchema.index({ createdAt: -1 })
 PaymentSchema.index({ approvalId: 1 }, { sparse: true })
 PaymentSchema.index({ transactionHash: 1 }, { sparse: true })
+PaymentSchema.index({ walletAddress: 1 })
+PaymentSchema.index({ paymentMethod: 1 })
 
-// MyTicket Schema Indexes (NO DUPLICATES)
+// MyTicket Schema Indexes
 myTicketSchema.index({ userId: 1 })
 myTicketSchema.index({ eventId: 1 })
 myTicketSchema.index({ orderId: 1 })
-myTicketSchema.index({ ticketNumber: 1 }, { unique: true }) // ONLY ONE unique index
+myTicketSchema.index({ ticketNumber: 1 }, { unique: true })
 myTicketSchema.index({ status: 1 })
 myTicketSchema.index({ createdAt: -1 })
 myTicketSchema.index({ transferredTo: 1 }, { sparse: true })
@@ -947,8 +895,8 @@ WalletTransactionSchema.index({ type: 1, status: 1 })
 WalletTransactionSchema.index({ createdAt: -1 })
 WalletTransactionSchema.index({ blockNumber: -1 })
 
-// Gasless Approval Schema Indexes (NO DUPLICATES)
-GaslessApprovalSchema.index({ approvalId: 1 }, { unique: true }) // ONLY ONE unique index
+// Gasless Approval Schema Indexes
+GaslessApprovalSchema.index({ approvalId: 1 }, { unique: true })
 GaslessApprovalSchema.index({ userId: 1 })
 GaslessApprovalSchema.index({ eventId: 1 })
 GaslessApprovalSchema.index({ status: 1 })
@@ -1001,7 +949,7 @@ TicketTypeSchema.index({ category: 1 })
 
 // User Schema Indexes
 UserSchema.index({ privyId: 1 }, { unique: true })
-UserSchema.index({ walletAddress: 1 })
+UserSchema.index({ walletAddress: 1 }, { sparse: true })
 UserSchema.index({ email: 1 }, { sparse: true })
 UserSchema.index({ isOrganizer: 1 })
 
