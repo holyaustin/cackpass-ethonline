@@ -1,7 +1,9 @@
+// /app/api/payment/process/route.ts - COMPLETE UPDATED VERSION
 import { NextRequest, NextResponse } from 'next/server'
 import { connectDB } from '@/lib/database/connection'
-import { Payment, User, Event } from '@/lib/database/models'
+import { Payment, User, Event, Order, TicketType } from '@/lib/database/models'
 import mongoose from 'mongoose'
+import { ethers } from 'ethers'
 
 // Helper function to serialize BigInt values
 function serializeBigInt(obj: any): any {
@@ -52,7 +54,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
-    console.log('Payment process request body:', body)
+    console.log('💰 [PAYMENT PROCESS] Received request:', JSON.stringify(body, null, 2))
     
     const {
       paymentMethod, // Changed from 'method' to 'paymentMethod'
@@ -155,17 +157,63 @@ export async function POST(request: NextRequest) {
     // Generate payment ID (using MongoDB _id)
     const paymentId = payment._id.toString()
 
+    // CREATE ORDER RECORD - THIS IS THE KEY FIX
+    const orderData: any = {
+      userId: user ? user._id : null,
+      eventId: event._id,
+      quantity: Number(quantity) || 1,
+      totalAmount: Number(amount) || 0,
+      currency,
+      paymentMethod: paymentMethod,
+      paymentStatus: paymentMethod === 'wallet' ? 'paid' : 'processing',
+      paymentReference: paymentReference,
+      mintStatus: 'pending',
+      metadata: {
+        walletAddress: walletAddress || null,
+        approvalId: approvalId || null,
+        signature: signature || null,
+        paymentId: payment._id,
+        eventTitle: event.title,
+        eventOnChainId: event.onChainId || null
+      },
+      createdAt: new Date(),
+      updatedAt: new Date()
+    }
+
+    // Add ticket type if provided
+    if (ticketTypeId) {
+      orderData.ticketTypeId = ticketTypeId
+    }
+
+    const order = new Order(orderData)
+    await order.save({ session })
+
+    // Update payment with order reference
+    payment.orderId = order._id
+    await payment.save({ session })
+
     // If it's a wallet payment with approval, we can mark it as completed
     if (paymentMethod === 'wallet' && approvalId && signature) {
       payment.paymentStatus = 'completed'
+      order.paymentStatus = 'paid'
       await payment.save({ session })
+      await order.save({ session })
     }
 
     await session.commitTransaction()
 
+    console.log('✅ Payment and order created successfully:', {
+      paymentId: payment._id.toString(),
+      orderId: order._id.toString(),
+      paymentReference,
+      amount,
+      currency
+    })
+
     return NextResponse.json(serializeBigInt({
       success: true,
-      paymentId,
+      paymentId: payment._id.toString(),
+      orderId: order._id.toString(), // CRITICAL: Return orderId to frontend
       paymentReference,
       message: 'Payment processed successfully',
       payment: {
@@ -174,12 +222,18 @@ export async function POST(request: NextRequest) {
         amount: payment.amount,
         currency: payment.currency,
         reference: payment.paymentReference
+      },
+      order: {
+        id: order._id,
+        status: order.paymentStatus,
+        mintStatus: order.mintStatus,
+        reference: order.paymentReference
       }
     }))
 
   } catch (error: any) {
     await session.abortTransaction()
-    console.error('Payment processing error:', error)
+    console.error('❌ Payment processing error:', error)
     
     // Handle validation errors specifically
     if (error.name === 'ValidationError') {
@@ -213,7 +267,8 @@ export async function POST(request: NextRequest) {
       { 
         success: false, 
         error: 'Failed to process payment',
-        details: error.message 
+        details: error.message,
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
       },
       { status: 500 }
     )
@@ -252,6 +307,7 @@ export async function GET(request: NextRequest) {
       .populate('eventId', 'title startDate venue')
       .populate('userId', 'walletAddress email firstName')
       .populate('ticketTypeId', 'name price')
+      .populate('orderId', 'paymentStatus totalAmount mintStatus')
       .sort({ createdAt: -1 })
       .limit(10)
     
@@ -267,6 +323,7 @@ export async function GET(request: NextRequest) {
         event: payment.eventId,
         user: payment.userId,
         ticketType: payment.ticketTypeId,
+        order: payment.orderId,
         createdAt: payment.createdAt,
         updatedAt: payment.updatedAt
       }))
@@ -280,5 +337,3 @@ export async function GET(request: NextRequest) {
     }, { status: 500 })
   }
 }
-
-

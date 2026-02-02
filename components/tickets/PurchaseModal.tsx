@@ -1,4 +1,4 @@
-// /app/components/tickets/PurchaseModal.tsx - SIMPLIFIED FIXED VERSION
+// /components/tickets/PurchaseModal.tsx - COMPLETE FIXED VERSION
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
@@ -15,10 +15,10 @@ import { usePrivy } from '@privy-io/react-auth'
 interface PurchaseModalProps {
   isOpen: boolean
   onClose: () => void
-  onSuccess?: (ticketId?: string) => void  // Make parameter optional
+  onSuccess?: (ticketId?: string) => void
   event: {
-    id?: string  // Make optional since we might get _id
-    _id?: string // Add _id field
+    id?: string
+    _id?: string
     title: string
     startDate: string
     venue: string
@@ -55,11 +55,11 @@ interface PaymentMethod {
   icon: React.ReactNode
 }
 
-// Helper function to extract wallet address from Privy user (from dashboard)
+// Helper function to extract wallet address from Privy user
 function getWalletAddressFromUser(user: any): string | null {
   if (!user) return null
   
-  // Check direct wallet object (for embedded wallets)
+  // Check direct wallet object
   if (user.wallet?.address && typeof user.wallet.address === 'string') {
     return user.wallet.address
   }
@@ -67,7 +67,7 @@ function getWalletAddressFromUser(user: any): string | null {
   // Check linked accounts
   const linkedAccounts = user.linkedAccounts || []
   
-  // Look for embedded wallet in linked accounts
+  // Look for embedded wallet
   const embeddedWallet = linkedAccounts.find(
     (acc: any) => acc.type === 'wallet' && acc.walletClientType === 'privy'
   )
@@ -76,7 +76,7 @@ function getWalletAddressFromUser(user: any): string | null {
     return embeddedWallet.address
   }
   
-  // Try to find any wallet address
+  // Find any wallet address
   for (const account of linkedAccounts) {
     if (account.type === 'wallet' && account.address) {
       return account.address
@@ -101,10 +101,10 @@ export default function PurchaseModal({
   const [walletAddress, setWalletAddress] = useState<string | null>(null)
   const [userToken, setUserToken] = useState<string | null>(null)
   const [hasEmbeddedWallet, setHasEmbeddedWallet] = useState(false)
+  const [approvalData, setApprovalData] = useState<any>(null)
 
-  // Helper function to get event ID (handles both id and _id)
+  // Helper function to get event ID
   const getEventId = useCallback(() => {
-    // Try multiple possible ID fields
     return event._id || event.id
   }, [event._id, event.id])
 
@@ -118,18 +118,16 @@ export default function PurchaseModal({
             const token = await getAccessToken()
             setUserToken(token)
             
-            // Extract wallet address from user object
+            // Extract wallet address
             const address = getWalletAddressFromUser(user)
             if (address) {
               setWalletAddress(address)
               setHasEmbeddedWallet(true)
             } else {
-              // No embedded wallet found
               setHasEmbeddedWallet(false)
-              setSelectedMethod('paystack') // Default to paystack if no wallet
+              setSelectedMethod('paystack')
             }
           } else {
-            // User not authenticated
             setHasEmbeddedWallet(false)
             setSelectedMethod('paystack')
           }
@@ -149,11 +147,11 @@ export default function PurchaseModal({
     if (isOpen) {
       const eventId = getEventId()
       console.log('PurchaseModal event data:', {
-        eventId: eventId,
-        event: event,
+        eventId,
+        event,
         allEventFields: Object.keys(event),
-        hasEmbeddedWallet: hasEmbeddedWallet,
-        walletAddress: walletAddress
+        hasEmbeddedWallet,
+        walletAddress
       })
       
       if (!eventId) {
@@ -194,196 +192,85 @@ export default function PurchaseModal({
     }
   }, [])
 
-const handlePayment = async () => {
-  if (selectedMethod === 'wallet' && !walletAddress) {
-    toast.error('Please connect your embedded wallet first')
-    return
-  }
-
-  const eventId = getEventId()
-  if (!eventId) {
-    toast.error('Event ID is missing. Please try refreshing the page.')
-    console.error('Event ID missing in PurchaseModal. Event object:', event)
-    return
-  }
-
-  setIsProcessing(true)
-  setStep('processing')
-
-  try {
-    let paymentResult
-
-    if (selectedMethod === 'wallet') {
-      paymentResult = await processWalletPayment(eventId)
-    } else {
-      paymentResult = await processPaystackPayment(eventId)
+  // ===== MAIN PAYMENT HANDLER =====
+  const handlePayment = async () => {
+    if (selectedMethod === 'wallet' && !walletAddress) {
+      toast.error('Please connect your embedded wallet first')
+      return
     }
 
-    // Handle Paystack redirect
-    if (paymentResult.requiresRedirect) {
-      toast.info('Redirecting to payment gateway...')
-      return // Redirect will happen via window.location
+    const eventId = getEventId()
+    if (!eventId) {
+      toast.error('Event ID is missing. Please try refreshing the page.')
+      console.error('Event ID missing in PurchaseModal. Event object:', event)
+      return
     }
 
-    if (paymentResult.success) {
-      const mintResult = await mintTicket(eventId, paymentResult.paymentId)
-      
-      if (mintResult.success) {
-        setStep('success')
-        toast.success('Ticket purchased successfully!')
-        setTimeout(() => {
-          if (onSuccess) {
-            onSuccess(mintResult.ticketId || '')
-          }
-          onClose()
-        }, 2000)
+    setIsProcessing(true)
+    setStep('processing')
+
+    try {
+      let paymentResult
+
+      if (selectedMethod === 'wallet') {
+        paymentResult = await processWalletPayment(eventId)
       } else {
-        throw new Error('Failed to mint ticket')
+        paymentResult = await processPaystackPayment(eventId)
       }
-    } else {
-      throw new Error(paymentResult.error || 'Payment failed')
+
+      // Handle Paystack redirect
+      if (paymentResult.requiresRedirect) {
+        toast.info('Redirecting to payment gateway...')
+        return
+      }
+
+      if (paymentResult.success) {
+        // Always try to use paymentId for mint-with-approval
+        const paymentId = paymentResult.paymentId
+        if (!paymentId) {
+          throw new Error('No payment ID received from payment')
+        }
+        
+        console.log('🎫 Starting ticket minting with paymentId:', paymentId)
+        
+        // Mint ticket with paymentId and approval data
+        const mintResult = await mintTicketWithApproval(eventId, paymentId)
+        
+        if (mintResult.success) {
+          setStep('success')
+          toast.success(`Successfully purchased ${quantity} ticket(s)!`)
+          setTimeout(() => {
+            if (onSuccess) {
+              onSuccess(mintResult.ticketId || mintResult.ticketIds?.[0] || '')
+            }
+            onClose()
+          }, 2000)
+        } else {
+          throw new Error(mintResult.error || 'Failed to mint ticket')
+        }
+      } else {
+        throw new Error(paymentResult.error || 'Payment failed')
+      }
+    } catch (error) {
+      console.error('Payment error:', error)
+      toast.error(error instanceof Error ? error.message : 'Payment failed')
+      setStep('method')
+    } finally {
+      setIsProcessing(false)
     }
-  } catch (error) {
-    console.error('Payment error:', error)
-    toast.error(error instanceof Error ? error.message : 'Payment failed')
-    setStep('method')
-  } finally {
-    setIsProcessing(false)
   }
-}
 
-const processWalletPayment = async (eventId: string) => {
-  if (!walletAddress) {
-    throw new Error('Wallet address not found')
-  }
-
-  try {
-    console.log('Starting wallet payment process for event:', eventId)
-    
-    // First get payment approval
-    const approvalResponse = await fetch('/api/payment/approval', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': userToken ? `Bearer ${userToken}` : ''
-      },
-      body: JSON.stringify({
-        walletAddress,
-        eventId: eventId,
-        onChainId: event.onChainId,
-        amount: quantity,
-        price: totalAmount,
-        paymentMethod: 'wallet' // Make sure this matches
-      })
-    })
-
-    const approvalData = await approvalResponse.json()
-
-    if (!approvalResponse.ok || !approvalData.success) {
-      console.error('Approval failed:', approvalData)
-      throw new Error(approvalData.error || 'Failed to get payment approval')
-    }
-
-    console.log('Approval received:', approvalData.approvalId)
-
-    const ticketTypeId = ticketType?._id || ticketType?.id
-
-    // Process the payment with ALL required fields
-    const paymentPayload = {
-      paymentMethod: 'wallet', // This should match what the API expects
-      approvalId: approvalData.approvalId,
-      signature: approvalData.signature,
-      walletAddress: walletAddress,
-      amount: totalAmount,
-      currency: event.currency || 'USD',
-      eventId: eventId,
-      quantity: quantity,
-      ticketTypeId: ticketTypeId,
-      signatureData: approvalData.signatureData || null,
-      validUntil: approvalData.validUntil || null
-    }
-
-    console.log('Sending payment payload:', paymentPayload)
-
-    const paymentResponse = await fetch('/api/payment/process', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': userToken ? `Bearer ${userToken}` : ''
-      },
-      body: JSON.stringify(paymentPayload)
-    })
-
-    const paymentData = await paymentResponse.json()
-
-    if (!paymentResponse.ok || !paymentData.success) {
-      console.error('Payment failed:', paymentData)
-      throw new Error(paymentData.error || paymentData.details || 'Payment processing failed')
-    }
-
-    console.log('Payment successful:', paymentData.paymentId)
-    return paymentData
-
-  } catch (error) {
-    console.error('Wallet payment error:', error)
-    throw error
-  }
-}
-
-const processPaystackPayment = async (eventId: string) => {
-  const ticketTypeId = ticketType?._id || ticketType?.id
-
-  try {
-    console.log('Starting Paystack payment for event:', eventId)
-    
-    const response = await fetch('/api/payment/process', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': userToken ? `Bearer ${userToken}` : ''
-      },
-      body: JSON.stringify({
-        method: 'paystack',
-        walletAddress: walletAddress || 'card-payment',
-        amount: totalAmount,
-        currency: event.currency || 'NGN', // Paystack typically uses NGN
-        eventId: eventId,
-        quantity: quantity,
-        ticketTypeId: ticketTypeId
-      })
-    })
-
-    const data = await response.json()
-
-    if (!response.ok || !data.success) {
-      console.error('Paystack payment failed:', data)
-      throw new Error(data.error || data.details || 'Paystack payment failed')
-    }
-
-    console.log('Paystack payment initiated:', data)
-    
-    // If Paystack returns a payment URL, redirect to it
-    if (data.paymentUrl && data.requiresRedirect) {
-      window.location.href = data.paymentUrl
-      return { success: true, requiresRedirect: true }
-    }
-
-    return data
-  } catch (error) {
-    console.error('Paystack payment error:', error)
-    throw error
-  }
-}
-
-  const mintTicket = async (eventId: string, paymentId: string) => {
+  // ===== WALLET PAYMENT FUNCTION =====
+  const processWalletPayment = async (eventId: string) => {
     if (!walletAddress) {
       throw new Error('Wallet address not found')
     }
 
     try {
-      const ticketTypeId = ticketType?._id || ticketType?.id
-
-      const response = await fetch('/api/tickets/mint', {
+      console.log('Starting wallet payment process for event:', eventId)
+      
+      // First get payment approval
+      const approvalResponse = await fetch('/api/payment/approval', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -392,14 +279,241 @@ const processPaystackPayment = async (eventId: string) => {
         body: JSON.stringify({
           walletAddress,
           eventId: eventId,
-          paymentId,
-          quantity,
-          method: selectedMethod,
+          onChainId: event.onChainId,
+          amount: quantity,
+          price: totalAmount,
+          method: 'wallet'
+        })
+      })
+
+      const approvalData = await approvalResponse.json()
+
+      if (!approvalResponse.ok || !approvalData.success) {
+        console.error('Approval failed:', approvalData)
+        throw new Error(approvalData.error || 'Failed to get payment approval')
+      }
+
+      console.log('Approval received:', approvalData)
+      setApprovalData(approvalData) // Store for later use
+
+      const ticketTypeId = ticketType?._id || ticketType?.id
+
+      // Process the payment
+      const paymentPayload = {
+        paymentMethod: 'wallet',
+        approvalId: approvalData.approvalId,
+        signature: approvalData.signature,
+        walletAddress: walletAddress,
+        amount: totalAmount,
+        currency: event.currency || 'USD',
+        eventId: eventId,
+        quantity: quantity,
+        ticketTypeId: ticketTypeId,
+        signatureData: approvalData.signatureData || null,
+        validUntil: approvalData.validUntil || null
+      }
+
+      console.log('Sending payment payload:', paymentPayload)
+
+      const paymentResponse = await fetch('/api/payment/process', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': userToken ? `Bearer ${userToken}` : ''
+        },
+        body: JSON.stringify(paymentPayload)
+      })
+
+      const paymentData = await paymentResponse.json()
+
+      if (!paymentResponse.ok || !paymentData.success) {
+        console.error('Payment failed:', paymentData)
+        throw new Error(paymentData.error || paymentData.details || 'Payment processing failed')
+      }
+
+      console.log('Payment successful:', paymentData)
+      
+      // Return both paymentId and approval data for minting
+      return {
+        ...paymentData,
+        approvalData: approvalData // Include approval data for minting
+      }
+
+    } catch (error) {
+      console.error('Wallet payment error:', error)
+      throw error
+    }
+  }
+
+  // ===== PAYSTACK PAYMENT FUNCTION =====
+  const processPaystackPayment = async (eventId: string) => {
+    const ticketTypeId = ticketType?._id || ticketType?.id
+
+    try {
+      console.log('Starting Paystack payment for event:', eventId)
+      
+      const response = await fetch('/api/payment/process', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': userToken ? `Bearer ${userToken}` : ''
+        },
+        body: JSON.stringify({
+          paymentMethod: 'paystack',
+          walletAddress: walletAddress || 'card-payment',
+          amount: totalAmount,
+          currency: event.currency || 'NGN',
+          eventId: eventId,
+          quantity: quantity,
           ticketTypeId: ticketTypeId
         })
       })
 
       const data = await response.json()
+
+      if (!response.ok || !data.success) {
+        console.error('Paystack payment failed:', data)
+        throw new Error(data.error || data.details || 'Paystack payment failed')
+      }
+
+      console.log('Paystack payment initiated:', data)
+      
+      // If Paystack returns a payment URL, redirect to it
+      if (data.paymentUrl && data.requiresRedirect) {
+        window.location.href = data.paymentUrl
+        return { success: true, requiresRedirect: true }
+      }
+
+      return data
+    } catch (error) {
+      console.error('Paystack payment error:', error)
+      throw error
+    }
+  }
+
+  // ===== MINT TICKET WITH APPROVAL FUNCTION =====
+  const mintTicketWithApproval = async (eventId: string, paymentId: string) => {
+    if (!walletAddress) {
+      throw new Error('Wallet address not found')
+    }
+
+    try {
+      const ticketTypeId = ticketType?._id || ticketType?.id
+
+      console.log('🎫 [PurchaseModal] Minting ticket with approval:', {
+        walletAddress,
+        eventId,
+        paymentId,
+        quantity,
+        method: selectedMethod,
+        hasApprovalData: !!approvalData
+      })
+
+      // Prepare mint payload
+      const mintPayload: any = {
+        walletAddress,
+        eventId: eventId,
+        paymentId: paymentId,
+        quantity: quantity,
+        method: selectedMethod,
+        ticketTypeId: ticketTypeId
+      }
+
+      // Add approval data if available (for wallet payments)
+      if (selectedMethod === 'wallet' && approvalData) {
+        mintPayload.approvalId = approvalData.approvalId
+        mintPayload.signature = approvalData.signature
+      }
+
+      console.log('Sending mint payload to /api/tickets/mint-with-approval:', mintPayload)
+
+      const response = await fetch('/api/tickets/mint-with-approval', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': userToken ? `Bearer ${userToken}` : ''
+        },
+        body: JSON.stringify(mintPayload)
+      })
+
+      // Handle response properly
+      const responseText = await response.text()
+      
+      if (!responseText) {
+        console.error('Empty response from mint endpoint')
+        throw new Error('Server returned empty response')
+      }
+
+      let data
+      try {
+        data = JSON.parse(responseText)
+      } catch (parseError) {
+        console.error('Failed to parse JSON response:', responseText)
+        throw new Error('Invalid server response')
+      }
+
+      if (!response.ok || !data.success) {
+        console.error('Mint failed:', data)
+        throw new Error(data.error || data.details || 'Failed to mint ticket')
+      }
+
+      console.log('✅ Ticket minting successful:', data)
+      return data
+
+    } catch (error) {
+      console.error('Mint ticket error:', error)
+      
+      // If mint-with-approval fails, try regular mint endpoint as fallback
+      if (selectedMethod === 'wallet') {
+        console.log('🔄 Falling back to regular mint endpoint...')
+        try {
+          return await mintTicketRegular(eventId, paymentId)
+        } catch (fallbackError) {
+          console.error('Fallback minting also failed:', fallbackError)
+          throw error // Throw original error
+        }
+      }
+      
+      throw error
+    }
+  }
+
+  // ===== REGULAR MINT TICKET FUNCTION (FALLBACK) =====
+  const mintTicketRegular = async (eventId: string, paymentId: string) => {
+    if (!walletAddress) {
+      throw new Error('Wallet address not found')
+    }
+
+    try {
+      const ticketTypeId = ticketType?._id || ticketType?.id
+
+      console.log('🎫 [PurchaseModal] Falling back to regular mint endpoint')
+
+      const mintPayload = {
+        walletAddress,
+        eventId: eventId,
+        paymentId: paymentId,
+        quantity: quantity,
+        method: selectedMethod,
+        ticketTypeId: ticketTypeId
+      }
+
+      const response = await fetch('/api/tickets/mint', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': userToken ? `Bearer ${userToken}` : ''
+        },
+        body: JSON.stringify(mintPayload)
+      })
+
+      const responseText = await response.text()
+      
+      if (!responseText) {
+        throw new Error('Server returned empty response')
+      }
+
+      const data = JSON.parse(responseText)
 
       if (!response.ok || !data.success) {
         throw new Error(data.error || 'Failed to mint ticket')
@@ -408,6 +522,7 @@ const processPaystackPayment = async (eventId: string) => {
       return data
 
     } catch (error) {
+      console.error('Regular mint ticket error:', error)
       throw error
     }
   }
@@ -622,16 +737,16 @@ const processPaystackPayment = async (eventId: string) => {
               </div>
               <h3 className="text-lg font-semibold mb-2">Processing Payment</h3>
               <p className="text-gray-600 dark:text-gray-400">
-                Please wait while we process your payment...
+                Please wait while we process your payment and mint your ticket...
               </p>
-              <div className="mt-6">
-                <button
-                  onClick={onClose}
-                  disabled={true}
-                  className="py-2 px-4 border border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 rounded-lg opacity-50 cursor-not-allowed"
-                >
-                  Cancel (Processing...)
-                </button>
+              <div className="mt-4 text-sm text-gray-500">
+                {selectedMethod === 'wallet' ? (
+                  <p>• Approving payment with your wallet</p>
+                ) : (
+                  <p>• Processing card payment</p>
+                )}
+                <p>• Creating your ticket</p>
+                <p>• Securing on blockchain</p>
               </div>
             </div>
           )}
@@ -642,7 +757,7 @@ const processPaystackPayment = async (eventId: string) => {
                 <CheckCircle className="h-8 w-8 text-green-600 dark:text-green-400" />
               </div>
               <h3 className="text-lg font-semibold mb-2">Payment Successful!</h3>
-              <p className="text-gray-600 dark:text-gray-400 mb-6">
+              <p className="text-gray-600 dark:text-gray-400 mb-4">
                 Your ticket has been purchased and minted successfully.
               </p>
               <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-xl mb-6">

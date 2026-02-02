@@ -143,7 +143,7 @@ const OrderSchema = new mongoose.Schema({
   },
   paymentMethod: { 
     type: String, 
-    enum: ['paystack', 'flutterwave', 'ussd', 'crypto', 'free'],
+    enum: ['paystack', 'wallet', 'free'],
     required: true 
   },
   paymentStatus: { 
@@ -158,7 +158,10 @@ const OrderSchema = new mongoose.Schema({
     default: 'pending' 
   },
   transactionHash: String, // NO index: true
-  ticketIds: [Number],
+  ticketIds: {
+    type: [String],  // Change from [Number] to [String]
+    default: []
+  },
   metadata: {
     type: mongoose.Schema.Types.Mixed,
     default: {}

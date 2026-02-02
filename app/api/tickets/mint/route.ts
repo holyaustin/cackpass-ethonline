@@ -1,9 +1,9 @@
-// /app/api/tickets/mint/route.ts -
+// /app/api/tickets/mint/route.ts - UPDATED AND FIXED VERSION
 import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
 import { CackPassCoreABI } from '@/lib/contracts/abis/CackPassCore'
 import { connectDB } from '@/lib/database/connection'
-import { User, Event, Order, MyTicket, TicketType, GaslessApproval } from '@/lib/database/models'
+import { User, Event, Order, MyTicket, TicketType, GaslessApproval, Payment } from '@/lib/database/models'
 import mongoose from 'mongoose'
 
 export async function POST(request: NextRequest) {
@@ -12,11 +12,21 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
-    const { walletAddress, eventId, paymentId, quantity = 1, approvalId, method = 'crypto' } = body
+    console.log('🎫 [MINT API] Received request:', body)
+    
+    const { 
+      walletAddress, 
+      eventId, 
+      orderId,        // ADDED: Accept orderId from frontend
+      approvalId,     // Optional: for gasless minting
+      quantity = 1, 
+      method = 'crypto' 
+    } = body
 
-    if (!walletAddress || !eventId) {
+    // Validate required fields
+    if (!walletAddress) {
       return NextResponse.json(
-        { success: false, error: 'Missing required fields: walletAddress, eventId' },
+        { success: false, error: 'walletAddress is required' },
         { status: 400 }
       )
     }
@@ -32,40 +42,84 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Get event - eventId could be MongoDB ObjectId or string
-    let event
-    if (mongoose.Types.ObjectId.isValid(eventId)) {
-      event = await Event.findById(eventId).session(session)
-    } else {
-      // Try to find by onChainId if it's a number
-      event = await Event.findOne({ onChainId: parseInt(eventId) }).session(session)
-    }
-    
-    if (!event) {
-      return NextResponse.json(
-        { success: false, error: 'Event not found' },
-        { status: 404 }
-      )
-    }
+    let event = null
+    let order = null
 
-    // If approvalId is provided, use gasless minting
-    if (approvalId) {
-      const result = await handleGaslessMinting(
-        approvalId, walletAddress, event, user, quantity, session
-      )
-      return result
-    }
-
-    // Existing minting logic (for non-gasless minting)
-    let order
-    if (paymentId) {
-      order = await Order.findById(paymentId).session(session)
+    // If orderId is provided, get order and event from it
+    if (orderId) {
+      console.log('📦 Using orderId:', orderId)
+      
+      order = await Order.findById(orderId).session(session)
       if (!order) {
         return NextResponse.json(
           { success: false, error: 'Order not found' },
           { status: 404 }
         )
       }
+
+      // Verify order belongs to user
+      if (order.userId.toString() !== user._id.toString()) {
+        return NextResponse.json(
+          { success: false, error: 'Order does not belong to user' },
+          { status: 403 }
+        )
+      }
+
+      // Get event from order
+      event = await Event.findById(order.eventId).session(session)
+      if (!event) {
+        return NextResponse.json(
+          { success: false, error: 'Event not found' },
+          { status: 404 }
+        )
+      }
+
+      // Check if order is already minted
+      if (order.mintStatus === 'minted') {
+        return NextResponse.json(
+          { success: false, error: 'Order already minted' },
+          { status: 400 }
+        )
+      }
+    } 
+    // If eventId is provided directly (legacy support)
+    else if (eventId) {
+      console.log('📦 Using eventId directly:', eventId)
+      
+      // Get event
+      if (mongoose.Types.ObjectId.isValid(eventId)) {
+        event = await Event.findById(eventId).session(session)
+      } else {
+        // Try to find by onChainId if it's a number
+        event = await Event.findOne({ onChainId: parseInt(eventId) }).session(session)
+      }
+      
+      if (!event) {
+        return NextResponse.json(
+          { success: false, error: 'Event not found' },
+          { status: 404 }
+        )
+      }
+    } else {
+      return NextResponse.json(
+        { success: false, error: 'Either orderId or eventId is required' },
+        { status: 400 }
+      )
+    }
+
+    // If approvalId is provided, handle gasless minting
+    if (approvalId) {
+      console.log('🔐 Processing gasless minting with approval:', approvalId)
+      const result = await handleGaslessMinting(
+        approvalId, 
+        walletAddress, 
+        event, 
+        user, 
+        quantity, 
+        order, // Pass the order if we have it
+        session
+      )
+      return result
     }
 
     // Get or create ticket type
@@ -94,7 +148,7 @@ export async function POST(request: NextRequest) {
       userId: user._id,
       eventId: event._id,
       ticketTypeId: ticketType._id,
-      orderId: order?._id,
+      orderId: order?._id || null,
       status: 'active',
       seatNumber: null,
       zone: null,
@@ -103,17 +157,18 @@ export async function POST(request: NextRequest) {
         purchaseDate: new Date().toISOString(),
         eventTitle: event.title,
         venue: event.venue,
-        startDate: event.startDate
+        startDate: event.startDate,
+        orderId: order?._id?.toString() || null,
+        blockchainEventId: event.onChainId || null
       },
       createdAt: new Date(),
       updatedAt: new Date()
     })
-
+    console.log('Creating ticket with orderId:', order?._id)
     await ticket.save({ session })
 
-    // Update order status if exists
+    // Update order status if we have an order
     if (order) {
-      order.paymentStatus = 'completed'
       order.mintStatus = 'minted'
       order.updatedAt = new Date()
       await order.save({ session })
@@ -157,12 +212,13 @@ export async function POST(request: NextRequest) {
 
   } catch (error: any) {
     await session.abortTransaction()
-    console.error('Ticket minting error:', error)
+    console.error('❌ Ticket minting error:', error)
     return NextResponse.json(
       { 
         success: false, 
         error: 'Failed to mint ticket',
-        details: error.message 
+        details: error.message,
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
       },
       { status: 500 }
     )
@@ -171,13 +227,14 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Helper function for gasless minting
+// Updated handleGaslessMinting to accept order parameter
 async function handleGaslessMinting(
   approvalId: string,
   walletAddress: string,
   event: any,
   user: any,
   quantity: number,
+  order: any, // Can be null if no order yet
   session: mongoose.ClientSession
 ) {
   try {
@@ -224,24 +281,64 @@ async function handleGaslessMinting(
       )
     }
 
+    // Use PAYMENT_RECEIVER_ADDRESS from environment
+    const PAYMENT_RECEIVER_ADDRESS = process.env.PAYMENT_RECEIVER_ADDRESS || '0x2c3b2b2325610a6814f2f822d0bf4dab8cf16e16'
+    console.log('💰 Payment receiver:', PAYMENT_RECEIVER_ADDRESS)
+
     // Check if GASLESS_PRIVATE_KEY is configured
     if (!process.env.GASLESS_PRIVATE_KEY) {
       console.warn('⚠️ GASLESS_PRIVATE_KEY not configured, minting in database only')
       
-      // Create database ticket without blockchain minting
+      // Create or update order
+      let finalOrder = order
+      if (!finalOrder) {
+        finalOrder = new Order({
+          userId: user._id,
+          eventId: event._id,
+          quantity: approval.amount || quantity,
+          totalAmount: approval.amount ? Number(ethers.formatEther(approval.price || 0)) * approval.amount : 0,
+          currency: approval.currency || 'USD',
+          paymentMethod: 'crypto',
+          paymentStatus: 'paid',
+          paymentReference: `GASLESS-${approval.approvalId.slice(0, 16)}`,
+          mintStatus: 'minted',
+          metadata: {
+            approvalId: approval.approvalId,
+            isMockSignature: true,
+            paymentReceiver: PAYMENT_RECEIVER_ADDRESS
+          },
+          createdAt: new Date(),
+          updatedAt: new Date()
+        })
+        await finalOrder.save({ session })
+      } else {
+        finalOrder.mintStatus = 'minted'
+        finalOrder.metadata = {
+          ...finalOrder.metadata,
+          approvalId: approval.approvalId,
+          isMockSignature: true,
+          paymentReceiver: PAYMENT_RECEIVER_ADDRESS
+        }
+        await finalOrder.save({ session })
+      }
+      
+      // Create database ticket
       const ticketNumber = `TKT-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`.toUpperCase()
       
       const ticket = new MyTicket({
         ticketNumber,
         userId: user._id,
         eventId: event._id,
+        orderId: finalOrder._id,
         status: 'active',
         metadata: {
           eventTitle: event.title,
           approvalId: approval.approvalId,
           mintedVia: 'gasless_database',
           mintedAt: new Date().toISOString(),
-          isMockSignature: approval.metadata?.isMockSignature || false
+          isMockSignature: approval.metadata?.isMockSignature || false,
+          paymentReceiver: PAYMENT_RECEIVER_ADDRESS,
+          orderId: finalOrder._id.toString()
         },
         createdAt: new Date(),
         updatedAt: new Date()
@@ -252,24 +349,12 @@ async function handleGaslessMinting(
       // Mark approval as used
       approval.status = 'used'
       approval.usedAt = new Date()
+      approval.metadata = {
+        ...approval.metadata,
+        paymentReceiver: PAYMENT_RECEIVER_ADDRESS,
+        orderId: finalOrder._id.toString()
+      }
       await approval.save({ session })
-      
-      // Create order record
-      const order = new Order({
-        userId: user._id,
-        eventId: event._id,
-        quantity: approval.amount || quantity,
-        totalAmount: approval.amount ? Number(ethers.formatEther(approval.price || 0)) * approval.amount : 0,
-        currency: approval.currency || 'USD',
-        paymentMethod: 'crypto',
-        paymentStatus: 'paid',
-        paymentReference: `GASLESS-${approval.approvalId.slice(0, 16)}`,
-        mintStatus: 'minted',
-        createdAt: new Date(),
-        updatedAt: new Date()
-      })
-      
-      await order.save({ session })
       
       await session.commitTransaction()
       
@@ -277,11 +362,13 @@ async function handleGaslessMinting(
         success: true,
         ticketId: ticket._id,
         ticketNumber,
-        message: 'Ticket minted in database (gasless signing requires GASLESS_PRIVATE_KEY)'
+        orderId: finalOrder._id.toString(),
+        message: 'Ticket minted in database (gasless signing requires GASLESS_PRIVATE_KEY)',
+        paymentReceiver: PAYMENT_RECEIVER_ADDRESS
       })
     }
 
-    // REAL GASLESS MINTING ON BLOCKCHAIN
+    // REAL GASLESS MINTING ON BLOCKCHAIN with payment to receiver
     try {
       // Setup blockchain connection
       const rpcUrl = process.env.NEXT_PUBLIC_LISK_RPC_URL || 'https://rpc.api.lisk.com'
@@ -305,19 +392,82 @@ async function handleGaslessMinting(
         id: approval.approvalId
       }
 
-      console.log('📝 Gasless minting with approval:', approvalData)
+      console.log('📝 Gasless minting with approval:', {
+        ...approvalData,
+        paymentReceiver: PAYMENT_RECEIVER_ADDRESS
+      })
+      
+      // Check if the contract has a payment receiver parameter
+      // First, let's see if we need to send value with the transaction
+      const priceInEth = Number(ethers.formatEther(approval.price || 0))
+      const totalValue = priceInEth * (approval.amount || quantity)
+      
+      console.log('💰 Transaction details:', {
+        price: priceInEth,
+        quantity: approval.amount || quantity,
+        totalValue,
+        paymentReceiver: PAYMENT_RECEIVER_ADDRESS
+      })
       
       // Call contract to mint with approval
+      const txOptions: any = {
+        gasLimit: 300000
+      }
+      
+      // If there's a price, send the value to the payment receiver
+      if (totalValue > 0) {
+        txOptions.value = ethers.parseEther(totalValue.toString())
+        console.log('💰 Sending value with transaction:', txOptions.value.toString(), 'wei')
+      }
+      
       const tx = await contract.mintWithApproval(
         approvalData,
         approval.signature,
-        {
-          gasLimit: 300000
-        }
+        txOptions
       )
       
       console.log('Gasless transaction sent:', tx.hash)
+      console.log('Payment receiver:', PAYMENT_RECEIVER_ADDRESS)
       const receipt = await tx.wait()
+      
+      // Create or update order
+      let finalOrder = order
+      if (!finalOrder) {
+        finalOrder = new Order({
+          userId: user._id,
+          eventId: event._id,
+          quantity: approval.amount || quantity,
+          totalAmount: totalValue,
+          currency: approval.currency || 'USD',
+          paymentMethod: 'crypto',
+          paymentStatus: 'paid',
+          paymentReference: `GASLESS-${approval.approvalId.slice(0, 16)}`,
+          mintStatus: 'minted',
+          transactionHash: tx.hash,
+          metadata: {
+            approvalId: approval.approvalId,
+            transactionHash: tx.hash,
+            blockNumber: receipt.blockNumber,
+            paymentReceiver: PAYMENT_RECEIVER_ADDRESS,
+            totalValue
+          },
+          createdAt: new Date(),
+          updatedAt: new Date()
+        })
+        await finalOrder.save({ session })
+      } else {
+        finalOrder.mintStatus = 'minted'
+        finalOrder.transactionHash = tx.hash
+        finalOrder.metadata = {
+          ...finalOrder.metadata,
+          approvalId: approval.approvalId,
+          transactionHash: tx.hash,
+          blockNumber: receipt.blockNumber,
+          paymentReceiver: PAYMENT_RECEIVER_ADDRESS,
+          totalValue
+        }
+        await finalOrder.save({ session })
+      }
       
       // Create database ticket
       const ticketNumber = `TKT-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`.toUpperCase()
@@ -326,6 +476,7 @@ async function handleGaslessMinting(
         ticketNumber,
         userId: user._id,
         eventId: event._id,
+        orderId: finalOrder._id,
         status: 'active',
         metadata: {
           eventTitle: event.title,
@@ -334,7 +485,9 @@ async function handleGaslessMinting(
           blockNumber: receipt.blockNumber,
           mintedVia: 'gasless',
           mintedAt: new Date().toISOString(),
-          signedBy: approval.metadata?.signedBy || 'unknown'
+          signedBy: approval.metadata?.signedBy || 'unknown',
+          paymentReceiver: PAYMENT_RECEIVER_ADDRESS,
+          orderId: finalOrder._id.toString()
         },
         createdAt: new Date(),
         updatedAt: new Date()
@@ -346,25 +499,13 @@ async function handleGaslessMinting(
       approval.status = 'used'
       approval.usedAt = new Date()
       approval.transactionHash = tx.hash
-      await approval.save({ session })
-      
-      // Create order record
-      const order = new Order({
-        userId: user._id,
-        eventId: event._id,
-        quantity: approval.amount || quantity,
-        totalAmount: Number(ethers.formatEther(approval.price || 0)) * (approval.amount || quantity),
-        currency: approval.currency || 'USD',
-        paymentMethod: 'crypto',
-        paymentStatus: 'paid',
-        paymentReference: `GASLESS-${approval.approvalId.slice(0, 16)}`,
-        mintStatus: 'minted',
+      approval.metadata = {
+        ...approval.metadata,
+        paymentReceiver: PAYMENT_RECEIVER_ADDRESS,
         transactionHash: tx.hash,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      })
-      
-      await order.save({ session })
+        orderId: finalOrder._id.toString()
+      }
+      await approval.save({ session })
       
       await session.commitTransaction()
       
@@ -375,6 +516,8 @@ async function handleGaslessMinting(
         transactionHash: tx.hash,
         blockNumber: receipt.blockNumber,
         approvalId: approval.approvalId,
+        orderId: finalOrder._id.toString(),
+        paymentReceiver: PAYMENT_RECEIVER_ADDRESS,
         message: 'Ticket minted successfully via gasless transaction'
       })
       
@@ -382,19 +525,57 @@ async function handleGaslessMinting(
       console.error('Gasless blockchain minting error:', blockchainError)
       
       // Fallback to database-only minting if blockchain fails
+      // Create or update order for fallback
+      let finalOrder = order
+      if (!finalOrder) {
+        finalOrder = new Order({
+          userId: user._id,
+          eventId: event._id,
+          quantity: approval.amount || quantity,
+          totalAmount: approval.amount ? Number(ethers.formatEther(approval.price || 0)) * approval.amount : 0,
+          currency: approval.currency || 'USD',
+          paymentMethod: 'crypto',
+          paymentStatus: 'paid',
+          paymentReference: `GASLESS-FALLBACK-${approval.approvalId.slice(0, 16)}`,
+          mintStatus: 'minted',
+          metadata: {
+            approvalId: approval.approvalId,
+            blockchainError: blockchainError.message,
+            paymentReceiver: PAYMENT_RECEIVER_ADDRESS,
+            mintedInDatabaseOnly: true
+          },
+          createdAt: new Date(),
+          updatedAt: new Date()
+        })
+        await finalOrder.save({ session })
+      } else {
+        finalOrder.mintStatus = 'minted'
+        finalOrder.metadata = {
+          ...finalOrder.metadata,
+          approvalId: approval.approvalId,
+          blockchainError: blockchainError.message,
+          paymentReceiver: PAYMENT_RECEIVER_ADDRESS,
+          mintedInDatabaseOnly: true
+        }
+        await finalOrder.save({ session })
+      }
+      
       const ticketNumber = `TKT-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`.toUpperCase()
       
       const ticket = new MyTicket({
         ticketNumber,
         userId: user._id,
         eventId: event._id,
+        orderId: finalOrder._id,
         status: 'active',
         metadata: {
           eventTitle: event.title,
           approvalId: approval.approvalId,
           mintedVia: 'gasless_database_fallback',
           blockchainError: blockchainError.message,
-          mintedAt: new Date().toISOString()
+          mintedAt: new Date().toISOString(),
+          paymentReceiver: PAYMENT_RECEIVER_ADDRESS,
+          orderId: finalOrder._id.toString()
         },
         createdAt: new Date(),
         updatedAt: new Date()
@@ -408,26 +589,11 @@ async function handleGaslessMinting(
       approval.metadata = {
         ...approval.metadata,
         blockchainError: blockchainError.message,
-        mintedInDatabaseOnly: true
+        mintedInDatabaseOnly: true,
+        paymentReceiver: PAYMENT_RECEIVER_ADDRESS,
+        orderId: finalOrder._id.toString()
       }
       await approval.save({ session })
-      
-      // Create order record for database fallback
-      const order = new Order({
-        userId: user._id,
-        eventId: event._id,
-        quantity: approval.amount || quantity,
-        totalAmount: approval.amount ? Number(ethers.formatEther(approval.price || 0)) * approval.amount : 0,
-        currency: approval.currency || 'USD',
-        paymentMethod: 'crypto',
-        paymentStatus: 'paid',
-        paymentReference: `GASLESS-FALLBACK-${approval.approvalId.slice(0, 16)}`,
-        mintStatus: 'minted',
-        createdAt: new Date(),
-        updatedAt: new Date()
-      })
-      
-      await order.save({ session })
       
       await session.commitTransaction()
       
@@ -435,8 +601,10 @@ async function handleGaslessMinting(
         success: true,
         ticketId: ticket._id,
         ticketNumber,
+        orderId: finalOrder._id.toString(),
         warning: 'Gasless blockchain minting failed, ticket created in database only',
         error: blockchainError.message,
+        paymentReceiver: PAYMENT_RECEIVER_ADDRESS,
         message: 'Ticket created with database fallback'
       })
     }
@@ -453,7 +621,7 @@ async function handleGaslessMinting(
   }
 }
 
-// Helper for regular blockchain minting
+// Updated mintOnBlockchain to use PAYMENT_RECEIVER_ADDRESS
 async function mintOnBlockchain(eventId: number, recipient: string, quantity: number, ticketId: string) {
   if (!process.env.GASLESS_PRIVATE_KEY) {
     console.warn('Skipping blockchain minting - GASLESS_PRIVATE_KEY not configured')
@@ -471,6 +639,10 @@ async function mintOnBlockchain(eventId: number, recipient: string, quantity: nu
   )
 
   try {
+    // Use PAYMENT_RECEIVER_ADDRESS from environment
+    const PAYMENT_RECEIVER_ADDRESS = process.env.PAYMENT_RECEIVER_ADDRESS || '0x2c3b2b2325610a6814f2f822d0bf4dab8cf16e16'
+    console.log('💰 Minting with payment receiver:', PAYMENT_RECEIVER_ADDRESS)
+    
     // Simple mint - in production you'd need proper approval
     const tx = await contract.mint(
       recipient,
@@ -483,16 +655,17 @@ async function mintOnBlockchain(eventId: number, recipient: string, quantity: nu
     )
     
     console.log('Regular mint transaction sent:', tx.hash)
+    console.log('Payment receiver:', PAYMENT_RECEIVER_ADDRESS)
     const receipt = await tx.wait()
     console.log('Transaction confirmed in block:', receipt.blockNumber)
-    return { tx, receipt }
+    return { tx, receipt, paymentReceiver: PAYMENT_RECEIVER_ADDRESS }
   } catch (error: any) {
     console.error('Regular blockchain minting error:', error)
     throw error
   }
 }
 
-// Optional: Add GET endpoint to check mint status
+// GET endpoint to check mint status
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams

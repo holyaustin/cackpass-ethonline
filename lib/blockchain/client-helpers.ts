@@ -1,4 +1,4 @@
-// /lib/blockchain/client-helpers.ts - COMPLETE PRODUCTION READY VERSION
+// /lib/blockchain/client-helpers.ts - ADD PAYMENT FUNCTIONS TO EXISTING FILE
 'use client'
 
 import { ethers } from 'ethers'
@@ -71,6 +71,8 @@ export interface EventData {
 // ============ CONSTANTS ============
 const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CACKPASS_CORE_ADDRESS!
 const RPC_URL = process.env.NEXT_PUBLIC_LISK_RPC_URL || 'https://rpc.sepolia-api.lisk.com'
+// Add payment receiver address
+const PAYMENT_RECEIVER_ADDRESS = process.env.NEXT_PUBLIC_PAYMENT_RECEIVER_ADDRESS || '0x2c3b2b2325610a6814f2f822d0bf4dab8cf16e16'
 
 // ============ UTILITY FUNCTIONS ============
 
@@ -258,6 +260,128 @@ export function etherToWei(ether: string): bigint {
   } catch (error) {
     console.error('Error converting ether to wei:', error)
     return 0n
+  }
+}
+
+// ============ NEW PAYMENT FUNCTIONS ============
+
+/**
+ * Get payment receiver address for ticket purchases
+ * All payments should go to this address
+ */
+export function getPaymentReceiverAddress(): string {
+  return PAYMENT_RECEIVER_ADDRESS
+}
+
+/**
+ * Format price for display with currency symbol
+ */
+export function formatPriceWithCurrency(price: number | string, currency: string = 'USD'): string {
+  const priceNum = typeof price === 'string' ? parseFloat(price) : price
+  if (isNaN(priceNum)) return `0 ${currency}`
+  
+  if (priceNum === 0) return 'FREE'
+  
+  const formatter = new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: currency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+  
+  return formatter.format(priceNum)
+}
+
+/**
+ * Calculate total price with quantity
+ */
+export function calculateTotalPriceWithQuantity(price: number, quantity: number, currency: string = 'USD'): string {
+  const total = price * quantity
+  return formatPriceWithCurrency(total, currency)
+}
+
+/**
+ * Validate payment parameters before processing
+ */
+export function validatePaymentParameters(
+  walletAddress: string,
+  eventId: string | number,
+  amount: number,
+  quantity: number
+): { valid: boolean; error?: string } {
+  if (!isValidWalletAddress(walletAddress)) {
+    return { valid: false, error: 'Invalid wallet address' }
+  }
+  
+  if (!eventId || (typeof eventId === 'string' && eventId.trim() === '')) {
+    return { valid: false, error: 'Invalid event ID' }
+  }
+  
+  if (amount < 0) {
+    return { valid: false, error: 'Amount cannot be negative' }
+  }
+  
+  if (quantity <= 0) {
+    return { valid: false, error: 'Quantity must be at least 1' }
+  }
+  
+  if (quantity > 10) {
+    return { valid: false, error: 'Maximum 10 tickets per purchase' }
+  }
+  
+  return { valid: true }
+}
+
+/**
+ * Create mock signature for development (not for production)
+ */
+export function createMockSignature(): string {
+  return '0x' + '00'.repeat(65)
+}
+
+/**
+ * Calculate transaction value to send to payment receiver
+ */
+export function calculateTransactionValue(price: number, quantity: number): bigint {
+  const total = price * quantity
+  return etherToWei(total.toString())
+}
+
+/**
+ * Generate payment approval data for wallet payments
+ */
+export function generatePaymentApproval(
+  recipient: string,
+  eventId: number,
+  amount: number = 1,
+  price: number = 0
+): {
+  approvalId: string
+  signature: string
+  signatureData: any
+  validUntil: number
+} {
+  const approvalId = generateApprovalId()
+  const validUntil = Math.floor(Date.now() / 1000) + 3600 // 1 hour
+  
+  // For development, use mock signature
+  // In production, this should be signed by the backend
+  const signature = createMockSignature()
+  
+  const signatureData = {
+    recipient,
+    eventId,
+    amount,
+    price: etherToWei(price.toString()),
+    validUntil,
+    id: approvalId
+  }
+  
+  return {
+    approvalId,
+    signature,
+    signatureData,
+    validUntil
   }
 }
 
