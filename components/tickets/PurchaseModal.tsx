@@ -1,4 +1,4 @@
-// /components/tickets/PurchaseModal.tsx - COMPLETE FIXED VERSION
+// /components/tickets/PurchaseModal.tsx 
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
@@ -163,14 +163,14 @@ export default function PurchaseModal({
   const paymentMethods: PaymentMethod[] = [
     {
       id: 'wallet',
-      name: 'Embedded Wallet',
+      name: 'Pay from Wallet',
       description: 'Pay directly from your embedded wallet',
       icon: <Wallet className="h-5 w-5" />
     },
     {
       id: 'paystack',
-      name: 'Card Payment',
-      description: 'Pay with credit/debit card or bank transfer',
+      name: 'PayStack Payment',
+      description: 'Pay with credit/debit card, bank transfer or USSD',
       icon: <CreditCard className="h-5 w-5" />
     }
   ]
@@ -360,7 +360,7 @@ export default function PurchaseModal({
         },
         body: JSON.stringify({
           paymentMethod: 'paystack',
-          walletAddress: walletAddress || 'card-payment',
+          walletAddress: walletAddress || 'paystack-payment',
           amount: totalAmount,
           currency: event.currency || 'NGN',
           eventId: eventId,
@@ -551,9 +551,6 @@ export default function PurchaseModal({
               <X className="h-5 w-5" />
             </button>
           </div>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-            Complete your ticket purchase
-          </p>
         </div>
 
         {/* Content */}
@@ -594,40 +591,65 @@ export default function PurchaseModal({
               {/* Payment Methods */}
               <div className="mb-6">
                 <h3 className="font-semibold mb-3">Select Payment Method</h3>
+                
                 <div className="space-y-3">
-                  {paymentMethods.map((method) => (
+                  {paymentMethods.map((method, index) => (
                     <button
                       key={method.id}
-                      onClick={() => setSelectedMethod(method.id)}
+                      onClick={() => {
+                        // Deactivate the second button (index 1) - Paystack button
+                        if (index === 1) {
+                          // Optional: Show a toast or message
+                          toast.error('PayStack payments are temporarily unavailable. Please use wallet payment.');
+                          return;
+                        }
+                        setSelectedMethod(method.id);
+                      }}
                       disabled={method.id === 'wallet' && !hasEmbeddedWallet}
                       className={`w-full p-4 rounded-xl border flex items-start gap-3 text-left transition-all ${
                         selectedMethod === method.id
                           ? 'border-primary bg-primary/5'
                           : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
-                      } ${method.id === 'wallet' && !hasEmbeddedWallet ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      } ${(method.id === 'wallet' && !hasEmbeddedWallet) || index === 1 ? 'opacity-60 cursor-not-allowed' : ''}`}
                     >
                       <div className={`p-2 rounded-lg ${
-                        selectedMethod === method.id 
+                        selectedMethod === method.id && index !== 1
                           ? 'bg-primary text-white' 
-                          : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
+                          : (index === 1 ? 'bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-500' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400')
                       }`}>
                         {method.icon}
                       </div>
                       <div className="flex-1">
-                        <div className="font-semibold">{method.name}</div>
+                        <div className="font-semibold flex items-center gap-2">
+                          {method.name}
+                          {index === 1 && (
+                            <span className="px-2 py-0.5 bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-xs rounded-full">
+                              Coming Soon
+                            </span>
+                          )}
+                        </div>
                         <div className="text-sm text-gray-600 dark:text-gray-400">
                           {method.description}
                           {method.id === 'wallet' && !hasEmbeddedWallet && (
                             <div className="mt-1">
-                              <span className="text-red-500 text-xs">
-                                No embedded wallet found. Please set up your wallet first.
+                            </div>
+                          )}
+                          {index === 1 && (
+                            <div className="mt-1">
+                              <span className="text-amber-600 dark:text-amber-400 text-xs">
+                                Card payments are temporarily unavailable. Please use wallet payment.
                               </span>
                             </div>
                           )}
                         </div>
                       </div>
-                      {selectedMethod === method.id && (
+                      {selectedMethod === method.id && index !== 1 && (
                         <CheckCircle className="h-5 w-5 text-primary flex-shrink-0 mt-1" />
+                      )}
+                      {index === 1 && (
+                        <div className="flex-shrink-0 mt-1">
+                          <AlertCircle className="h-5 w-5 text-gray-400" />
+                        </div>
                       )}
                     </button>
                   ))}
@@ -743,7 +765,7 @@ export default function PurchaseModal({
                 {selectedMethod === 'wallet' ? (
                   <p>• Approving payment with your wallet</p>
                 ) : (
-                  <p>• Processing card payment</p>
+                  <p>• Processing Paystack payment</p>
                 )}
                 <p>• Creating your ticket</p>
                 <p>• Securing on blockchain</p>

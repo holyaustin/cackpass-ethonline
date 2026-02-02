@@ -136,7 +136,7 @@ function EventCard({ event }: { event: Event }) {
           </Link>
           {isEventUpcoming && (
             <Link
-              href={`/events/${event._id}/tickets`}
+              href={`/events/${event._id}`}
               className="btn-outline flex-1 py-3 text-center text-sm"
             >
               Get Tickets
