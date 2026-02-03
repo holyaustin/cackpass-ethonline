@@ -1,9 +1,9 @@
-// /components/auth/ProfileModal.tsx - UPDATED (EMAIL HIDDEN, COMPACT LAYOUT)
+// /components/auth/ProfileModal.tsx - UPDATED WITH PRIVY INTEGRATION
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useWalletAuth } from '@/hooks/useWalletAuth'
-import { X, Building, Globe, Phone, Save, Loader2, Wallet } from 'lucide-react'
+import { usePrivy } from '@privy-io/react-auth'
+import { X, Building, Globe, Phone, Save, Loader2, Wallet, Mail, AlertCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import PhoneInput from 'react-phone-number-input'
 import 'react-phone-number-input/style.css'
@@ -20,100 +20,220 @@ const COUNTRIES = [
   { value: 'AU', label: 'Australia' },
 ]
 
+// Helper function to extract wallet address from Privy user (from dashboard)
+function getWalletAddressFromUser(user: any): string | null {
+  if (!user) return null
+  
+  // Check direct wallet object (for embedded wallets)
+  if (user.wallet?.address && typeof user.wallet.address === 'string') {
+    return user.wallet.address
+  }
+  
+  // Check linked accounts
+  const linkedAccounts = user.linkedAccounts || []
+  
+  // Look for embedded wallet in linked accounts
+  const embeddedWallet = linkedAccounts.find(
+    (acc: any) => acc.type === 'wallet' && acc.walletClientType === 'privy'
+  )
+  
+  if (embeddedWallet?.address) {
+    return embeddedWallet.address
+  }
+  
+  // Try to find any wallet address
+  for (const account of linkedAccounts) {
+    if (account.type === 'wallet' && account.address) {
+      return account.address
+    }
+  }
+  
+  return null
+}
+
 interface ProfileModalProps {
   isOpen: boolean
   onClose: () => void
   onComplete: () => void
+  initialEmail?: string
+  needsEmail?: boolean
 }
 
 export function ProfileModal({ 
   isOpen, 
   onClose, 
   onComplete,
+  initialEmail = '',
+  needsEmail = false
 }: ProfileModalProps) {
-  const { walletAddress, email: privyEmail, updateProfileByWallet, isLoading: authLoading } = useWalletAuth()
+  const { user, authenticated, ready } = usePrivy()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [formData, setFormData] = useState({
     isOrganizer: false,
     country: '',
     phoneNumber: '',
-    email: '', // Hidden but required field
+    email: initialEmail || '',
   })
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({})
+  const [walletAddress, setWalletAddress] = useState<string | null>(null)
+
+  // Extract wallet address when user is available
+  useEffect(() => {
+    if (user) {
+      const address = getWalletAddressFromUser(user)
+      setWalletAddress(address)
+      console.log('🔍 Wallet address extracted from Privy:', address)
+    }
+  }, [user])
 
   useEffect(() => {
     if (isOpen) {
-      // Pre-fill email from Privy if available, otherwise it will be empty
+      // Pre-fill email from Privy if available
       setFormData({
         isOrganizer: false,
         country: '',
         phoneNumber: '',
-        email: privyEmail || '', // Set email from Privy but hidden from user
+        email: initialEmail || '',
       })
+      setValidationErrors({})
     }
-  }, [isOpen, privyEmail])
+  }, [isOpen, initialEmail])
+
+  const validateForm = () => {
+    const errors: Record<string, string> = {}
+
+    if (!formData.country.trim()) {
+      errors.country = 'Country is required'
+    }
+
+    if (!formData.phoneNumber.trim()) {
+      errors.phoneNumber = 'Phone number is required'
+    } else if (!/^[\+]?[1-9][\d]{0,15}$/.test(formData.phoneNumber.replace(/\D/g, ''))) {
+      errors.phoneNumber = 'Invalid phone number format'
+    }
+
+    // Validate email only when needed (when Privy doesn't have it)
+    if (needsEmail) {
+      if (!formData.email.trim()) {
+        errors.email = 'Email is required'
+      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+        errors.email = 'Invalid email format'
+      }
+    }
+
+    setValidationErrors(errors)
+    return Object.keys(errors).length === 0
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    if (!formData.country || !formData.phoneNumber) {
-      toast.error('Please fill all required fields')
+    if (!validateForm()) {
+      toast.error('Please fix the errors in the form')
       return
-    }
-
-    // Check if we have an email (either from Privy or needs to be entered)
-    let finalEmail = formData.email
-    
-    // If no email from Privy and no email entered, show error
-    if (!finalEmail) {
-      toast.error('Email is required. Please log in with an email or contact support.')
-      return
-    }
-
-    // Validate email format if we have one
-    if (finalEmail) {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-      if (!emailRegex.test(finalEmail)) {
-        toast.error('Invalid email format')
-        return
-      }
     }
 
     setIsSubmitting(true)
     
     try {
+      // Get wallet address from Privy user
       if (!walletAddress) {
-        throw new Error('Wallet address not available')
+        toast.error('Wallet address not found. Please reconnect your wallet.')
+        return
       }
       
-      // Validate phone number
-      const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/
-      const cleanPhoneNumber = formData.phoneNumber.replace(/\D/g, '')
-      
-      if (!phoneRegex.test(cleanPhoneNumber)) {
-        throw new Error('Invalid phone number format')
-      }
-      
-      // Submit with email (hidden from user but included in request)
-      await updateProfileByWallet({
-        isOrganizer: formData.isOrganizer,
+      console.log('📝 Submitting profile data:', {
+        walletAddress,
+        hasEmail: !!formData.email,
+        email: formData.email,
         country: formData.country,
-        phoneNumber: formData.phoneNumber,
-        email: finalEmail, // Email included automatically
+        phone: formData.phoneNumber,
+        isOrganizer: formData.isOrganizer
       })
       
-      toast.success('Profile created successfully!')
-      onComplete()
+      // Submit to API
+      const response = await fetch(`/api/auth/user?walletAddress=${walletAddress}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          isOrganizer: formData.isOrganizer,
+          country: formData.country,
+          phoneNumber: formData.phoneNumber,
+          email: formData.email.trim(), // Always send email
+        }),
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        console.log('✅ Profile created successfully:', data)
+        toast.success('Profile created successfully!')
+        onComplete()
+      } else {
+        console.error('❌ Profile creation failed:', data)
+        toast.error(data.error || 'Failed to save profile')
+      }
       
     } catch (error) {
       console.error('Error saving profile:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to save profile')
+      toast.error('An error occurred. Please try again.')
     } finally {
       setIsSubmitting(false)
     }
   }
 
-  const isLoading = authLoading || isSubmitting
-  const isFormValid = formData.country && formData.phoneNumber && formData.email
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value, type } = e.target
+    
+    setFormData(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value
+    }))
+
+    // Clear validation error for this field
+    if (validationErrors[name]) {
+      setValidationErrors(prev => {
+        const newErrors = { ...prev }
+        delete newErrors[name]
+        return newErrors
+      })
+    }
+  }
+
+  const handlePhoneChange = (value: string | undefined) => {
+    setFormData(prev => ({
+      ...prev,
+      phoneNumber: value || ''
+    }))
+    
+    if (validationErrors.phoneNumber) {
+      setValidationErrors(prev => {
+        const newErrors = { ...prev }
+        delete newErrors.phoneNumber
+        return newErrors
+      })
+    }
+  }
+
+  const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData(prev => ({
+      ...prev,
+      email: e.target.value
+    }))
+    
+    if (validationErrors.email) {
+      setValidationErrors(prev => {
+        const newErrors = { ...prev }
+        delete newErrors.email
+        return newErrors
+      })
+    }
+  }
+
+  const isLoading = isSubmitting
+  const isFormValid = formData.country && formData.phoneNumber && (!needsEmail || formData.email)
 
   if (!isOpen) return null
 
@@ -139,12 +259,57 @@ export function ProfileModal({
               <p className="text-xs text-gray-600 dark:text-gray-400">
                 Complete your basic profile
               </p>
+              {walletAddress && (
+                <div className="mt-2">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                    Wallet: {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 
           {/* Form - Reduced spacing */}
           <form onSubmit={handleSubmit} className="p-5">
             <div className="space-y-4">
+              {/* Email Field - Only shown when needed */}
+              {needsEmail && (
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2 ml-0.5">
+                    Email Address <span className="text-primary">*</span>
+                  </label>
+                  <div className="group relative flex items-center w-full bg-white dark:bg-gray-800/50 border-2 border-gray-100 dark:border-gray-700/50 rounded-xl hover:border-gray-200 dark:hover:border-gray-600 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/10 shadow-sm transition-all duration-200">
+                    <div className="flex items-center justify-center pl-3 border-r border-gray-100 dark:border-gray-700 h-10 my-auto">
+                      <Mail className="text-gray-400 group-focus-within:text-primary transition-colors h-4 w-4" />
+                    </div>
+                    <input
+                      type="email"
+                      name="email"
+                      value={formData.email}
+                      onChange={handleEmailChange}
+                      placeholder="your@email.com"
+                      className={`flex-1 h-10 pl-3 pr-3 bg-transparent outline-none text-sm text-gray-900 dark:text-white font-medium ${
+                        validationErrors.email ? 'placeholder:text-red-400' : 'placeholder:text-gray-400'
+                      }`}
+                      required={needsEmail}
+                      disabled={isLoading}
+                    />
+                  </div>
+                  {validationErrors.email && (
+                    <p className="text-xs text-red-600 dark:text-red-400 mt-1.5 flex items-center gap-1 ml-0.5">
+                      <AlertCircle className="h-3 w-3" />
+                      {validationErrors.email}
+                    </p>
+                  )}
+                  {needsEmail && !formData.email && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1.5 flex items-center gap-1 ml-0.5">
+                      <AlertCircle className="h-3 w-3" />
+                      Email not found in your account. Please provide one.
+                    </p>
+                  )}
+                </div>
+              )}
+
               {/* Organizer Toggle - More compact */}
               <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                 <div className="flex items-center justify-between">
@@ -160,11 +325,9 @@ export function ProfileModal({
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input
                       type="checkbox"
+                      name="isOrganizer"
                       checked={formData.isOrganizer}
-                      onChange={(e) => setFormData({
-                        ...formData,
-                        isOrganizer: e.target.checked
-                      })}
+                      onChange={handleInputChange}
                       className="sr-only peer"
                       disabled={isLoading}
                     />
@@ -183,18 +346,18 @@ export function ProfileModal({
                     <Globe className="text-gray-400 group-focus-within:text-primary transition-colors h-4 w-4" />
                   </div>
                   <select
+                    name="country"
                     value={formData.country}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      country: e.target.value
-                    })}
+                    onChange={handleInputChange}
                     required
                     disabled={isLoading}
-                    className="flex-1 h-10 pl-3 pr-8 bg-transparent outline-none text-sm text-gray-900 dark:text-white font-medium appearance-none"
+                    className={`flex-1 h-10 pl-3 pr-8 bg-transparent outline-none text-sm text-gray-900 dark:text-white font-medium appearance-none ${
+                      validationErrors.country ? 'text-red-500' : ''
+                    }`}
                   >
-                    <option value="" className="text-gray-900 ">Select country</option>
+                    <option value="" className="text-gray-900 dark:text-gray-400">Select country</option>
                     {COUNTRIES.map((country) => (
-                      <option key={country.value} value={country.value} className="text-gray-900 dark:text-gray-100 bg-primary">
+                      <option key={country.value} value={country.value} className="text-gray-900 dark:text-gray-100 bg-orange-700">
                         {country.label}
                       </option>
                     ))}
@@ -205,6 +368,12 @@ export function ProfileModal({
                     </svg>
                   </div>
                 </div>
+                {validationErrors.country && (
+                  <p className="text-xs text-red-600 dark:text-red-400 mt-1.5 flex items-center gap-1 ml-0.5">
+                    <AlertCircle className="h-3 w-3" />
+                    {validationErrors.country}
+                  </p>
+                )}
               </div>
 
               {/* Phone Number - More compact */}
@@ -222,16 +391,17 @@ export function ProfileModal({
                     international
                     defaultCountry="NG"
                     value={formData.phoneNumber}
-                    onChange={(value) => setFormData({
-                      ...formData,
-                      phoneNumber: value || ''
-                    })}
+                    onChange={handlePhoneChange}
                     className="flex-1 flex h-10 pl-3"
                     
                     inputComponent={({ className, ...props }: any) => (
                       <input
                         {...props}
-                        className="w-full h-full bg-transparent px-3 text-sm font-medium outline-none text-gray-900 dark:text-gray-100 placeholder:text-gray-400 placeholder:text-sm"
+                        className={`w-full h-full bg-transparent px-3 text-sm font-medium outline-none ${
+                          validationErrors.phoneNumber 
+                            ? 'text-red-500 placeholder:text-red-400' 
+                            : 'text-gray-900 dark:text-gray-100 placeholder:text-gray-400'
+                        } placeholder:text-sm`}
                         placeholder="080 000 0000"
                       />
                     )}
@@ -246,14 +416,22 @@ export function ProfileModal({
                     } as React.CSSProperties}
                   />
                 </div>
+                {validationErrors.phoneNumber && (
+                  <p className="text-xs text-red-600 dark:text-red-400 mt-1.5 flex items-center gap-1 ml-0.5">
+                    <AlertCircle className="h-3 w-3" />
+                    {validationErrors.phoneNumber}
+                  </p>
+                )}
               </div>
 
-              {/* Hidden email indicator - Only show if we have email from Privy */}
-              {formData.email && (
-                <div className="pt-2">
-                  <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
-                    <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
-                    <span>Email verified from your login method</span>
+              {/* Email status indicator */}
+              {!needsEmail && formData.email && (
+                <div className="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                    <span className="text-xs text-green-800 dark:text-green-400">
+                      Using email from your login: <span className="font-medium">{formData.email}</span>
+                    </span>
                   </div>
                 </div>
               )}
@@ -295,8 +473,16 @@ export function ProfileModal({
             {/* Email requirement note */}
             <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
               <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
-                Email is required for your account. {formData.email ? 'Using email from your login method.' : 'Please ensure you logged in with an email address.'}
+                {needsEmail 
+                  ? 'Email is required for your account. Please provide one below.'
+                  : `Email verified from your login method: ${formData.email}`
+                }
               </p>
+              {walletAddress && (
+                <p className="text-xs text-gray-400 dark:text-gray-500 text-center mt-1">
+                  Wallet: {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
+                </p>
+              )}
             </div>
           </form>
         </div>

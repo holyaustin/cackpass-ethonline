@@ -1,4 +1,4 @@
-// /app/events/[id]/page.tsx - UPDATED VERSION
+// /app/events/[id]/page.tsx - COMPLETE FIXED VERSION
 'use client'
 
 import { useState, useEffect, Suspense } from 'react'
@@ -9,7 +9,8 @@ import {
   Star, Tag, Globe, Shield, QrCode, Loader2,
   ShoppingCart, CreditCard, Wallet, CheckCircle,
   AlertCircle, ArrowRight, ExternalLink, User,
-  Building, Video, Youtube, Twitch, Link as LinkIcon
+  Building, Video, Youtube, Twitch, Link as LinkIcon,
+  Mail, Check
 } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
@@ -17,6 +18,48 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import PurchaseModal from '@/components/tickets/PurchaseModal'
 import { usePrivy } from '@privy-io/react-auth'
 import { format } from 'date-fns'
+import { ethers } from 'ethers'
+
+// Lisk Mainnet USDC Contract Address
+const LISK_MAINNET_USDC_ADDRESS = '0xF242275d3a6527d877f2c927a82D9b057609cc71'
+const LISK_MAINNET_RPC_URL = 'https://rpc.api.lisk.com'
+
+// USDC ABI
+const USDC_ABI = [
+  "function balanceOf(address owner) view returns (uint256)",
+  "function decimals() view returns (uint8)"
+]
+
+// Helper function to extract wallet address from Privy user
+function getWalletAddressFromUser(user: any): string | null {
+  if (!user) return null
+  
+  // Check direct wallet object (for embedded wallets)
+  if (user.wallet?.address && typeof user.wallet.address === 'string') {
+    return user.wallet.address
+  }
+  
+  // Check linked accounts
+  const linkedAccounts = user.linkedAccounts || []
+  
+  // Look for embedded wallet in linked accounts
+  const embeddedWallet = linkedAccounts.find(
+    (acc: any) => acc.type === 'wallet' && acc.walletClientType === 'privy'
+  )
+  
+  if (embeddedWallet?.address) {
+    return embeddedWallet.address
+  }
+  
+  // Try to find any wallet address
+  for (const account of linkedAccounts) {
+    if (account.type === 'wallet' && account.address) {
+      return account.address
+    }
+  }
+  
+  return null
+}
 
 interface TicketTypeData {
   _id: string
@@ -33,7 +76,6 @@ interface TicketTypeData {
   updatedAt?: string
 }
 
-// Update EventData interface to include both id and _id
 interface EventDataWithId {
   id: string
   _id?: string
@@ -65,13 +107,11 @@ interface EventDataWithId {
   }>
 }
 
-// Default organizer object with cackpas.jpg fallback
 const DEFAULT_ORGANIZER = {
   name: 'Event Organizer',
   avatar: '/cackpas.jpg'
 }
 
-// Helper function to get safe organizer data
 const getSafeOrganizer = (organizer?: { name?: string; avatar?: string }) => {
   if (!organizer) return DEFAULT_ORGANIZER
   
@@ -81,18 +121,15 @@ const getSafeOrganizer = (organizer?: { name?: string; avatar?: string }) => {
   }
 }
 
-// Helper function to get safe avatar URL with fallback
 const getSafeAvatarUrl = (avatar?: string) => {
   if (!avatar || avatar.trim() === '') {
     return '/cackpas.jpg'
   }
   
-  // Check if avatar is a valid URL or path
   if (avatar.startsWith('http') || avatar.startsWith('/')) {
     return avatar
   }
   
-  // If it's a relative path without leading slash, add it
   if (!avatar.startsWith('/')) {
     return `/${avatar}`
   }
@@ -100,7 +137,6 @@ const getSafeAvatarUrl = (avatar?: string) => {
   return '/cackpas.jpg'
 }
 
-// Main component wrapper
 export default function EventPage() {
   return (
     <Suspense fallback={<LoadingSpinner fullScreen />}>
@@ -125,15 +161,18 @@ function EventPageContent() {
   const [showFullDescription, setShowFullDescription] = useState(false)
   const [isFavorite, setIsFavorite] = useState(false)
   const [hasLinkedAccounts, setHasLinkedAccounts] = useState(false)
+  const [walletBalance, setWalletBalance] = useState<number>(0)
+  const [isCheckingBalance, setIsCheckingBalance] = useState(false)
+  const [isGettingFreeTicket, setIsGettingFreeTicket] = useState(false)
+  const [walletAddress, setWalletAddress] = useState<string | null>(null)
   
   const eventId = params.id as string
 
-  // Get safe organizer data - handles undefined organizer
   const getOrganizer = () => {
     return getSafeOrganizer(event?.organizer)
   }
 
-  // Check if user has linked accounts (for wallet)
+  // Check if user has linked accounts
   useEffect(() => {
     const checkLinkedAccounts = async () => {
       if (authenticated && ready) {
@@ -159,6 +198,65 @@ function EventPageContent() {
     checkLinkedAccounts()
   }, [authenticated, ready, getAccessToken])
 
+  // Extract wallet address from user
+  useEffect(() => {
+    if (authenticated && ready && user) {
+      const address = getWalletAddressFromUser(user)
+      setWalletAddress(address)
+    }
+  }, [authenticated, ready, user])
+
+  // Function to fetch USDC balance from Lisk Mainnet
+  const fetchUSDCBalance = async (address: string): Promise<number> => {
+    try {
+      console.log('Fetching USDC balance for:', address)
+      
+      const provider = new ethers.JsonRpcProvider(LISK_MAINNET_RPC_URL)
+      
+      const usdcContract = new ethers.Contract(
+        LISK_MAINNET_USDC_ADDRESS,
+        USDC_ABI,
+        provider
+      )
+      
+      const rawBalance = await usdcContract.balanceOf(address)
+      const decimals = await usdcContract.decimals()
+      
+      const usdcBalance = ethers.formatUnits(rawBalance, decimals)
+      const usdcBalanceFormatted = parseFloat(usdcBalance)
+      
+      console.log('USDC balance fetched:', usdcBalanceFormatted)
+      
+      return usdcBalanceFormatted
+      
+    } catch (error: any) {
+      console.error('Error fetching USDC balance:', error.message)
+      return 0
+    }
+  }
+
+  // Check wallet balance when wallet address changes
+  useEffect(() => {
+    const checkBalance = async () => {
+      if (walletAddress && authenticated && !event?.isFree) {
+        setIsCheckingBalance(true)
+        try {
+          const balance = await fetchUSDCBalance(walletAddress)
+          setWalletBalance(balance)
+        } catch (error) {
+          console.error('Balance check error:', error)
+          setWalletBalance(0)
+        } finally {
+          setIsCheckingBalance(false)
+        }
+      }
+    }
+
+    if (walletAddress) {
+      checkBalance()
+    }
+  }, [walletAddress, authenticated, event?.isFree])
+
   // Fetch event data
   useEffect(() => {
     const fetchEventData = async () => {
@@ -183,32 +281,44 @@ function EventPageContent() {
         // Transform event data to ensure it has both id and _id fields
         const transformedEvent = {
           ...eventData.event,
-          // Ensure we have both id and _id fields
-          id: eventData.event._id || eventData.event.id, // Use _id if available
+          id: eventData.event._id || eventData.event.id,
           _id: eventData.event._id,
-          // Ensure organizer exists
           organizer: getSafeOrganizer(eventData.event.organizer)
         }
-        
-        console.log('Transformed event for state:', {
-          id: transformedEvent.id,
-          _id: transformedEvent._id,
-          hasOrganizer: !!transformedEvent.organizer
-        })
         
         setEvent(transformedEvent)
         
         // Fetch ticket types
         setIsLoadingTickets(true)
         const ticketsResponse = await fetch(`/api/events/${eventId}/tickets`)
+        let ticketTypesList: TicketTypeData[] = []
+        
         if (ticketsResponse.ok) {
           const ticketsData = await ticketsResponse.json()
-          if (ticketsData.success && ticketsData.ticketTypes) {
-            setTicketTypes(ticketsData.ticketTypes)
-            if (ticketsData.ticketTypes.length > 0) {
-              setSelectedTicketType(ticketsData.ticketTypes[0])
+          
+          // Initialize with fetched ticket types or empty array
+          ticketTypesList = ticketsData.ticketTypes || []
+          
+          // OPTION 2 IMPLEMENTATION: Create virtual ticket for free events if no ticket types exist
+          if (transformedEvent.isFree && ticketTypesList.length === 0) {
+            const virtualFreeTicket: TicketTypeData = {
+              _id: `free-virtual-${transformedEvent.id}`,
+              name: 'Free Admission',
+              category: 'General Admission',
+              price: 0,
+              maxSupply: 0, // 0 means unlimited
+              currentSupply: 0,
+              isActive: true,
+              eventId: transformedEvent.id,
+              description: 'Free admission to the event'
             }
+            ticketTypesList = [virtualFreeTicket]
           }
+        }
+        
+        setTicketTypes(ticketTypesList)
+        if (ticketTypesList.length > 0) {
+          setSelectedTicketType(ticketTypesList[0])
         }
         
         // Check if event is in favorites
@@ -228,17 +338,11 @@ function EventPageContent() {
     fetchEventData()
   }, [eventId, router])
 
-  // Handle purchase click
-  const handlePurchaseClick = () => {
+  // Function to get free ticket via email
+  const handleGetFreeTicket = async () => {
     if (!authenticated) {
-      toast.error('Please sign in to purchase tickets')
+      toast.error('Please sign in to get a free ticket')
       router.push(`/?redirect=/events/${eventId}`)
-      return
-    }
-
-    // Check if user has a wallet (embedded wallet)
-    if (!hasLinkedAccounts) {
-      toast.error('Please set up your embedded wallet to purchase tickets')
       return
     }
 
@@ -252,12 +356,245 @@ function EventPageContent() {
       return
     }
 
-    if (selectedQuantity < 1) {
-      toast.error('Please select at least one ticket')
-      return
-    }
+    try {
+      setIsGettingFreeTicket(true)
+      
+      const token = await getAccessToken()
+      if (!token) {
+        toast.error('Authentication required')
+        return
+      }
 
-    setShowPurchaseModal(true)
+      // Check if it's a virtual ticket (no backend ID)
+      const requestBody: any = {
+        eventId: eventId,
+        quantity: selectedQuantity,
+      }
+  // Only send ticketTypeId if it's NOT a virtual ticket
+  if (selectedTicketType && !selectedTicketType._id.includes('free-virtual')) {
+    requestBody.ticketTypeId = selectedTicketType._id
+  }
+
+  const response = await fetch('/api/tickets/free', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(requestBody),
+  })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to get free ticket')
+      }
+
+      if (data.success) {
+        toast.success('Free ticket sent to your email! Check your inbox.')
+        
+        // For virtual tickets, update the current supply display
+        if (selectedTicketType._id.includes('free-virtual')) {
+          const updatedTicketType = {
+            ...selectedTicketType,
+            currentSupply: selectedTicketType.currentSupply + selectedQuantity
+          }
+          setSelectedTicketType(updatedTicketType)
+          
+          // Update in ticketTypes array
+          setTicketTypes(prev => 
+            prev.map(ticket => 
+              ticket._id === selectedTicketType._id ? updatedTicketType : ticket
+            )
+          )
+        } else {
+          // For real ticket types, refresh from API
+          const ticketsResponse = await fetch(`/api/events/${eventId}/tickets`)
+          if (ticketsResponse.ok) {
+            const ticketsData = await ticketsResponse.json()
+            if (ticketsData.success && ticketsData.ticketTypes) {
+              setTicketTypes(ticketsData.ticketTypes)
+              const updatedTicketType = ticketsData.ticketTypes.find(
+                (t: TicketTypeData) => t._id === selectedTicketType._id
+              )
+              if (updatedTicketType) {
+                setSelectedTicketType(updatedTicketType)
+              }
+            }
+          }
+        }
+      } else {
+        throw new Error(data.message || 'Failed to get free ticket')
+      }
+    } catch (error) {
+      console.error('Error getting free ticket:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to get free ticket')
+    } finally {
+      setIsGettingFreeTicket(false)
+    }
+  }
+
+  // MAIN BUTTON LOGIC FUNCTION
+// MAIN BUTTON LOGIC FUNCTION - FIXED VERSION
+const getButtonState = () => {
+  // 1. Loading states
+  if (isLoadingTickets) {
+    return {
+      text: 'Loading...',
+      icon: <Loader2 className="h-5 w-5 animate-spin" />,
+      action: null,
+      disabled: true,
+      variant: 'loading'
+    }
+  }
+  
+  if (isCheckingBalance) {
+    return {
+      text: 'Checking Balance...',
+      icon: <Loader2 className="h-5 w-5 animate-spin" />,
+      action: null,
+      disabled: true,
+      variant: 'loading'
+    }
+  }
+  
+  if (isGettingFreeTicket) {
+    return {
+      text: 'Getting Ticket...',
+      icon: <Loader2 className="h-5 w-5 animate-spin" />,
+      action: null,
+      disabled: true,
+      variant: 'loading'
+    }
+  }
+  
+  // 2. Not authenticated
+  if (!authenticated) {
+    return {
+      text: 'Sign In to Continue',
+      icon: <User className="h-5 w-5" />,
+      action: () => router.push(`/?redirect=/events/${eventId}`),
+      disabled: false,
+      variant: 'auth'
+    }
+  }
+  
+  // 3. Free events - handle FIRST (before ticket selection checks)
+  if (event?.isFree) {
+    // For free events, we don't need a ticket type to be selected
+    // Virtual tickets are created automatically if none exist
+    if (!selectedTicketType) {
+      // This shouldn't happen with our virtual ticket creation,
+      // but just in case, return a disabled state
+      return {
+        text: 'Loading Free Ticket...',
+        icon: <Loader2 className="h-5 w-5 animate-spin" />,
+        action: null,
+        disabled: true,
+        variant: 'loading'
+      }
+    }
+    
+    // Check if free ticket is sold out (for tickets with maxSupply > 0)
+    if (selectedTicketType.maxSupply > 0 && selectedTicketType.currentSupply >= selectedTicketType.maxSupply) {
+      return {
+        text: 'Sold Out',
+        icon: null,
+        action: null,
+        disabled: true,
+        variant: 'disabled'
+      }
+    }
+    
+    return {
+      text: 'Get Free Ticket',
+      icon: <Ticket className="h-5 w-5" />,
+      action: handleGetFreeTicket,
+      disabled: false,
+      variant: 'free'
+    }
+  }
+  
+  // 4. For paid events only: No ticket selected
+  if (!selectedTicketType) {
+    return {
+      text: 'Select a Ticket Type',
+      icon: null,
+      action: null,
+      disabled: true,
+      variant: 'disabled'
+    }
+  }
+  
+  // 5. Ticket sold out (for tickets with maxSupply > 0)
+  if (selectedTicketType.maxSupply > 0 && selectedTicketType.currentSupply >= selectedTicketType.maxSupply) {
+    return {
+      text: 'Sold Out',
+      icon: null,
+      action: null,
+      disabled: true,
+      variant: 'disabled'
+    }
+  }
+  
+  // 6. Paid events - check wallet setup
+  if (!hasLinkedAccounts) {
+    return {
+      text: 'Set Up Wallet',
+      icon: <Wallet className="h-5 w-5" />,
+      action: () => toast.error('Please set up your embedded wallet to purchase tickets'),
+      disabled: false,
+      variant: 'wallet'
+    }
+  }
+  
+  // 7. Check if we have wallet address
+  if (!walletAddress) {
+    return {
+      text: 'Connect Wallet',
+      icon: <Wallet className="h-5 w-5" />,
+      action: () => toast.error('No wallet address found'),
+      disabled: false,
+      variant: 'wallet'
+    }
+  }
+  
+  // 8. Calculate total price and check balance
+  const totalPrice = selectedTicketType.price * selectedQuantity
+  
+  // If balance is zero or insufficient, show "Fund Wallet"
+if (walletBalance === 0 || walletBalance < totalPrice) {
+  return {
+    text: 'Fund Wallet',
+    icon: <Wallet className="h-5 w-5" />,
+    action: () => {
+      toast.error('Insufficient balance. Please fund your wallet to continue.')
+      // This will definitely work
+      window.location.href = '/dashboard/wallet'
+      // Or if you want to keep it within the app:
+      // router.push('/wallet')
+    },
+    disabled: false,
+    variant: 'fund'
+  }
+}
+  
+  // 9. Balance is sufficient, show "Purchase Ticket"
+  return {
+    text: 'Purchase Ticket',
+    icon: <ShoppingCart className="h-5 w-5" />,
+    action: () => setShowPurchaseModal(true),
+    disabled: false,
+    variant: 'purchase'
+  }
+}
+
+  // Handle purchase click (wrapper for button click)
+  const handlePurchaseClick = () => {
+    const buttonState = getButtonState()
+    if (buttonState.action) {
+      buttonState.action()
+    }
   }
 
   // Handle ticket type selection
@@ -275,10 +612,12 @@ function EventPageContent() {
   const handleQuantityChange = (change: number) => {
     if (!selectedTicketType) return
     
+    // For unlimited tickets (maxSupply === 0), allow up to 10 tickets at once
+    const maxAvailable = selectedTicketType.maxSupply === 0 
+      ? 10 
+      : selectedTicketType.maxSupply - selectedTicketType.currentSupply
+    
     const newQuantity = selectedQuantity + change
-    const maxAvailable = selectedTicketType.maxSupply > 0 
-      ? selectedTicketType.maxSupply - selectedTicketType.currentSupply
-      : 10 // Default max for unlimited
     
     if (newQuantity < 1) {
       toast.error('Minimum quantity is 1')
@@ -371,38 +710,27 @@ function EventPageContent() {
 
   // Calculate available tickets
   const getAvailableTickets = (ticketType: TicketTypeData) => {
-    if (ticketType.maxSupply === 0) return 'Unlimited'
+    // Handle virtual free tickets and unlimited tickets
+    if (ticketType.maxSupply === 0 || ticketType._id?.includes('free-virtual')) {
+      return 'Unlimited'
+    }
     const available = ticketType.maxSupply - ticketType.currentSupply
     return Math.max(0, available)
   }
 
   // Check if ticket is available
   const isTicketAvailable = (ticketType: TicketTypeData) => {
-    if (ticketType.maxSupply === 0) return true
+    // Virtual free tickets and unlimited tickets are always available
+    if (ticketType.maxSupply === 0 || ticketType._id?.includes('free-virtual')) {
+      return true
+    }
     return ticketType.currentSupply < ticketType.maxSupply
   }
 
   // Get total price
   const getTotalPrice = () => {
-    if (!selectedTicketType || !event?.isFree) return (selectedTicketType?.price || 0 * selectedQuantity).toFixed(2)
-    return '0.00'
-  }
-
-  // Render virtual event info
-  const renderVirtualInfo = () => {
-    if (!event?.isVirtual) return null
-    
-    return (
-      <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl">
-        <div className="flex items-center gap-2 mb-2">
-          <Globe className="h-5 w-5 text-blue-500" />
-          <span className="font-semibold">Virtual Event</span>
-        </div>
-        <p className="text-sm text-gray-600 dark:text-gray-400">
-          Joining details will be provided after ticket purchase
-        </p>
-      </div>
-    )
+    if (!selectedTicketType || event?.isFree) return '0.00'
+    return (selectedTicketType.price * selectedQuantity).toFixed(2)
   }
 
   // Check if event is in the past
@@ -435,6 +763,9 @@ function EventPageContent() {
 
   const organizer = getOrganizer()
   const organizerAvatar = getSafeAvatarUrl(organizer.avatar)
+
+  // Get current button state
+  const buttonState = getButtonState()
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-950">
@@ -606,7 +937,15 @@ function EventPageContent() {
                     {!event.isVirtual ? (
                       <p className="font-medium">{event.venue || 'Location TBD'}</p>
                     ) : (
-                      renderVirtualInfo()
+                      <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Globe className="h-5 w-5 text-blue-500" />
+                          <span className="font-semibold">Virtual Event</span>
+                        </div>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                          Joining details will be provided after ticket purchase
+                        </p>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -637,7 +976,6 @@ function EventPageContent() {
                         alt={organizer.name}
                         className="w-full h-full object-cover"
                         onError={(e) => {
-                          // Fallback to cackpas.jpg if the original avatar fails
                           (e.target as HTMLImageElement).src = '/cackpas.jpg'
                         }}
                       />
@@ -666,6 +1004,7 @@ function EventPageContent() {
                   {ticketTypes.map((ticketType) => {
                     const available = getAvailableTickets(ticketType)
                     const isAvailable = isTicketAvailable(ticketType)
+                    const isVirtual = ticketType._id.includes('free-virtual')
                     
                     return (
                       <div
@@ -686,10 +1025,13 @@ function EventPageContent() {
                                   <span className="text-sm text-gray-600 dark:text-gray-400">
                                     {ticketType.category}
                                   </span>
-                                  {ticketType.maxSupply > 0 && (
+                                  {!isVirtual && ticketType.maxSupply > 0 && (
                                     <span className="text-sm">
                                       • {available} of {ticketType.maxSupply} left
                                     </span>
+                                  )}
+                                  {isVirtual && (
+                                    <span className="text-sm">• Unlimited</span>
                                   )}
                                 </div>
                               </div>
@@ -712,7 +1054,13 @@ function EventPageContent() {
                               </p>
                             )}
                             
-                            {!isAvailable && (
+                            {isVirtual && (
+                              <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-full text-sm font-medium">
+                                Free Admission
+                              </div>
+                            )}
+                            
+                            {!isAvailable && !isVirtual && (
                               <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-full text-sm font-medium">
                                 <AlertCircle className="h-3.5 w-3.5" />
                                 Sold Out
@@ -817,46 +1165,89 @@ function EventPageContent() {
                       </div>
                     )}
                     
-                    {/* Purchase Button */}
+                    {/* Wallet Balance Display - Only show for paid events */}
+                    {authenticated && hasLinkedAccounts && !event.isFree && walletAddress && (
+                      <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Wallet className="h-4 w-4 text-blue-500" />
+                            <span className="text-sm font-medium">Wallet Balance</span>
+                          </div>
+                          <div className="text-right">
+                            {isCheckingBalance ? (
+                              <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                            ) : (
+                              <span className={`font-bold ${walletBalance > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                                ${walletBalance.toFixed(2)} USDC
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        {walletBalance === 0 && !isCheckingBalance && selectedTicketType && (
+                          <p className="text-xs text-red-600 dark:text-red-400 mt-1">
+                            Wallet balance is zero. Please fund your wallet.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    
+                    {/* Email Notification for Free Tickets */}
+                    {event.isFree && authenticated && (
+                      <div className="mb-4 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                        <div className="flex items-center gap-2">
+                          <Mail className="h-4 w-4 text-green-500" />
+                          <span className="text-sm font-medium">Email Delivery</span>
+                        </div>
+                        <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                          Your free ticket will be sent to your registered email address
+                        </p>
+                      </div>
+                    )}
+                    
+                    {/* Purchase Button with Correct Logic */}
                     <button
                       onClick={handlePurchaseClick}
-                      disabled={isLoadingTickets || !selectedTicketType || !isTicketAvailable(selectedTicketType!)}
-                      className="w-full py-4 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 text-lg transition-all duration-200"
+                      disabled={buttonState.disabled}
+                      className={`w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-3 text-lg transition-all duration-200 ${
+                        buttonState.variant === 'fund' 
+                          ? 'bg-yellow-500 hover:bg-yellow-600 text-white' 
+                          : buttonState.variant === 'free'
+                          ? 'bg-green-500 hover:bg-green-600 text-white'
+                          : buttonState.variant === 'purchase'
+                          ? 'bg-primary hover:bg-primary-dark text-white'
+                          : buttonState.variant === 'auth' || buttonState.variant === 'wallet'
+                          ? 'bg-blue-500 hover:bg-blue-600 text-white'
+                          : 'bg-primary text-white hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed'
+                      }`}
                     >
-                      {isLoadingTickets ? (
-                        <>
-                          <Loader2 className="h-5 w-5 animate-spin" />
-                          Loading...
-                        </>
-                      ) : !selectedTicketType ? (
-                        'Select a Ticket Type'
-                      ) : !isTicketAvailable(selectedTicketType) ? (
-                        'Sold Out'
-                      ) : event.isFree ? (
-                        <>
-                          <Ticket className="h-5 w-5" />
-                          Get Free Ticket
-                        </>
-                      ) : (
-                        <>
-                          <ShoppingCart className="h-5 w-5" />
-                          Purchase Ticket
-                          <ArrowRight className="h-5 w-5" />
-                        </>
-                      )}
+                      {buttonState.icon}
+                      {buttonState.text}
+                      {buttonState.variant === 'purchase' && <ArrowRight className="h-5 w-5" />}
                     </button>
                     
                     {/* Security & Features */}
                     <div className="mt-6 space-y-4">
-                      <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
-                        <Shield className="h-5 w-5 text-green-500 flex-shrink-0" />
-                        <div>
-                          <p className="font-medium text-sm">Secure Payment</p>
-                          <p className="text-xs text-gray-600 dark:text-gray-400">
-                            Encrypted connection & secure processing
-                          </p>
+                      {event.isFree ? (
+                        <div className="flex items-center gap-3 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                          <Check className="h-5 w-5 text-green-500 flex-shrink-0" />
+                          <div>
+                            <p className="font-medium text-sm">Free Ticket</p>
+                            <p className="text-xs text-gray-600 dark:text-gray-400">
+                              No payment required. Ticket sent via email.
+                            </p>
+                          </div>
                         </div>
-                      </div>
+                      ) : (
+                        <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                          <Shield className="h-5 w-5 text-green-500 flex-shrink-0" />
+                          <div>
+                            <p className="font-medium text-sm">Secure Payment</p>
+                            <p className="text-xs text-gray-600 dark:text-gray-400">
+                              Encrypted connection & secure processing
+                            </p>
+                          </div>
+                        </div>
+                      )}
                       
                       <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
                         <QrCode className="h-5 w-5 text-blue-500 flex-shrink-0" />
@@ -868,15 +1259,17 @@ function EventPageContent() {
                         </div>
                       </div>
                       
-                      <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
-                        <Wallet className="h-5 w-5 text-purple-500 flex-shrink-0" />
-                        <div>
-                          <p className="font-medium text-sm">Embedded Wallet</p>
-                          <p className="text-xs text-gray-600 dark:text-gray-400">
-                            Works with your Privy wallet
-                          </p>
+                      {!event.isFree && (
+                        <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                          <Wallet className="h-5 w-5 text-purple-500 flex-shrink-0" />
+                          <div>
+                            <p className="font-medium text-sm">Embedded Wallet</p>
+                            <p className="text-xs text-gray-600 dark:text-gray-400">
+                              Works with your Privy wallet
+                            </p>
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </div>
                     
                     {/* Need Help */}
@@ -912,8 +1305,8 @@ function EventPageContent() {
         </div>
       </div>
 
-      {/* Purchase Modal - SIMPLIFIED */}
-      {event && selectedTicketType && (
+      {/* Purchase Modal - Only show for paid events */}
+      {event && selectedTicketType && !event.isFree && (
         <PurchaseModal
           isOpen={showPurchaseModal}
           onClose={() => setShowPurchaseModal(false)}
@@ -921,14 +1314,15 @@ function EventPageContent() {
             toast.success('Ticket purchased successfully!')
             router.push(`/dashboard/tickets`)
           }}
-          event={event} // Pass the entire event object directly
+          event={event}
           ticketType={{
             _id: selectedTicketType._id,
             id: selectedTicketType._id,
             name: selectedTicketType.name,
             category: selectedTicketType.category,
             price: selectedTicketType.price,
-            maxSupply: selectedTicketType.maxSupply,
+            // Convert 0 to 100000 for unlimited tickets in the modal
+            maxSupply: selectedTicketType.maxSupply === 0 ? 100000 : selectedTicketType.maxSupply,
             currentSupply: selectedTicketType.currentSupply
           }}
           quantity={selectedQuantity}

@@ -1,4 +1,4 @@
-// /app/complete-profile/page.tsx - USING EXISTING COMPONENT
+// /app/complete-profile/page.tsx - UPDATED WITH EMAIL CHECK
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -22,12 +22,81 @@ function isEmbeddedWallet(account: any): account is { type: 'wallet'; address: s
   return account.walletClientType === 'privy'
 }
 
+// Type guard for email accounts
+function isEmailAccount(account: any): account is { type: 'email'; address: string } {
+  if (typeof account !== 'object' || account === null) return false
+  if (account.type !== 'email') return false
+  if (!('address' in account)) return false
+  return typeof account.address === 'string'
+}
+
+// Type guard for OAuth accounts
+function isOAuthAccount(account: any): account is { type: 'oauth'; provider: string; email?: string; name?: string; username?: string } {
+  if (typeof account !== 'object' || account === null) return false
+  if (account.type !== 'oauth') return false
+  return 'provider' in account
+}
+
+// Helper function to extract email from Privy user
+function extractEmailFromPrivyUser(privyUser: any): string {
+  const linkedAccounts = privyUser.linkedAccounts || []
+  let email = ''
+  
+  console.log('📧 Checking Privy user for email:', {
+    userId: privyUser.id,
+    linkedAccountsCount: linkedAccounts.length
+  })
+  
+  // 1. Check email linked accounts first
+  for (const account of linkedAccounts) {
+    if (isEmailAccount(account)) {
+      email = account.address
+      console.log('✅ Found email from email account:', email)
+      break
+    }
+    
+    if (isOAuthAccount(account) && account.email) {
+      email = account.email
+      console.log('✅ Found email from OAuth account:', email, 'provider:', account.provider)
+      break
+    }
+  }
+  
+  // 2. Check for verified emails
+  if (!email && privyUser.email) {
+    if (typeof privyUser.email === 'object' && privyUser.email.address) {
+      email = privyUser.email.address
+      console.log('✅ Found email from email object:', email)
+    } else if (typeof privyUser.email === 'string') {
+      email = privyUser.email
+      console.log('✅ Found email from string:', email)
+    }
+  }
+  
+  // 3. Check for any email in the user object
+  if (!email && privyUser.emailAddresses && Array.isArray(privyUser.emailAddresses)) {
+    const emailObj = privyUser.emailAddresses.find((e: any) => e && e.address)
+    if (emailObj) {
+      email = emailObj.address
+      console.log('✅ Found email from emailAddresses:', email)
+    }
+  }
+  
+  if (!email) {
+    console.log('❌ No email found in Privy user')
+  }
+  
+  return email || ''
+}
+
 export default function CompleteProfilePage() {
   const { authenticated, ready, user } = usePrivy()
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(true)
   const [walletAddress, setWalletAddress] = useState<string | null>(null)
   const [showModal, setShowModal] = useState(false)
+  const [userEmail, setUserEmail] = useState<string>('')
+  const [needsEmail, setNeedsEmail] = useState<boolean>(false)
 
   // Function to extract wallet address from Privy user
   const extractWalletAddress = (user: any): string | null => {
@@ -84,16 +153,31 @@ export default function CompleteProfilePage() {
     console.log('✅ Wallet address found:', extractedWallet)
     setWalletAddress(extractedWallet)
 
+    // Extract email from Privy user
+    const email = extractEmailFromPrivyUser(user)
+    setUserEmail(email)
+    setNeedsEmail(!email)
+    
+    console.log('📧 Email status:', {
+      hasEmail: !!email,
+      email: email,
+      needsEmail: !email
+    })
+
     // Check if user already exists and has complete profile
     const checkUserStatus = async () => {
       try {
         const response = await fetch(`/api/auth/user?walletAddress=${extractedWallet}`)
         if (response.ok) {
           const data = await response.json()
-          console.log('📊 User status by wallet:', data)
+          console.log('📊 User status by wallet:', {
+            userExists: !!data.user,
+            needsProfileCompletion: data.needsProfileCompletion,
+            hasEmailInDB: !!data.user?.email
+          })
           
           // If user already exists and profile is complete, go to dashboard
-          if (!data.isNewUser && !data.needsProfileCompletion) {
+          if (data.user && !data.needsProfileCompletion) {
             console.log('✅ User profile already complete, redirecting to dashboard')
             router.push('/dashboard')
             return
@@ -143,6 +227,8 @@ export default function CompleteProfilePage() {
             isOpen={showModal}
             onClose={handleClose}
             onComplete={handleComplete}
+            initialEmail={userEmail}
+            needsEmail={needsEmail}
           />
         ) : !walletAddress ? (
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 text-center">

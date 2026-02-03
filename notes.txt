@@ -1,12 +1,1 @@
-1. How do i send an email to organizers automatically after they have created an event with the events url or link for sharing on socials.
-
-http://localhost:3000/event/697fb876d6dbf1d1ad61409c/ai-x-blockchain-africa-summit-2026-nairobi
-
-http://localhost:3000/event/697fccaa844dc2d56377fde7/afro-fest-2026
-
-
-There are existing codes in these files and you threw them away just to update only a function. Go through the entire code of these files and do the needful. A file of over 600 lines of code just become 80? you removed important codes why?
-
-Just append your update to the file and provide the file complete with the new update. Logics and flow should not be tampered with except where necessary. Full code Fix
-1. blockchain/client-helpers.ts
-2. components/tickets/PurchaseModal.tsx
+0xF00A2a5e8b0743049382bAeF9D7586e600D0D734

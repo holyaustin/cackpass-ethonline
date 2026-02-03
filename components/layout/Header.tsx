@@ -71,7 +71,7 @@ useEffect(() => {
         } else if (data.needsProfileCompletion) {
           console.log('📝 Existing user needs profile completion, redirecting to dashboard')
           // Existing users can update from dashboard
-          router.push('/dashboard')
+          router.push('/complete-profile')
         } else {
           console.log('✅ User profile complete, redirecting to dashboard')
           router.push('/dashboard')
