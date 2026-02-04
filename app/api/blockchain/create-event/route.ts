@@ -2,6 +2,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
 import { CackPassCoreABI } from '@/lib/contracts/abis/CackPassCore'
+import { connectDB } from '@/lib/database/connection'
+import { TicketType, Event } from '@/lib/database/models'
 
 // LISK Mainnet Configuration
 const LISK_MAINNET_CONFIG = {
@@ -42,13 +44,15 @@ export async function POST(request: NextRequest) {
     const CONTRACT_ADDRESS = requiredEnvVars.NEXT_PUBLIC_CACKPASS_CORE_ADDRESS!
     
     const body = await request.json()
-    const { eventName, baseURI, startTime, endTime } = body
+    const { eventName, baseURI, startTime, endTime, category = 'GeneralAdmission', price = '0' } = body
     
     console.log('Creating event:', { 
       eventName, 
       baseURI: baseURI?.slice(0, 50) + '...',
       startTime,
-      endTime 
+      endTime,
+      category,
+      price
     })
     
     // Basic input validation
@@ -141,6 +145,35 @@ export async function POST(request: NextRequest) {
       }
     }
     
+    // CRITICAL FIX: Create TicketType in database for blockchain events
+    let dbTicketTypeId = null
+    try {
+      await connectDB()
+      
+      // Create a TicketType in database for this blockchain event
+      const ticketType = new TicketType({
+        eventId: eventId.toString(),
+        name: `${eventName} - ${category}`,
+        category: category,
+        price: parseFloat(price),
+        maxSupply: 0, // Default to unlimited for blockchain events initially
+        currentSupply: 0,
+        isActive: true,
+        isOnChain: true,
+        onChainId: eventId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      })
+      
+      await ticketType.save()
+      dbTicketTypeId = ticketType._id
+      console.log('✅ Database TicketType created for blockchain event:', dbTicketTypeId)
+      
+    } catch (dbError) {
+      console.error('❌ Failed to create database TicketType:', dbError)
+      // Don't fail the whole process, just log the error
+    }
+    
     return NextResponse.json({
       success: true,
       eventId,
@@ -149,6 +182,11 @@ export async function POST(request: NextRequest) {
       gasPaidBy: wallet.address,
       network: 'LISK Mainnet',
       chainId: LISK_MAINNET_CONFIG.CHAIN_ID,
+      // Add database info
+      database: {
+        ticketTypeCreated: dbTicketTypeId !== null,
+        ticketTypeId: dbTicketTypeId
+      },
       receipt: {
         blockNumber: receipt.blockNumber,
         status: receipt.status === 1 ? 'success' : 'failed',

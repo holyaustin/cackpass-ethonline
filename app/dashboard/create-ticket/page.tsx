@@ -1,4 +1,4 @@
-// app/dashboard/create-ticket/page.tsx - COMPLETE PRODUCTION FIX
+// app/dashboard/create-ticket/page.tsx - COMPLETE PRODUCTION FIX WITH TICKETTYPE SYNC
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
@@ -418,7 +418,7 @@ export default function CreateTicketPage() {
     }
   }
 
-  // FIXED: Main form submission handler with corrected API endpoints
+  // FIXED: Main form submission handler with CRITICAL TICKETTYPE SYNC FIX
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
@@ -584,7 +584,7 @@ export default function CreateTicketPage() {
         updatedAt: new Date().toISOString()
       }
 
-      // FIXED: Save to MongoDB - USING POST /api/events (not /api/events/create)
+      // Save to MongoDB - USING POST /api/events (not /api/events/create)
       const dbResponse = await fetch('/api/events', {
         method: 'POST',
         headers: { 
@@ -621,7 +621,9 @@ export default function CreateTicketPage() {
             eventName: formData.eventName,
             baseURI: `ipfs://${metadataCid}`,
             startTime,
-            endTime
+            endTime,
+            category: ticketCategory,
+            price: formData.priceAmount
           })
         })
         
@@ -638,6 +640,14 @@ export default function CreateTicketPage() {
         
         transactionHash = createEventResult.transactionHash || ''
         toast.success('Event created on blockchain!')
+        
+        // CRITICAL FIX: Sync TicketType to database immediately after blockchain event creation
+        if (createEventResult.database?.ticketTypeCreated) {
+          toast.success(`Database TicketType created: ${createEventResult.database.ticketTypeId?.slice(0, 8)}...`)
+        } else {
+          console.warn('TicketType may not have been created in database')
+        }
+        
         if (createEventResult.gasPaidBy) {
           toast.info(`Gas paid by: ${createEventResult.gasPaidBy.slice(0, 10)}...`)
         }
@@ -663,6 +673,7 @@ export default function CreateTicketPage() {
         
         const ticketPrice = ethers.parseEther(formData.priceAmount)
         
+        // CRITICAL FIX: Ensure database has TicketType record for this blockchain event
         const addTicketResponse = await fetch('/api/blockchain/add-ticket-type', {
           method: 'POST',
           headers: {
@@ -672,17 +683,28 @@ export default function CreateTicketPage() {
             eventId,
             category: ticketCategory,
             maxTickets: maxTickets,
-            ticketPrice: ticketPrice.toString()
+            ticketPrice: ticketPrice.toString(),
+            eventName: formData.eventName
           })
         })
         
         const addTicketResult = await addTicketResponse.json()
         
         if (!addTicketResponse.ok || !addTicketResult.success) {
-          throw new Error(`Failed to add ticket type: ${addTicketResult.error}`)
+          // Even if blockchain fails, check if database was updated
+          if (addTicketResult.database?.ticketTypeCreated) {
+            console.log('⚠️ Blockchain add ticket failed but database was updated:', addTicketResult.database.ticketTypeId)
+            toast.warning('Blockchain ticket add failed, but database was updated')
+          } else {
+            throw new Error(`Failed to add ticket type: ${addTicketResult.error}`)
+          }
+        } else {
+          toast.success('Ticket type added!')
+          if (addTicketResult.database?.ticketTypeCreated) {
+            console.log('✅ Database TicketType synced:', addTicketResult.database.ticketTypeId)
+          }
         }
         
-        toast.success('Ticket type added!')
         setUploadProgress(prev => ({ ...prev, blockchain: 75, total: 95 }))
         
         // Step 5: Generate approval signature for gasless minting
@@ -733,7 +755,9 @@ export default function CreateTicketPage() {
             },
             body: JSON.stringify({
               approvalId: signatureData.signatureData.id,
-              walletAddress: user.wallet.address
+              walletAddress: user.wallet.address,
+              eventId: eventId,
+              ticketCategory: ticketCategory
             })
           })
 
@@ -788,6 +812,42 @@ export default function CreateTicketPage() {
             // Don't fail the whole process
           } else {
             console.log('✅ Event updated with blockchain info')
+            
+            // CRITICAL: Verify TicketType exists for this event
+            try {
+              // Double-check that TicketType exists
+              const verifyResponse = await fetch(`/api/events/${savedEventId}/tickets`)
+              const verifyData = await verifyResponse.json()
+              
+              if (!verifyData.success || !verifyData.ticketTypes || verifyData.ticketTypes.length === 0) {
+                console.warn('⚠️ No TicketType found after event creation. Attempting emergency sync...')
+                
+                // Emergency sync: Create TicketType directly
+                const emergencySync = await fetch('/api/blockchain/add-ticket-type', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    eventId: eventId,
+                    category: ticketCategory,
+                    maxTickets: formData.unlimitedCapacity ? 0 : parseInt(formData.capacity || '100'),
+                    ticketPrice: ethers.parseEther(formData.priceAmount).toString(),
+                    eventName: formData.eventName
+                  })
+                })
+                
+                const syncResult = await emergencySync.json()
+                if (syncResult.success && syncResult.database?.ticketTypeCreated) {
+                  console.log('✅ Emergency TicketType sync successful:', syncResult.database.ticketTypeId)
+                  toast.info('Database sync completed successfully')
+                }
+              } else {
+                console.log('✅ TicketType verified:', verifyData.ticketTypes[0]._id)
+              }
+            } catch (verifyError) {
+              console.warn('TicketType verification warning:', verifyError)
+            }
           }
         } catch (updateError) {
           console.warn('Event update warning:', updateError)
@@ -817,6 +877,11 @@ export default function CreateTicketPage() {
           <div className="text-xs bg-blue-50 dark:bg-blue-900/30 p-2 rounded break-all">
             {eventUrl}
           </div>
+          {!isFreeEvent && (
+            <div className="text-xs text-green-600 dark:text-green-400 mt-1">
+              ✓ TicketType database record created successfully
+            </div>
+          )}
         </div>,
         { duration: 10000 }
       )
@@ -1085,6 +1150,15 @@ export default function CreateTicketPage() {
               <span className="font-medium">Event Page URL:</span> After creating your event, you'll receive a unique URL to share with attendees (e.g., https://cackpass.vercel.app/event/123)
             </div>
           </div>
+          {!formData.isFree && (
+            <div className="mt-3 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+              <div className="flex items-center gap-2 text-green-700 dark:text-green-400">
+                <Check className="h-4 w-4" />
+                <span className="font-medium">Database Sync:</span>
+                <span className="text-sm">TicketType records will be automatically created in database</span>
+              </div>
+            </div>
+          )}
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-8">

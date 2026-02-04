@@ -7,9 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "migrate:ticket-types": "node scripts/migrate-ticket-types.js",
-    "migrate:ticket-types:dry-run": "DRY_RUN=true node scripts/migrate-ticket-types.js",
-     "cleanup:indexes": "tsx scripts/cleanup-duplicate-indexes.ts" 
+    "analyze": "ANALYZE=true next build"
   },
   "dependencies": {
     "@biconomy/account": "^4.5.7",
