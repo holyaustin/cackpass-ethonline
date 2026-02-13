@@ -10,7 +10,6 @@
     "analyze": "ANALYZE=true next build"
   },
   "dependencies": {
-
     "@hookform/resolvers": "^5.2.2",
     "@paystack/paystack-sdk": "^1.0.1",
     "@privy-io/react-auth": "^3.10.1",
@@ -21,7 +20,7 @@
     "@radix-ui/react-tabs": "^1.1.13",
     "@radix-ui/react-toast": "^1.2.15",
     "@tanstack/react-table": "^8.21.3",
-    "axios": "^1.13.2",
+    "axios": "^1.13.5",
     "crypto": "^1.0.1",
     "date-fns": "^4.1.0",
     "dotenv": "^17.2.3",
