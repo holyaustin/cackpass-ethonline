@@ -5,12 +5,15 @@ import { usePrivy } from '@privy-io/react-auth'
 import { ArrowRight, Sparkles, Shield, Ticket, Users, Zap } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 
 export function HeroSection() {
-  const { login, authenticated } = usePrivy()
+  const { user, authenticated, ready, login } = usePrivy()
   const [isVisible, setIsVisible] = useState(false)
   const [currentFeature, setCurrentFeature] = useState(0)
   const [isTransitioning, setIsTransitioning] = useState(false)
+
+const router = useRouter()
 
   const features = [
     {
@@ -65,13 +68,25 @@ export function HeroSection() {
     return () => clearInterval(interval)
   }, [nextFeature])
 
-  const handleGetStarted = () => {
-    if (authenticated) {
-      window.location.href = '/dashboard'
-    } else {
-      login()
+const handleGetStarted = async () => {
+  if (authenticated) {
+    router.push('/dashboard')
+  } else {
+    try {
+      await login()
+      // Don't redirect here - let the useEffect handle it
+    } catch (error) {
+      console.error('Login failed:', error)
     }
   }
+}
+
+// Watch for authentication changes
+useEffect(() => {
+  if (authenticated && ready) {
+    router.push('/dashboard')
+  }
+}, [authenticated, ready, router])
 
   return (
     <section className="relative overflow-hidden min-h-screen lg:min-h-[95vh] flex items-center py-8 md:py-12">

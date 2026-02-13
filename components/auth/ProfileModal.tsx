@@ -1,4 +1,4 @@
-// /components/auth/ProfileModal.tsx - UPDATED WITH PRIVY INTEGRATION
+// /components/auth/ProfileModal.tsx - COMPLETE FIXED VERSION
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -57,14 +57,20 @@ interface ProfileModalProps {
   onComplete: () => void
   initialEmail?: string
   needsEmail?: boolean
+  // 🟢 FIX: Added props to prevent closing
+  preventClose?: boolean
+  hideCloseButton?: boolean
 }
 
 export function ProfileModal({ 
   isOpen, 
   onClose, 
-  onComplete,
-  initialEmail = '',
-  needsEmail = false
+  onComplete, 
+  initialEmail, 
+  needsEmail,
+  // 🟢 FIX: Default to TRUE to force profile completion
+  preventClose = true,  // Changed from false to true
+  hideCloseButton = true // Changed from false to true
 }: ProfileModalProps) {
   const { user, authenticated, ready } = usePrivy()
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -232,6 +238,16 @@ export function ProfileModal({
     }
   }
 
+  // 🟢 FIX: Custom close handler that respects preventClose
+  const handleCloseAttempt = () => {
+    if (preventClose) {
+      console.log('❌ Close attempt prevented - profile completion required')
+      toast.info('Please provide your profile to continue')
+      return
+    }
+    onClose()
+  }
+
   const isLoading = isSubmitting
   const isFormValid = formData.country && formData.phoneNumber && (!needsEmail || formData.email)
 
@@ -239,25 +255,40 @@ export function ProfileModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      {/* 🟢 FIX: Prevent closing when clicking overlay if preventClose is true */}
+      {!preventClose && (
+        <div 
+          className="absolute inset-0" 
+          onClick={handleCloseAttempt}
+          aria-hidden="true"
+        />
+      )}
+      
       <div className="relative w-full max-w-md mx-4">
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl overflow-hidden">
           {/* Header - More compact */}
           <div className="relative p-5 border-b border-gray-200 dark:border-gray-700">
-            <button
-              onClick={onClose}
-              className="absolute right-4 top-4 p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-              disabled={isLoading}
-            >
-              <X className="h-4 w-4" />
-            </button>
+            {/* 🟢 FIX: Conditionally hide close button */}
+            {!hideCloseButton && (
+              <button
+                onClick={handleCloseAttempt}
+                className="absolute right-4 top-4 p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                disabled={isLoading}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
             
             <div className="text-center pt-1">
               <div className="w-10 h-10 mx-auto mb-2 bg-primary/10 rounded-xl flex items-center justify-center">
                 <Wallet className="h-5 w-5 text-primary" />
               </div>
-              <h2 className="text-lg font-bold mb-0.5">Get Started</h2>
+              <h2 className="text-lg font-bold mb-0.5">One more Step</h2>
               <p className="text-xs text-gray-600 dark:text-gray-400">
-                Complete your basic profile
+                {preventClose 
+                  ? 'Provide your basic profile to continue' 
+                  : 'Complete your basic profile'
+                }
               </p>
               {walletAddress && (
                 <div className="mt-2">
@@ -272,7 +303,7 @@ export function ProfileModal({
           {/* Form - Reduced spacing */}
           <form onSubmit={handleSubmit} className="p-5">
             <div className="space-y-4">
-              {/* Email Field - Only shown when needed */}
+              {/* 🟢 FIX: Show email field ALWAYS when needsEmail is true */}
               {needsEmail && (
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2 ml-0.5">
@@ -301,7 +332,7 @@ export function ProfileModal({
                       {validationErrors.email}
                     </p>
                   )}
-                  {needsEmail && !formData.email && (
+                  {needsEmail && !formData.email && !validationErrors.email && (
                     <p className="text-xs text-amber-600 dark:text-amber-400 mt-1.5 flex items-center gap-1 ml-0.5">
                       <AlertCircle className="h-3 w-3" />
                       Email not found in your account. Please provide one.
@@ -357,7 +388,7 @@ export function ProfileModal({
                   >
                     <option value="" className="text-gray-900 dark:text-gray-400">Select country</option>
                     {COUNTRIES.map((country) => (
-                      <option key={country.value} value={country.value} className="text-gray-900 dark:text-gray-100 bg-orange-700">
+                      <option key={country.value} value={country.value} className="text-gray-900 dark:text-gray-100 bg-orange-500 dark:bg-gray-700">
                         {country.label}
                       </option>
                     ))}
@@ -439,13 +470,18 @@ export function ProfileModal({
 
             {/* Actions - More compact */}
             <div className="mt-6 flex gap-2">
+              {/* 🟢 FIX: Disable Cancel button when preventClose is true */}
               <button
                 type="button"
-                onClick={onClose}
-                className="flex-1 py-2.5 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={isLoading}
+                onClick={handleCloseAttempt}
+                className={`flex-1 py-2.5 border rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                  preventClose
+                    ? 'border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed bg-gray-50 dark:bg-gray-800'
+                    : 'border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                }`}
+                disabled={isLoading || preventClose}
               >
-                Cancel
+                {preventClose ? 'Cannot Cancel' : 'Cancel'}
               </button>
               <button
                 type="submit"
@@ -470,14 +506,21 @@ export function ProfileModal({
               </button>
             </div>
 
-            {/* Email requirement note */}
+            {/* 🟢 FIX: Required fields notice */}
             <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
               <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
-                {needsEmail 
-                  ? 'Email is required for your account. Please provide one below.'
-                  : `Email verified from your login method: ${formData.email}`
-                }
+                <span className="text-primary">*</span> Required fields
               </p>
+              {preventClose && (
+                <p className="text-xs text-amber-600 dark:text-amber-400 text-center mt-1 font-medium">
+                  ⚠️ provide your basic profile to continue
+                </p>
+              )} 
+              {needsEmail && (
+                <p className="text-xs text-amber-600 dark:text-amber-400 text-center mt-1">
+                  Email is required for your account
+                </p>
+              )}
               {walletAddress && (
                 <p className="text-xs text-gray-400 dark:text-gray-500 text-center mt-1">
                   Wallet: {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}

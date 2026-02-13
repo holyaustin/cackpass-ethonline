@@ -1,4 +1,4 @@
-// /app/complete-profile/page.tsx - UPDATED WITH EMAIL CHECK
+// /app/complete-profile/page.tsx - FIXED (NO ESCAPE)
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -201,14 +201,18 @@ export default function CompleteProfilePage() {
     checkUserStatus()
   }, [ready, authenticated, user, router])
 
+  // 🟢 FIXED: Only redirect on successful completion, NOT on close/cancel
   const handleComplete = () => {
-    console.log('✅ Profile completed, redirecting to dashboard')
+    console.log('✅ Profile completed successfully, redirecting to dashboard')
     router.push('/dashboard')
   }
 
+  // 🟢 FIXED: Don't redirect on close - keep user on complete-profile page
   const handleClose = () => {
-    console.log('❌ Profile modal closed, redirecting to dashboard')
-    router.push('/dashboard')
+    console.log('❌ Profile modal closed - user did not complete form')
+    // DO NOT REDIRECT - keep them on this page
+    // Instead, show the modal again or show a message
+    setShowModal(true) // Force the modal to stay open
   }
 
   if (!ready || isLoading) {
@@ -225,10 +229,13 @@ export default function CompleteProfilePage() {
         {showModal && walletAddress ? (
           <ProfileModal
             isOpen={showModal}
-            onClose={handleClose}
+            onClose={handleClose} // 🟢 Now properly blocks dashboard redirect
             onComplete={handleComplete}
             initialEmail={userEmail}
             needsEmail={needsEmail}
+            // 🟢 Add these props to prevent modal from being closable
+            preventClose={true} // You'll need to add this prop to your ProfileModal component
+            hideCloseButton={true} // Also add this to remove the X button
           />
         ) : !walletAddress ? (
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 text-center">

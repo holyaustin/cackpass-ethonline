@@ -868,7 +868,7 @@ export default function CreateTicketPage() {
       
       // Add event page URL information
       const eventSlug = formData.eventName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
-      const eventUrl = `${window.location.origin}/event/${savedEventId}`
+      const eventUrl = `${window.location.origin}/events/${savedEventId}`
       
       toast.info(
         <div className="space-y-2">
