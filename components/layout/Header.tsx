@@ -1,13 +1,38 @@
-// /components/layout/Header.tsx - COMPLETE WORKING VERSION
+// /components/layout/Header.tsx - COMPLETE WORKING VERSION (WITH PUBLIC PAGE SKIP)
 'use client'
 
 import { useState, useEffect } from 'react'
 import { usePrivy } from '@privy-io/react-auth'
 import { Sun, Moon, Menu, X, User as UserIcon, LogOut } from 'lucide-react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import Image from 'next/image'
 import Link from 'next/link'
 import { toast } from 'sonner'
+
+// ADD THIS: List of public pages that should NOT trigger auth checks
+const PUBLIC_PAGES = [
+  '/',
+  '/events',
+  '/events/[id]',  // Dynamic route pattern for individual event pages
+  '/about',
+  '/privacy',
+  '/terms',
+  '/payment/success',
+  '/payment/failed'
+]
+
+// ADD THIS: Check if current path is public
+const isPublicPage = (pathname: string): boolean => {
+  // Exact matches
+  if (PUBLIC_PAGES.includes(pathname)) return true
+  
+  // Check for dynamic event pages (e.g., /events/123, /events/abc-123)
+  if (pathname.startsWith('/events/') && pathname !== '/events') {
+    return true
+  }
+  
+  return false
+}
 
 export function Header() {
   const [darkMode, setDarkMode] = useState(false)
@@ -17,6 +42,7 @@ export function Header() {
   const [authTokenForModal, setAuthTokenForModal] = useState('')
   
   const router = useRouter()
+  const pathname = usePathname() // ADD THIS: Get current path
   const { user, authenticated, ready, logout, login } = usePrivy()
   
   // Handle login with manual post-login check
@@ -38,60 +64,65 @@ export function Header() {
   }
 
   // Effect to handle post-login logic AFTER authentication
-// In Header.tsx, update the post-login useEffect:
-useEffect(() => {
-  const handlePostLogin = async () => {
-    // Only run if user is authenticated and ready
-    if (!ready || !authenticated || !user) return
-    
-    console.log('🔐 User authenticated, checking wallet status...')
-    
-    try {
-      // Check if user has a wallet address (embedded wallet)
-      if (!user.wallet?.address) {
-        console.log('⚠️ User has no wallet address')
-        // Users without wallets go to dashboard (they might have signed up with email)
-        router.push('/')
+  useEffect(() => {
+    const handlePostLogin = async () => {
+      // Only run if user is authenticated and ready
+      if (!ready || !authenticated || !user) return
+      
+      // ADD THIS: Skip all checks on public pages
+      if (isPublicPage(pathname)) {
+        console.log(`🔓 Public page detected (${pathname}), skipping auth checks`)
         return
       }
       
-      const walletAddress = user.wallet.address
-      console.log('✅ Found wallet address:', walletAddress)
+      console.log('🔐 User authenticated, checking wallet status...')
       
-      // Check user status by wallet address
-      const response = await fetch(`/api/auth/user?walletAddress=${walletAddress}`)
-      
-      if (response.ok) {
-        const data = await response.json()
-        console.log('📊 User status by wallet:', data)
-        
-        if (data.isNewUser) {
-          console.log('🆕 New user detected, redirecting to complete-profile')
-          router.push('/complete-profile')
-        } else if (data.needsProfileCompletion) {
-          console.log('📝 Existing user needs profile completion, redirecting to dashboard')
-          // Existing users can update from dashboard
-          router.push('/complete-profile')
-        } else {
-          console.log('✅ User profile complete, redirecting to dashboard')
-          router.push('/dashboard')
+      try {
+        // Check if user has a wallet address (embedded wallet)
+        if (!user.wallet?.address) {
+          console.log('⚠️ User has no wallet address')
+          // Users without wallets go to dashboard (they might have signed up with email)
+          router.push('/')
+          return
         }
-      } else {
-        console.log('⚠️ API check failed, redirecting to complete-profile')
+        
+        const walletAddress = user.wallet.address
+        console.log('✅ Found wallet address:', walletAddress)
+        
+        // Check user status by wallet address
+        const response = await fetch(`/api/auth/user?walletAddress=${walletAddress}`)
+        
+        if (response.ok) {
+          const data = await response.json()
+          console.log('📊 User status by wallet:', data)
+          
+          if (data.isNewUser) {
+            console.log('🆕 New user detected, redirecting to complete-profile')
+            router.push('/complete-profile')
+          } else if (data.needsProfileCompletion) {
+            console.log('📝 Existing user needs profile completion, redirecting to dashboard')
+            // Existing users can update from dashboard
+            router.push('/complete-profile')
+          } else {
+            console.log('✅ User profile complete, redirecting to dashboard')
+            router.push('/dashboard')
+          }
+        } else {
+          console.log('⚠️ API check failed, redirecting to complete-profile')
+          router.push('/complete-profile')
+        }
+        
+      } catch (error) {
+        console.error('💥 Error in post-login flow:', error)
+        // On any error, redirect to complete-profile as fallback
         router.push('/complete-profile')
       }
-      
-    } catch (error) {
-      console.error('💥 Error in post-login flow:', error)
-      // On any error, redirect to complete-profile as fallback
-      router.push('/complete-profile')
     }
-  }
-  
-  // Give a small delay for state to settle
-  const timer = setTimeout(handlePostLogin, 500)
-  return () => clearTimeout(timer)
-}, [ready, authenticated, user, router])
+    
+    // Give a small delay for state to settle
+    const timer = setTimeout(handlePostLogin, 500)
+    return () => clearTimeout(timer)
+  }, [ready, authenticated, user, router, pathname]) // ADDED pathname to dependencies
 
   // Handle logout
   const handleLogout = async () => {
