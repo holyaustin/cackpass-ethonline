@@ -84,6 +84,11 @@ interface EventDataWithId {
   startDate: string
   endDate: string
   venue: string
+ location: {
+  address?: string;
+  lat?: number;
+  lng?: number;
+}
   isVirtual: boolean
   isFree: boolean
   price: number
@@ -847,7 +852,7 @@ if (walletBalance === 0 || walletBalance < totalPrice) {
                       <Calendar className="h-5 w-5" />
                       {formatDateTime(event.startDate)}
                     </span>
-                    {!event.isVirtual && event.venue && (
+                    {!event.isVirtual && (event.venue || event.location?.address) && (
                       <span className="flex items-center gap-2">
                         <MapPin className="h-5 w-5" />
                         {event.venue}
@@ -935,7 +940,7 @@ if (walletBalance === 0 || walletBalance < totalPrice) {
                   </h3>
                   <div>
                     {!event.isVirtual ? (
-                      <p className="font-medium">{event.venue || 'Location TBD'}</p>
+                      <p className="font-medium">{event.venue || event.location?.address || 'Location TBD'}</p>
                     ) : (
                       <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl">
                         <div className="flex items-center gap-2 mb-2">

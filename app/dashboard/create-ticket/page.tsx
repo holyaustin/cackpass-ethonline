@@ -554,7 +554,11 @@ export default function CreateTicketPage() {
         endTime: formData.endTime,
         category: formData.category,
         customCategory: formData.category === 'other' ? formData.customCategory : undefined,
-        location: formattedLocation,
+        venue: formattedLocation,
+        //location: formattedLocation,
+        location: {
+          address: formattedLocation,
+        },
         description: formData.description,
         isFree: isFreeEvent,
         priceAmount: isFreeEvent ? '0' : formData.priceAmount,
@@ -583,6 +587,11 @@ export default function CreateTicketPage() {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       }
+      console.log('📝 Saving event with location:', {
+        venue: eventData.venue,
+        locationAddress: eventData.location.address,
+        isVirtual: eventData.isVirtual
+      })
 
       // Save to MongoDB - USING POST /api/events (not /api/events/create)
       const dbResponse = await fetch('/api/events', {

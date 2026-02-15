@@ -52,9 +52,9 @@ const EventSchema = new mongoose.Schema({
   description: String,
   venue: String,
   location: {
+    address: String, 
     lat: Number,
     lng: Number,
-    address: String,
   },
   isVirtual: { type: Boolean, default: false },
   virtualOptions: {
@@ -83,11 +83,11 @@ const EventSchema = new mongoose.Schema({
   },
   unlimitedCapacity: { type: Boolean, default: true },
   capacity: { type: Number },
-  onChainId: { type: Number }, // Remove sparse: true
+  onChainId: { type: Number },
   isOnChain: { type: Boolean, default: false },
-  transactionHash: { type: String }, // Remove sparse: true
+  transactionHash: { type: String }, // ADDED - missing field
   gaslessWallet: { type: String },
-  ticketId: { type: Number },
+  ticketId: { type: Number }, // ADDED - missing field
   status: { 
     type: String, 
     enum: ['draft', 'published', 'cancelled', 'completed'],
@@ -96,7 +96,7 @@ const EventSchema = new mongoose.Schema({
   isActive: { type: Boolean, default: true },
 }, {
   timestamps: true
-})
+});
 
 // TicketType Schema - NO field-level indexes
 const TicketTypeSchema = new mongoose.Schema({
