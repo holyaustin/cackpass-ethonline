@@ -1,2 +1,19 @@
 0xF00A2a5e8b0743049382bAeF9D7586e600D0D734
 
+const PUBLIC_PAGES = [
+  '/',
+  '/events',
+  '/payment',
+  '/tickets',
+  '/transactions',
+  '/wallet',
+  '/transfer',
+  '/settings',
+  '/create-ticket',
+  '/events/[id]',  // Dynamic route pattern for individual event pages
+  '/about',
+  '/privacy',
+  '/terms',
+  '/payment/success',
+  '/payment/failed'
+]

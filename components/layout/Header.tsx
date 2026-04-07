@@ -1,7 +1,7 @@
-// /components/layout/Header.tsx - COMPLETE WORKING VERSION (WITH PUBLIC PAGE SKIP)
+// /components/layout/Header.tsx - FIXED VERSION
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { usePrivy } from '@privy-io/react-auth'
 import { Sun, Moon, Menu, X, User as UserIcon, LogOut } from 'lucide-react'
 import { useRouter, usePathname } from 'next/navigation'
@@ -9,19 +9,19 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { toast } from 'sonner'
 
-// ADD THIS: List of public pages that should NOT trigger auth checks
+// Public pages that should NOT trigger auth checks
 const PUBLIC_PAGES = [
   '/',
   '/events',
-  '/events/[id]',  // Dynamic route pattern for individual event pages
   '/about',
   '/privacy',
   '/terms',
   '/payment/success',
-  '/payment/failed'
+  '/payment/failed',
+  '/complete-profile', // IMPORTANT: Add this to prevent redirect loop
 ]
 
-// ADD THIS: Check if current path is public
+// Check if current path is public
 const isPublicPage = (pathname: string): boolean => {
   // Exact matches
   if (PUBLIC_PAGES.includes(pathname)) return true
@@ -39,90 +39,27 @@ export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
-  const [authTokenForModal, setAuthTokenForModal] = useState('')
   
   const router = useRouter()
-  const pathname = usePathname() // ADD THIS: Get current path
+  const pathname = usePathname()
   const { user, authenticated, ready, logout, login } = usePrivy()
   
-  // Handle login with manual post-login check
+  // IMPORTANT: Track if we've already handled post-login redirect
+  const hasHandledPostLogin = useRef(false)
+  // Track if user was already checked
+  const hasCheckedUser = useRef(false)
+
+  // Handle login
   const handleLogin = async () => {
     try {
       console.log('🔄 Starting login process...')
-      
-      // Login with Privy
       await login()
-      
-      // After login succeeds, Privy will update the auth state
-      // We'll handle the post-login logic in a useEffect below
       console.log('✅ Login initiated successfully')
-      
     } catch (error) {
       console.error('❌ Login failed:', error)
       toast.error('Login failed. Please try again.')
     }
   }
-
-  // Effect to handle post-login logic AFTER authentication
-  useEffect(() => {
-    const handlePostLogin = async () => {
-      // Only run if user is authenticated and ready
-      if (!ready || !authenticated || !user) return
-      
-      // ADD THIS: Skip all checks on public pages
-      if (isPublicPage(pathname)) {
-        console.log(`🔓 Public page detected (${pathname}), skipping auth checks`)
-        return
-      }
-      
-      console.log('🔐 User authenticated, checking wallet status...')
-      
-      try {
-        // Check if user has a wallet address (embedded wallet)
-        if (!user.wallet?.address) {
-          console.log('⚠️ User has no wallet address')
-          // Users without wallets go to dashboard (they might have signed up with email)
-          router.push('/')
-          return
-        }
-        
-        const walletAddress = user.wallet.address
-        console.log('✅ Found wallet address:', walletAddress)
-        
-        // Check user status by wallet address
-        const response = await fetch(`/api/auth/user?walletAddress=${walletAddress}`)
-        
-        if (response.ok) {
-          const data = await response.json()
-          console.log('📊 User status by wallet:', data)
-          
-          if (data.isNewUser) {
-            console.log('🆕 New user detected, redirecting to complete-profile')
-            router.push('/complete-profile')
-          } else if (data.needsProfileCompletion) {
-            console.log('📝 Existing user needs profile completion, redirecting to dashboard')
-            // Existing users can update from dashboard
-            router.push('/complete-profile')
-          } else {
-            console.log('✅ User profile complete, redirecting to dashboard')
-            router.push('/dashboard')
-          }
-        } else {
-          console.log('⚠️ API check failed, redirecting to complete-profile')
-          router.push('/complete-profile')
-        }
-        
-      } catch (error) {
-        console.error('💥 Error in post-login flow:', error)
-        // On any error, redirect to complete-profile as fallback
-        router.push('/complete-profile')
-      }
-    }
-    
-    // Give a small delay for state to settle
-    const timer = setTimeout(handlePostLogin, 500)
-    return () => clearTimeout(timer)
-  }, [ready, authenticated, user, router, pathname]) // ADDED pathname to dependencies
 
   // Handle logout
   const handleLogout = async () => {
@@ -130,10 +67,11 @@ export function Header() {
     
     const toastId = toast.loading('Logging out...')
     
-    await new Promise(resolve => setTimeout(resolve, 500))
-    
     try {
       await logout()
+      // Reset the refs on logout
+      hasHandledPostLogin.current = false
+      hasCheckedUser.current = false
       toast.dismiss(toastId)
       toast.success('Logged out successfully')
       router.push('/')
@@ -145,6 +83,83 @@ export function Header() {
       setIsLoggingOut(false)
     }
   }
+
+  // IMPORTANT: Only run post-login redirect ONCE after authentication
+  useEffect(() => {
+    // Don't run if not ready or not authenticated
+    if (!ready || !authenticated || !user) return
+    
+    // Don't run if we already handled post-login
+    if (hasHandledPostLogin.current) return
+    
+    // Skip redirect on public pages
+    if (isPublicPage(pathname)) {
+      console.log(`🔓 Public page detected (${pathname}), skipping redirect`)
+      return
+    }
+    
+    // Skip if already on dashboard or complete-profile
+    if (pathname === '/dashboard' || pathname === '/complete-profile') {
+      console.log(`📍 Already on ${pathname}, skipping redirect`)
+      hasHandledPostLogin.current = true
+      return
+    }
+    
+    console.log('🔐 User authenticated, checking status...')
+    
+    const checkUserAndRedirect = async () => {
+      // Prevent multiple simultaneous checks
+      if (hasCheckedUser.current) return
+      hasCheckedUser.current = true
+      
+      try {
+        // Get wallet address
+        const walletAddress = user.wallet?.address
+        
+        if (!walletAddress) {
+          console.log('⚠️ No wallet address, redirecting to complete-profile')
+          hasHandledPostLogin.current = true
+          router.push('/complete-profile')
+          return
+        }
+        
+        console.log('✅ Found wallet address:', walletAddress)
+        
+        // Check user status
+        const response = await fetch(`/api/auth/user?walletAddress=${walletAddress}`)
+        
+        if (response.ok) {
+          const data = await response.json()
+          console.log('📊 User status:', data)
+          
+          if (data.needsProfileCompletion || !data.user?.isProfileComplete) {
+            console.log('📝 Profile incomplete, redirecting to complete-profile')
+            hasHandledPostLogin.current = true
+            router.push('/complete-profile')
+          } else {
+            console.log('✅ Profile complete, redirecting to dashboard')
+            hasHandledPostLogin.current = true
+            router.push('/dashboard')
+          }
+        } else {
+          console.log('⚠️ API check failed, redirecting to complete-profile')
+          hasHandledPostLogin.current = true
+          router.push('/complete-profile')
+        }
+        
+      } catch (error) {
+        console.error('💥 Error in post-login flow:', error)
+        hasHandledPostLogin.current = true
+        router.push('/complete-profile')
+      }
+    }
+    
+    // Add small delay to ensure everything is loaded
+    const timer = setTimeout(checkUserAndRedirect, 500)
+    return () => clearTimeout(timer)
+  }, [ready, authenticated, user, router, pathname])
+
+  // Reset the handled flag when user logs out (handled in logout function)
 
   // Theme handling
   useEffect(() => {
@@ -208,7 +223,6 @@ export function Header() {
             <Link href="/dashboard" className="text-text hover:text-primary dark:text-dark-text dark:hover:text-dark-primary transition-colors font-medium">
               Dashboard
             </Link>
-            
           </div>
 
           {/* Right Side Actions */}

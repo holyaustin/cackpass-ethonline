@@ -1,38 +1,20 @@
-// app/dashboard/create-ticket/page.tsx - COMPLETE PRODUCTION FIX WITH TICKETTYPE SYNC
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { usePrivy } from '@privy-io/react-auth'
 import { useRouter } from 'next/navigation'
 import { 
   ArrowLeft, Calendar, Clock, MapPin, Tag, 
   FileText, DollarSign, Users, Image as ImageIcon,
-  Upload, X, Check, Globe, Video, Wifi, Camera,
-  Bold, Italic, Link as LinkIcon, Smile, Save,
+  Upload, X, Check, Globe, Video, Camera,
+  Bold, Italic, Link as LinkIcon, Save,
   Loader2, Map, Building, Home, Coffee, Zap,
-  Youtube, Mic, Monitor, MessageSquare, Cloud,
-  Info, Trophy, Flag
+  Monitor, MessageSquare, Info, Flag
 } from 'lucide-react'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { toast } from 'sonner'
-import { ethers } from 'ethers'
 
-// Import client-only helpers
-import { 
-  generateApprovalId,
-  createTicketMetadata,
-  mapTicketTypeToCategory,
-} from '@/lib/blockchain/client-helpers'
-
-const LISK_MAINNET_CONFIG = {
-  CHAIN_ID: 1135,
-  RPC_URL: 'https://rpc.api.lisk.com',
-  EXPLORER_URL: 'https://blockscout.lisk.com',
-  NATIVE_CURRENCY: 'ETH',
-  CHAIN_NAME: 'LISK Mainnet'
-}
-
-// Category options with icons
+// Category options
 const CATEGORIES = [
   { value: 'music', label: 'Music & Concerts', icon: '🎵' },
   { value: 'business', label: 'Business & Tech', icon: '💼' },
@@ -46,71 +28,51 @@ const CATEGORIES = [
   { value: 'other', label: 'Other', icon: '✨' },
 ]
 
-// Location types (like Luma)
+// Location types
 const LOCATION_TYPES = [
   { id: 'in_person', label: 'In Person', icon: MapPin, description: 'Physical venue or location' },
-  { id: 'zoom', label: 'Zoom', icon: Video, description: 'Create a Zoom meeting' },
-  { id: 'google_meet', label: 'Google Meet', icon: Monitor, description: 'Create a Google Meet' },
-  { id: 'youtube', label: 'YouTube', icon: Youtube, description: 'YouTube Live or Premiere' },
-  { id: 'twitch', label: 'Twitch', icon: Cloud, description: 'Twitch stream' },
+  { id: 'zoom', label: 'Zoom', icon: Video, description: 'Zoom meeting' },
+  { id: 'google_meet', label: 'Google Meet', icon: Monitor, description: 'Google Meet' },
   { id: 'custom_link', label: 'Custom Link', icon: LinkIcon, description: 'Your own virtual link' },
 ]
 
-// Venue types for in-person events
+// Venue types
 const VENUE_TYPES = [
   { id: 'conference_center', label: 'Conference Center', icon: Building },
   { id: 'hotel', label: 'Hotel', icon: Home },
   { id: 'cafe', label: 'Cafe/Restaurant', icon: Coffee },
-  { id: 'studio', label: 'Studio', icon: Mic },
-  { id: 'stadium', label: 'Stadium/Arena', icon: Trophy },
-  { id: 'other_venue', label: 'Other Venue', icon: Map },
+  { id: 'studio', label: 'Studio', icon: Zap },
+  { id: 'stadium', label: 'Stadium/Arena', icon: Map },
+  { id: 'other_venue', label: 'Other Venue', icon: MapPin },
 ]
 
-// Country options (replacing text input with dropdown)
+// Countries
 const COUNTRIES = [
-  { value: 'USA', label: 'United States', flag: '🇺🇸' },
   { value: 'Nigeria', label: 'Nigeria', flag: '🇳🇬' },
+  { value: 'USA', label: 'United States', flag: '🇺🇸' },
   { value: 'UK', label: 'United Kingdom', flag: '🇬🇧' },
   { value: 'Kenya', label: 'Kenya', flag: '🇰🇪' },
   { value: 'Ghana', label: 'Ghana', flag: '🇬🇭' },
   { value: 'South Africa', label: 'South Africa', flag: '🇿🇦' },
   { value: 'Canada', label: 'Canada', flag: '🇨🇦' },
-  { value: 'Germany', label: 'Germany', flag: '🇩🇪' },
-  { value: 'France', label: 'France', flag: '🇫🇷' },
-  { value: 'Australia', label: 'Australia', flag: '🇦🇺' },
-  { value: 'Japan', label: 'Japan', flag: '🇯🇵' },
-  { value: 'China', label: 'China', flag: '🇨🇳' },
-  { value: 'India', label: 'India', flag: '🇮🇳' },
-  { value: 'Brazil', label: 'Brazil', flag: '🇧🇷' },
   { value: 'Other', label: 'Other Country', flag: '🌍' },
 ]
 
-// Currency options
+// Currencies - Default to NGN
 const CURRENCIES = [
+  { value: 'NGN', label: 'NGN', symbol: '₦' },
   { value: 'USD', label: 'USD', symbol: '$' },
   { value: 'EUR', label: 'EUR', symbol: '€' },
   { value: 'GBP', label: 'GBP', symbol: '£' },
-  { value: 'NGN', label: 'NGN', symbol: '₦' },
-  { value: 'KES', label: 'KES', symbol: 'KSh' },
-  { value: 'GHS', label: 'GHS', symbol: 'GH₵' },
-  { value: 'ZAR', label: 'ZAR', symbol: 'R' },
 ]
 
-// Ticket types enum (for paid events)
+// Ticket types
 const TICKET_TYPES = [
   { value: 'GeneralAdmission', label: 'General Admission' },
   { value: 'ReservedSeating', label: 'Reserved Seating' },
   { value: 'VIPPremium', label: 'VIP Premium' },
   { value: 'Others', label: 'Others' },
 ]
-
-// Type definitions
-interface UploadProgress {
-  image: number;
-  metadata: number;
-  blockchain: number;
-  total: number;
-}
 
 interface LocationDetails {
   type: string;
@@ -119,25 +81,217 @@ interface LocationDetails {
   city?: string;
   country?: string;
   virtualLink?: string;
-  youtubeLink?: string;
-  twitchLink?: string;
   platform?: string;
   meetingId?: string;
   password?: string;
+}
+
+// Type guards for wallet accounts (copied from complete-profile page)
+function isWalletAccount(account: any): account is { type: 'wallet'; address: string; walletClientType?: string } {
+  if (typeof account !== 'object' || account === null) return false
+  if (account.type !== 'wallet') return false
+  if (!('address' in account)) return false
+  return typeof account.address === 'string'
+}
+
+function isEmbeddedWallet(account: any): account is { type: 'wallet'; address: string; walletClientType: 'privy' } {
+  if (!isWalletAccount(account)) return false
+  if (!('walletClientType' in account)) return false
+  return account.walletClientType === 'privy'
+}
+
+function isEmailAccount(account: any): account is { type: 'email'; address: string } {
+  if (typeof account !== 'object' || account === null) return false
+  if (account.type !== 'email') return false
+  if (!('address' in account)) return false
+  return typeof account.address === 'string'
+}
+
+function isOAuthAccount(account: any): account is { type: 'oauth'; provider: string; email?: string; name?: string; username?: string } {
+  if (typeof account !== 'object' || account === null) return false
+  if (account.type !== 'oauth') return false
+  return 'provider' in account
+}
+
+// Helper function to extract wallet address from Privy user
+function extractWalletAddress(user: any): string | null {
+  console.log('🔍 Extracting wallet from Privy user:', {
+    hasDirectWallet: !!user?.wallet?.address,
+    linkedAccountsCount: user?.linkedAccounts?.length || 0
+  })
+  
+  // Check direct wallet object (for embedded wallets)
+  if (user?.wallet?.address && typeof user.wallet.address === 'string') {
+    console.log('✅ Found direct wallet address:', user.wallet.address)
+    return user.wallet.address
+  }
+  
+  // Check linked accounts
+  const linkedAccounts = user?.linkedAccounts || []
+  
+  // First, try to find embedded wallet (Privy wallet)
+  const embeddedWallet = linkedAccounts.find(isEmbeddedWallet)
+  if (embeddedWallet) {
+    console.log('✅ Found embedded wallet in linked accounts:', embeddedWallet.address)
+    return embeddedWallet.address
+  }
+  
+  // If no embedded wallet, try to find any wallet
+  const anyWallet = linkedAccounts.find(isWalletAccount)
+  if (anyWallet) {
+    console.log('✅ Found wallet in linked accounts:', anyWallet.address)
+    return anyWallet.address
+  }
+  
+  console.log('❌ No wallet found in user object')
+  return null
+}
+
+// Helper function to extract email from Privy user (copied from complete-profile page)
+function extractEmailFromPrivyUser(privyUser: any): string {
+  const linkedAccounts = privyUser.linkedAccounts || []
+  let email = ''
+  
+  console.log('📧 Checking Privy user for email:', {
+    userId: privyUser.id,
+    linkedAccountsCount: linkedAccounts.length
+  })
+  
+  // 1. Check email linked accounts first
+  for (const account of linkedAccounts) {
+    if (isEmailAccount(account)) {
+      email = account.address
+      console.log('✅ Found email from email account:', email)
+      break
+    }
+    
+    if (isOAuthAccount(account) && account.email) {
+      email = account.email
+      console.log('✅ Found email from OAuth account:', email, 'provider:', account.provider)
+      break
+    }
+  }
+  
+  // 2. Check for verified emails
+  if (!email && privyUser.email) {
+    if (typeof privyUser.email === 'object' && privyUser.email.address) {
+      email = privyUser.email.address
+      console.log('✅ Found email from email object:', email)
+    } else if (typeof privyUser.email === 'string') {
+      email = privyUser.email
+      console.log('✅ Found email from string:', email)
+    }
+  }
+  
+  // 3. Check for any email in the user object
+  if (!email && privyUser.emailAddresses && Array.isArray(privyUser.emailAddresses)) {
+    const emailObj = privyUser.emailAddresses.find((e: any) => e && e.address)
+    if (emailObj) {
+      email = emailObj.address
+      console.log('✅ Found email from emailAddresses:', email)
+    }
+  }
+  
+  if (!email) {
+    console.log('❌ No email found in Privy user')
+  }
+  
+  return email || ''
+}
+
+// Helper function to fetch user email from database
+async function fetchUserEmailFromDatabase(walletAddress: string): Promise<string | null> {
+  try {
+    console.log('📧 [DB] Fetching user email from database for wallet:', walletAddress)
+    
+    const response = await fetch(`/api/auth/user?walletAddress=${walletAddress}`)
+    
+    if (!response.ok) {
+      console.error('❌ [DB] Failed to fetch user:', response.status)
+      return null
+    }
+    
+    const data = await response.json()
+    console.log('📧 [DB] User data from database:', {
+      hasUser: !!data.user,
+      hasEmail: !!data.user?.email,
+      email: data.user?.email,
+      needsProfileCompletion: data.needsProfileCompletion
+    })
+    
+    if (data.user && data.user.email) {
+      console.log('✅ [DB] Found email in database:', data.user.email)
+      return data.user.email
+    }
+    
+    console.log('❌ [DB] No email found in database for this user')
+    return null
+  } catch (error) {
+    console.error('❌ [DB] Error fetching user email:', error)
+    return null
+  }
 }
 
 export default function CreateTicketPage() {
   const { user, authenticated, ready } = usePrivy()
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState<UploadProgress>({
-    image: 0,
-    metadata: 0,
-    blockchain: 0,
-    total: 0
-  })
-  const [transactionHash, setTransactionHash] = useState<string>('')
+  const [userEmail, setUserEmail] = useState<string | null>(null)
+  const [walletAddress, setWalletAddress] = useState<string | null>(null)
+  const [isFetchingEmail, setIsFetchingEmail] = useState(true)
   
+  // Log user info on component mount and fetch email from database
+  useEffect(() => {
+    const loadUserData = async () => {
+      if (!ready || !authenticated || !user) {
+        console.log('⏳ [LOAD] Waiting for user to be ready...')
+        return
+      }
+      
+      console.log('👤 [LOAD] User object from Privy:', {
+        hasWallet: !!user.wallet?.address,
+        hasEmail: !!user.email?.address,
+        linkedAccountsCount: user.linkedAccounts?.length || 0
+      })
+      
+      // Extract wallet address
+      const wallet = extractWalletAddress(user)
+      setWalletAddress(wallet)
+      
+      if (!wallet) {
+        console.error('❌ [LOAD] No wallet address found')
+        setIsFetchingEmail(false)
+        return
+      }
+      
+      // Try to get email from Privy first
+      let email = extractEmailFromPrivyUser(user)
+      
+      if (email) {
+        console.log('✅ [LOAD] Email found in Privy:', email)
+        setUserEmail(email)
+        setIsFetchingEmail(false)
+        return
+      }
+      
+      // If no email in Privy, fetch from database
+      console.log('📧 [LOAD] No email in Privy, fetching from database...')
+      const dbEmail = await fetchUserEmailFromDatabase(wallet)
+      
+      if (dbEmail) {
+        console.log('✅ [LOAD] Email found in database:', dbEmail)
+        setUserEmail(dbEmail)
+      } else {
+        console.warn('⚠️ [LOAD] No email found in Privy or database')
+        setUserEmail(null)
+      }
+      
+      setIsFetchingEmail(false)
+    }
+    
+    loadUserData()
+  }, [ready, authenticated, user])
+
   // Form state
   const [formData, setFormData] = useState({
     eventName: '',
@@ -150,7 +304,7 @@ export default function CreateTicketPage() {
     description: '',
     isFree: true,
     priceAmount: '0.00',
-    currency: 'USD',
+    currency: 'NGN',
     ticketType: 'GeneralAdmission',
     unlimitedCapacity: true,
     capacity: '',
@@ -158,57 +312,41 @@ export default function CreateTicketPage() {
     imagePreview: '',
   })
 
-  // Location state (Luma-style)
+  // Location state
   const [locationType, setLocationType] = useState<string>('in_person')
   const [locationDetails, setLocationDetails] = useState<LocationDetails>({
     type: 'in_person',
     venueType: 'conference_center',
     address: '',
     city: '',
-    country: 'USA', // Default country
+    country: 'Nigeria',
     virtualLink: '',
-    youtubeLink: '',
-    twitchLink: '',
-    platform: 'zoom',
-    meetingId: '',
-    password: '',
   })
 
-  // Validation state
   const [dateError, setDateError] = useState<string>('')
-
-  // Additional state
   const [showCustomCategory, setShowCustomCategory] = useState(false)
   const [showPriceInput, setShowPriceInput] = useState(false)
   const [showCapacityInput, setShowCapacityInput] = useState(false)
   const [charCount, setCharCount] = useState(0)
 
-  // Refs
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const descriptionRef = useRef<HTMLTextAreaElement>(null)
-
-  // Set default dates on mount and validate
+  // Set default dates on mount
   useEffect(() => {
     if (ready && authenticated) {
       const today = new Date()
       const tomorrow = new Date(today)
       tomorrow.setDate(tomorrow.getDate() + 1)
       
-      const formatDate = (date: Date) => {
-        return date.toISOString().split('T')[0]
-      }
+      const formatDate = (date: Date) => date.toISOString().split('T')[0]
 
       setFormData(prev => ({
         ...prev,
         startDate: formatDate(today),
         endDate: formatDate(tomorrow),
-        startTime: '18:00',
-        endTime: '20:00',
       }))
     }
   }, [ready, authenticated])
 
-  // Validate dates when they change
+  // Validate dates
   useEffect(() => {
     if (formData.startDate && formData.endDate) {
       const startDateTime = new Date(`${formData.startDate}T${formData.startTime}`)
@@ -219,29 +357,25 @@ export default function CreateTicketPage() {
       } else {
         setDateError('')
       }
-    } else {
-      setDateError('')
     }
   }, [formData.startDate, formData.endDate, formData.startTime, formData.endTime])
 
-  // Handle category change
   const handleCategoryChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const value = e.target.value
     setFormData(prev => ({ ...prev, category: value }))
     setShowCustomCategory(value === 'other')
   }
 
-  // Handle price type change
   const handlePriceTypeChange = (isFree: boolean) => {
     setFormData(prev => ({ 
       ...prev, 
       isFree,
-      priceAmount: isFree ? '0.00' : '10.00' // Default price for paid tickets
+      priceAmount: isFree ? '0.00' : '5000.00',
+      currency: 'NGN'
     }))
     setShowPriceInput(!isFree)
   }
 
-  // Handle capacity toggle
   const handleCapacityToggle = (unlimited: boolean) => {
     setFormData(prev => ({ 
       ...prev, 
@@ -251,26 +385,22 @@ export default function CreateTicketPage() {
     setShowCapacityInput(!unlimited)
   }
 
-  // Handle image upload
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
 
-    // Validate file size (5MB max)
     if (file.size > 5 * 1024 * 1024) {
       toast.error('Image must be less than 5MB')
       return
     }
 
-    // Validate file type
     if (!file.type.startsWith('image/')) {
-      toast.error('Please upload an image file (PNG, JPG, GIF)')
+      toast.error('Please upload an image file')
       return
     }
 
     setFormData(prev => ({ ...prev, image: file }))
 
-    // Create preview
     const reader = new FileReader()
     reader.onloadend = () => {
       setFormData(prev => ({ ...prev, imagePreview: reader.result as string }))
@@ -278,61 +408,16 @@ export default function CreateTicketPage() {
     reader.readAsDataURL(file)
   }
 
-  // Handle location type change
   const handleLocationTypeChange = (type: string) => {
     setLocationType(type)
     setLocationDetails(prev => ({ ...prev, type }))
   }
 
-  // Handle location details change
   const handleLocationDetailsChange = (field: keyof LocationDetails, value: string) => {
     setLocationDetails(prev => ({ ...prev, [field]: value }))
   }
 
-  // Handle description formatting
-  const handleFormatText = (format: 'bold' | 'italic' | 'link' | 'emoji') => {
-    const textarea = descriptionRef.current
-    if (!textarea) return
-
-    const start = textarea.selectionStart
-    const end = textarea.selectionEnd
-    const selectedText = formData.description.substring(start, end)
-
-    let formattedText = selectedText
-    
-    switch (format) {
-      case 'bold':
-        formattedText = `**${selectedText}**`
-        break
-      case 'italic':
-        formattedText = `*${selectedText}*`
-        break
-      case 'link':
-        const url = prompt('Enter URL:')
-        if (url) formattedText = `[${selectedText}](${url})`
-        else return
-        break
-      case 'emoji':
-        // In a real app, you'd open an emoji picker
-        formattedText = `${selectedText}😊`
-        break
-    }
-
-    const newDescription = formData.description.substring(0, start) + 
-                          formattedText + 
-                          formData.description.substring(end)
-    
-    setFormData(prev => ({ ...prev, description: newDescription }))
-    setCharCount(newDescription.length)
-
-    // Restore focus and cursor position
-    setTimeout(() => {
-      textarea.focus()
-      textarea.setSelectionRange(start + formattedText.length, start + formattedText.length)
-    }, 0)
-  }
-
-  // Upload to Pinata
+  // Upload image to IPFS via Pinata
   const uploadToPinata = async (file: File): Promise<{success: boolean, cid: string}> => {
     try {
       const formData = new FormData()
@@ -349,68 +434,19 @@ export default function CreateTicketPage() {
         throw new Error(result.error || 'Upload failed')
       }
 
-      return {
-        success: true,
-        cid: result.cid
-      }
+      return { success: true, cid: result.cid }
     } catch (error) {
-      console.error('Pinata upload error:', error)
-      return {
-        success: false,
-        cid: ''
-      }
+      console.error('Upload error:', error)
+      return { success: false, cid: '' }
     }
   }
 
-  // Upload JSON to Pinata
-  const uploadJSONToPinata = async (
-    data: any,
-    fileName: string
-  ): Promise<{success: boolean, cid: string}> => {
-    try {
-      // Convert data to JSON string and create a file
-      const jsonString = JSON.stringify(data)
-      const blob = new Blob([jsonString], { type: 'application/json' })
-      const file = new File([blob], `${fileName}.json`)
-
-      const formData = new FormData()
-      formData.append('file', file)
-
-      const response = await fetch('/api/ipfs/upload', {
-        method: 'POST',
-        body: formData,
-      })
-
-      const result = await response.json()
-
-      if (!response.ok || !result.success) {
-        throw new Error(result.error || 'JSON upload failed')
-      }
-
-      return {
-        success: true,
-        cid: result.cid
-      }
-    } catch (error) {
-      console.error('JSON upload error:', error)
-      return {
-        success: false,
-        cid: ''
-      }
-    }
-  }
-
-  // Format location for display and storage
   const formatLocation = (): string => {
     if (locationType === 'in_person') {
       if (locationDetails.address && locationDetails.city) {
         return `${locationDetails.address}, ${locationDetails.city}, ${locationDetails.country || ''}`
       }
       return locationDetails.address || 'Location to be announced'
-    } else if (locationType === 'youtube' && locationDetails.youtubeLink) {
-      return locationDetails.youtubeLink
-    } else if (locationType === 'twitch' && locationDetails.twitchLink) {
-      return locationDetails.twitchLink
     } else if (locationType === 'custom_link' && locationDetails.virtualLink) {
       return locationDetails.virtualLink
     } else {
@@ -418,132 +454,170 @@ export default function CreateTicketPage() {
     }
   }
 
-  // FIXED: Main form submission handler with CRITICAL TICKETTYPE SYNC FIX
+  // FIXED: Email sending function with database fallback
+  const sendOrganizerEmail = async (eventData: any, eventId: string) => {
+    console.log('📧 [EMAIL] sendOrganizerEmail function STARTED')
+    console.log('📧 [EMAIL] Current userEmail from state:', userEmail)
+    console.log('📧 [EMAIL] Current walletAddress:', walletAddress)
+    
+    try {
+      let organizerEmail = userEmail
+      
+      // If we don't have email in state, try to fetch it from database again
+      if (!organizerEmail && walletAddress) {
+        console.log('📧 [EMAIL] No email in state, fetching from database...')
+        organizerEmail = await fetchUserEmailFromDatabase(walletAddress)
+        
+        if (organizerEmail) {
+          console.log('✅ [EMAIL] Email fetched from database:', organizerEmail)
+          setUserEmail(organizerEmail) // Update state for future use
+        }
+      }
+      
+      console.log('📧 [EMAIL] Final organizerEmail:', organizerEmail)
+      
+      if (!organizerEmail) {
+        console.error('❌ [EMAIL] No organizer email found!')
+        toast.error('Cannot send confirmation email: No email address found in your profile. Please complete your profile first.')
+        return
+      }
+
+      // Format date for email
+      const eventDate = new Date(eventData.startDateTime)
+      const formattedDate = eventDate.toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      })
+      const formattedTime = eventDate.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+
+      const emailPayload = {
+        organizerEmail,
+        organizerName: organizerEmail.split('@')[0] || 'Organizer',
+        eventTitle: eventData.title,
+        eventId,
+        eventUrl: `${window.location.origin}/events/${eventId}`,
+        eventDate: formattedDate,
+        eventTime: formattedTime,
+        venue: eventData.venue,
+        isFree: eventData.isFree,
+        price: eventData.isFree ? 'FREE' : `${eventData.currency === 'NGN' ? '₦' : '$'}${eventData.priceAmount}`,
+        ticketType: eventData.ticketType,
+        capacity: eventData.unlimitedCapacity ? 'Unlimited' : eventData.capacity,
+      }
+
+      console.log('📧 [EMAIL] Sending email with payload:', emailPayload)
+
+      const response = await fetch('/api/email/organizer-event-created', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(emailPayload)
+      })
+
+      console.log('📧 [EMAIL] API Response status:', response.status)
+      
+      const result = await response.json()
+      console.log('📧 [EMAIL] API Response body:', result)
+
+      if (!response.ok) {
+        console.error('❌ [EMAIL] Email API error:', result)
+        toast.warning(`Event created but email notification failed: ${result.error || 'Unknown error'}`)
+      } else {
+        console.log('✅ [EMAIL] Organizer email sent successfully to:', organizerEmail)
+        toast.success(`Event created! Confirmation email sent to ${organizerEmail}`)
+      }
+      
+    } catch (emailError) {
+      console.error('❌ [EMAIL] Exception in sendOrganizerEmail:', emailError)
+      toast.warning('Event created but email notification could not be sent')
+    }
+  };
+
+  // Main submit handler
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    if (!user?.wallet?.address) {
-      toast.error('Please connect your embedded wallet to create tickets')
+    console.log('🚀 [SUBMIT] Form submission started')
+    console.log('🚀 [SUBMIT] User email from state:', userEmail)
+    console.log('🚀 [SUBMIT] Wallet address:', walletAddress)
+    
+    if (!walletAddress) {
+      console.error('❌ [SUBMIT] No wallet address found')
+      toast.error('Please ensure your wallet is connected')
       return
     }
 
-    // Validate dates before submission
     if (dateError) {
       toast.error(dateError)
       return
     }
 
+    // Validate required fields
+    if (!formData.eventName.trim()) {
+      toast.error('Event name is required')
+      return
+    }
+    
+    if (!formData.startDate || !formData.endDate) {
+      toast.error('Event dates are required')
+      return
+    }
+    
+    if (!formData.description.trim()) {
+      toast.error('Event description is required')
+      return
+    }
+    
+    if (!formData.category) {
+      toast.error('Event category is required')
+      return
+    }
+    
+    if (!formData.isFree && (!formData.priceAmount || parseFloat(formData.priceAmount) <= 0)) {
+      toast.error('Valid price is required for paid tickets')
+      return
+    }
+    
+    if (!formData.unlimitedCapacity && (!formData.capacity || parseInt(formData.capacity) <= 0)) {
+      toast.error('Valid capacity is required')
+      return
+    }
+
+    // Validate location
+    if (locationType === 'in_person' && !locationDetails.address) {
+      toast.error('Address is required for in-person events')
+      return
+    }
+    
+    if (locationType === 'custom_link' && !locationDetails.virtualLink) {
+      toast.error('Virtual link is required')
+      return
+    }
+
     setIsLoading(true)
-    setUploadProgress({ image: 0, metadata: 0, blockchain: 0, total: 0 })
 
     try {
-      // Validate form
-      if (!formData.eventName.trim()) {
-        throw new Error('Event name is required')
-      }
-      
-      if (!formData.startDate || !formData.endDate) {
-        throw new Error('Event dates are required')
-      }
-      
-      if (!formData.description.trim()) {
-        throw new Error('Event description is required')
-      }
-      
-      if (!formData.category) {
-        throw new Error('Event category is required')
-      }
-      
-      if (!formData.isFree && !formData.priceAmount) {
-        throw new Error('Price is required for paid tickets')
-      }
-      
-      if (!formData.isFree && parseFloat(formData.priceAmount) <= 0) {
-        throw new Error('Price must be greater than 0 for paid tickets')
-      }
-      
-      if (!formData.unlimitedCapacity && (!formData.capacity || parseInt(formData.capacity) <= 0)) {
-        throw new Error('Valid capacity is required')
-      }
-
-      // Validate location
-      if (locationType === 'in_person' && !locationDetails.address) {
-        throw new Error('Address is required for in-person events')
-      }
-      
-      if (locationType === 'custom_link' && !locationDetails.virtualLink) {
-        throw new Error('Virtual link is required')
-      }
-      
-      if (locationType === 'youtube' && !locationDetails.youtubeLink) {
-        throw new Error('YouTube link is required')
-      }
-      
-      if (locationType === 'twitch' && !locationDetails.twitchLink) {
-        throw new Error('Twitch link is required')
-      }
-
-      const isFreeEvent = formData.isFree
       let imageCid = ''
-      let metadataCid = ''
-      let eventId = 0
-      let ticketId = 0
-      let transactionHash = ''
+      const formattedLocation = formatLocation()
 
-      // Step 1: Upload image to Pinata (for both free and paid)
-      setUploadProgress(prev => ({ ...prev, total: 25 }))
-      
+      // Upload image if provided
       if (formData.image) {
-        toast.info('Uploading image to IPFS...')
+        toast.info('Uploading image...')
         const uploadResult = await uploadToPinata(formData.image)
         
-        if (!uploadResult.success || !uploadResult.cid) {
-          throw new Error('Failed to upload image to IPFS')
+        if (!uploadResult.success) {
+          throw new Error('Failed to upload image')
         }
         
         imageCid = uploadResult.cid
-        toast.success(`Image uploaded! CID: ${imageCid.slice(0, 10)}...`)
-      } else {
-        toast.info('No image provided, using default...')
-        // You might want to use a default image CID here
-        imageCid = 'default-image-cid'
+        toast.success('Image uploaded!')
       }
-      
-      setUploadProgress(prev => ({ ...prev, image: 100, total: 50 }))
 
-      // Step 2: Create and upload metadata to Pinata
-      toast.info('Creating ticket metadata...')
-      
-      const ticketCategory = mapTicketTypeToCategory(formData.ticketType)
-      const formattedLocation = formatLocation()
-      
-      const metadata = createTicketMetadata(
-        formData,
-        imageCid,
-        formData.ticketType,
-        formData.priceAmount,
-        ticketCategory
-      )
-
-      setUploadProgress(prev => ({ ...prev, total: 65 }))
-      
-      const metadataResult = await uploadJSONToPinata(
-        metadata,
-        `${formData.eventName.replace(/\s+/g, '-').toLowerCase()}-metadata`
-      )
-      
-      if (!metadataResult.success || !metadataResult.cid) {
-        throw new Error('Failed to upload metadata to IPFS')
-      }
-      
-      metadataCid = metadataResult.cid
-      const metadataURI = `ipfs://${metadataCid}`
-      toast.success(`Metadata uploaded! IPFS URI: ${metadataURI}`)
-      setUploadProgress(prev => ({ ...prev, metadata: 100, total: 75 }))
-
-      // Step 3: Save event to database first
-      toast.info('Saving event to database...')
-      
+      // Create event in database
       const eventData = {
         title: formData.eventName,
         startDateTime: new Date(`${formData.startDate}T${formData.startTime}`).toISOString(),
@@ -555,14 +629,11 @@ export default function CreateTicketPage() {
         category: formData.category,
         customCategory: formData.category === 'other' ? formData.customCategory : undefined,
         venue: formattedLocation,
-        //location: formattedLocation,
-        location: {
-          address: formattedLocation,
-        },
+        location: { address: formattedLocation },
         description: formData.description,
-        isFree: isFreeEvent,
-        priceAmount: isFreeEvent ? '0' : formData.priceAmount,
-        price: isFreeEvent ? 0 : parseFloat(formData.priceAmount),
+        isFree: formData.isFree,
+        priceAmount: formData.isFree ? '0' : formData.priceAmount,
+        price: formData.isFree ? 0 : parseFloat(formData.priceAmount),
         currency: formData.currency,
         ticketType: formData.ticketType,
         unlimitedCapacity: formData.unlimitedCapacity,
@@ -572,367 +643,131 @@ export default function CreateTicketPage() {
           zoomMeeting: locationType === 'zoom',
           googleMeet: locationType === 'google_meet',
           hasVirtualLink: locationType !== 'in_person',
-          virtualLink: locationDetails.virtualLink || locationDetails.youtubeLink || locationDetails.twitchLink || '',
-          youtubeLink: locationDetails.youtubeLink,
-          twitchLink: locationDetails.twitchLink,
-          platform: locationDetails.platform,
-          meetingId: locationDetails.meetingId,
+          virtualLink: locationDetails.virtualLink || '',
         },
         imageCid: imageCid,
-        metadataCid: metadataCid,
-        metadataURI: metadataURI,
-        organizerWallet: user.wallet.address,
+        organizerWallet: walletAddress,
         status: 'published',
-        isOnChain: !isFreeEvent,
+        isOnChain: false,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       }
-      console.log('📝 Saving event with location:', {
-        venue: eventData.venue,
-        locationAddress: eventData.location.address,
-        isVirtual: eventData.isVirtual
-      })
 
-      // Save to MongoDB - USING POST /api/events (not /api/events/create)
+      console.log('📝 [SUBMIT] Saving event to database:', eventData)
+
+      // Save to database
+      toast.info('Saving event to database...')
+      
       const dbResponse = await fetch('/api/events', {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(eventData)
       })
 
       const dbResult = await dbResponse.json()
       
+      console.log('📝 [SUBMIT] Database response:', { status: dbResponse.status, result: dbResult })
+      
       if (!dbResponse.ok || !dbResult.success) {
-        throw new Error(dbResult.error || 'Failed to save to database: ' + JSON.stringify(dbResult))
+        throw new Error(dbResult.error || 'Failed to save event')
       }
 
       const savedEventId = dbResult.eventId
+      console.log('✅ [SUBMIT] Event saved successfully with ID:', savedEventId)
       toast.success('Event saved to database!')
-      setUploadProgress(prev => ({ ...prev, total: 85 }))
 
-      // Step 4: For paid events, create on blockchain (gasless) via API
-      if (!isFreeEvent) {
-        toast.info('Creating event on blockchain (gasless)...')
-        
-        // Convert dates to timestamps
-        const startTime = Math.floor(new Date(`${formData.startDate}T${formData.startTime}`).getTime() / 1000)
-        const endTime = Math.floor(new Date(`${formData.endDate}T${formData.endTime}`).getTime() / 1000)
-        
-        // Create event on blockchain via API
-        const createEventResponse = await fetch('/api/blockchain/create-event', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            eventName: formData.eventName,
-            baseURI: `ipfs://${metadataCid}`,
-            startTime,
-            endTime,
-            category: ticketCategory,
-            price: formData.priceAmount
-          })
-        })
-        
-        const createEventResult = await createEventResponse.json()
-        
-        if (!createEventResponse.ok || !createEventResult.success) {
-          throw new Error(`Failed to create event on blockchain: ${createEventResult.error}`)
-        }
-        
-        eventId = createEventResult.eventId || 0
-        if (eventId === 0) {
-          throw new Error('Event created but eventId is 0')
-        }
-        
-        transactionHash = createEventResult.transactionHash || ''
-        toast.success('Event created on blockchain!')
-        
-        // CRITICAL FIX: Sync TicketType to database immediately after blockchain event creation
-        if (createEventResult.database?.ticketTypeCreated) {
-          toast.success(`Database TicketType created: ${createEventResult.database.ticketTypeId?.slice(0, 8)}...`)
-        } else {
-          console.warn('TicketType may not have been created in database')
-        }
-        
-        if (createEventResult.gasPaidBy) {
-          toast.info(`Gas paid by: ${createEventResult.gasPaidBy.slice(0, 10)}...`)
-        }
-        setUploadProgress(prev => ({ ...prev, blockchain: 50, total: 90 }))
-        
-        // Add ticket type to the event via API
-        toast.info('Adding ticket type to blockchain...')
-        
-        // Handle capacity properly
-        let maxTickets: number;
-        
-        if (formData.unlimitedCapacity) {
-          maxTickets = 0; // 0 means unlimited in the contract
-        } else {
-          const capacityValue = formData.capacity ? parseInt(formData.capacity) : 0;
-          
-          if (capacityValue <= 0) {
-            throw new Error('Capacity must be greater than 0 for limited tickets');
-          }
-          
-          maxTickets = capacityValue;
-        }
-        
-        const ticketPrice = ethers.parseEther(formData.priceAmount)
-        
-        // CRITICAL FIX: Ensure database has TicketType record for this blockchain event
-        const addTicketResponse = await fetch('/api/blockchain/add-ticket-type', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            eventId,
-            category: ticketCategory,
-            maxTickets: maxTickets,
-            ticketPrice: ticketPrice.toString(),
-            eventName: formData.eventName
-          })
-        })
-        
-        const addTicketResult = await addTicketResponse.json()
-        
-        if (!addTicketResponse.ok || !addTicketResult.success) {
-          // Even if blockchain fails, check if database was updated
-          if (addTicketResult.database?.ticketTypeCreated) {
-            console.log('⚠️ Blockchain add ticket failed but database was updated:', addTicketResult.database.ticketTypeId)
-            toast.warning('Blockchain ticket add failed, but database was updated')
-          } else {
-            throw new Error(`Failed to add ticket type: ${addTicketResult.error}`)
-          }
-        } else {
-          toast.success('Ticket type added!')
-          if (addTicketResult.database?.ticketTypeCreated) {
-            console.log('✅ Database TicketType synced:', addTicketResult.database.ticketTypeId)
-          }
-        }
-        
-        setUploadProgress(prev => ({ ...prev, blockchain: 75, total: 95 }))
-        
-        // Step 5: Generate approval signature for gasless minting
-        try {
-          toast.info('Generating approval signature...')
-          
-          const approvalId = generateApprovalId()
-          const validUntil = Math.floor(Date.now() / 1000) + 3600 // Valid for 1 hour
-          
-          // Generate signature using the API - FIXED: Using correct price
-          const signatureResponse = await fetch('/api/tickets/signature', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              recipient: user.wallet.address,
-              eventId,
-              ticketCategory,
-              amount: 1, // Creating one ticket for now
-              price: ticketPrice.toString(), // Already in wei
-              validUntil,
-              approvalId
-            })
-          })
+      // 🔥 Send email to organizer - uses database email if needed
+      console.log('📧 [SUBMIT] Calling sendOrganizerEmail...')
+      await sendOrganizerEmail(eventData, savedEventId)
+      console.log('✅ [SUBMIT] sendOrganizerEmail completed')
 
-          if (!signatureResponse.ok) {
-            const errorText = await signatureResponse.text()
-            console.error('Signature API error response:', errorText)
-            throw new Error(`Signature API returned ${signatureResponse.status}: ${errorText}`)
-          }
-
-          const signatureData = await signatureResponse.json()
-          
-          if (!signatureData.success) {
-            throw new Error(signatureData.error || 'Failed to generate signature')
-          }
-          
-          toast.success('Approval signature generated!')
-          
-          // Step 6: Mint a sample ticket using the approval
-          toast.info('Minting sample ticket...')
-          
-          const mintResponse = await fetch('/api/tickets/mint-with-approval', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              approvalId: signatureData.signatureData.id,
-              walletAddress: user.wallet.address,
-              eventId: eventId,
-              ticketCategory: ticketCategory
-            })
-          })
-
-          const mintResult = await mintResponse.json()
-          
-          if (mintResponse.ok && mintResult.success) {
-            toast.success(`Ticket minted! Ticket #: ${mintResult.ticketNumber}`)
-            if (mintResult.transactionHash) {
-              toast.info(`Transaction: ${mintResult.transactionHash.slice(0, 20)}...`)
-            }
-            ticketId = mintResult.ticketNumber || 0
-          } else {
-            console.warn('Ticket minting had issues:', mintResult)
-            toast.warning('Ticket created with some limitations')
-          }
-          
-          setUploadProgress(prev => ({ ...prev, blockchain: 100, total: 100 }))
-          
-        } catch (error) {
-          console.warn('Signature/minting warning:', error)
-          toast.warning('Signature/minting had issues, but event was created successfully')
-          // Don't fail the entire process - the event is already created
-          setUploadProgress(prev => ({ ...prev, blockchain: 100, total: 100 }))
-        }
-      } else {
-        // For free events, just complete the progress
-        setUploadProgress(prev => ({ ...prev, total: 100 }))
-      }
-
-      // FIXED: Update database with blockchain info - USING PUT /api/events (not /api/events/update)
-      if (!isFreeEvent && eventId > 0) {
-        try {
-          const updateResponse = await fetch('/api/events', {
-            method: 'PUT',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              _id: savedEventId, // MongoDB _id
-              onChainId: eventId,
-              transactionHash,
-              ticketId,
-              isOnChain: true,
-              updatedAt: new Date().toISOString()
-            })
-          })
-
-          const updateResult = await updateResponse.json()
-          
-          if (!updateResponse.ok || !updateResult.success) {
-            console.warn('Could not update event with blockchain info:', updateResult.error)
-            // Don't fail the whole process
-          } else {
-            console.log('✅ Event updated with blockchain info')
-            
-            // CRITICAL: Verify TicketType exists for this event
-            try {
-              // Double-check that TicketType exists
-              const verifyResponse = await fetch(`/api/events/${savedEventId}/tickets`)
-              const verifyData = await verifyResponse.json()
-              
-              if (!verifyData.success || !verifyData.ticketTypes || verifyData.ticketTypes.length === 0) {
-                console.warn('⚠️ No TicketType found after event creation. Attempting emergency sync...')
-                
-                // Emergency sync: Create TicketType directly
-                const emergencySync = await fetch('/api/blockchain/add-ticket-type', {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                  },
-                  body: JSON.stringify({
-                    eventId: eventId,
-                    category: ticketCategory,
-                    maxTickets: formData.unlimitedCapacity ? 0 : parseInt(formData.capacity || '100'),
-                    ticketPrice: ethers.parseEther(formData.priceAmount).toString(),
-                    eventName: formData.eventName
-                  })
-                })
-                
-                const syncResult = await emergencySync.json()
-                if (syncResult.success && syncResult.database?.ticketTypeCreated) {
-                  console.log('✅ Emergency TicketType sync successful:', syncResult.database.ticketTypeId)
-                  toast.info('Database sync completed successfully')
-                }
-              } else {
-                console.log('✅ TicketType verified:', verifyData.ticketTypes[0]._id)
-              }
-            } catch (verifyError) {
-              console.warn('TicketType verification warning:', verifyError)
-            }
-          }
-        } catch (updateError) {
-          console.warn('Event update warning:', updateError)
-          // Continue anyway
-        }
-      }
-
-      // Success!
-      const successMessage = isFreeEvent 
-        ? 'Free event created successfully!' 
-        : 'Paid ticket created and minted successfully!'
+      // Success message
+      const successMessage = formData.isFree 
+        ? 'Free event created successfully!'
+        : `Paid event created successfully! Ticket price: ${formData.currency === 'NGN' ? '₦' : '$'}${formData.priceAmount}`
       
       toast.success(successMessage)
       
-      if (!isFreeEvent) {
-        setTransactionHash(transactionHash)
-      }
-      
-      // Add event page URL information
-      const eventSlug = formData.eventName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
       const eventUrl = `${window.location.origin}/events/${savedEventId}`
       
       toast.info(
         <div className="space-y-2">
-          <div className="font-semibold">Event Page Created!</div>
+          <div className="font-semibold">Event Created!</div>
           <div className="text-sm">Share this URL with attendees:</div>
           <div className="text-xs bg-blue-50 dark:bg-blue-900/30 p-2 rounded break-all">
             {eventUrl}
           </div>
-          {!isFreeEvent && (
-            <div className="text-xs text-green-600 dark:text-green-400 mt-1">
-              ✓ TicketType database record created successfully
-            </div>
-          )}
+          <div className="text-xs text-green-600 dark:text-green-400 mt-1">
+            ✓ Confirmation email sent to {userEmail || 'your email'}
+          </div>
         </div>,
-        { duration: 10000 }
+        { duration: 8000 }
       )
       
-      // Redirect after 5 seconds
+      // Redirect after delay
       setTimeout(() => {
         router.push(`/dashboard?created=${savedEventId}`)
-      }, 5000)
+      }, 4000)
 
     } catch (error) {
-      console.error('Ticket creation error:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to create ticket')
-      setUploadProgress({ image: 0, metadata: 0, blockchain: 0, total: 0 })
+      console.error('❌ [SUBMIT] Event creation error:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to create event')
     } finally {
       setIsLoading(false)
     }
   }
 
-  if (!ready) return <LoadingSpinner fullScreen />
+  // Show loading while fetching email
+  if (!ready || isFetchingEmail) {
+    return <LoadingSpinner fullScreen text="Loading your profile..." />
+  }
+  
   if (!authenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="text-center">
           <h2 className="text-2xl font-bold mb-4">Please login</h2>
           <p className="text-gray-600 dark:text-gray-400 mb-6">
-            Login to create tickets
+            Login to create events
           </p>
         </div>
       </div>
     )
   }
 
-  // Render location input based on type
+  // Show warning if no email found
+  if (!userEmail) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 text-center">
+          <div className="w-16 h-16 mx-auto mb-6 bg-yellow-100 dark:bg-yellow-900/30 rounded-full flex items-center justify-center">
+            <svg className="h-8 w-8 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.464 0L4.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-bold mb-3">Email Required</h2>
+          <p className="text-gray-600 dark:text-gray-400 mb-6">
+            Please complete your profile with an email address before creating events.
+            This is where event confirmations will be sent.
+          </p>
+          <button
+            onClick={() => router.push('/complete-profile')}
+            className="w-full py-3 bg-primary text-white rounded-xl font-medium hover:bg-primary-dark transition-colors"
+          >
+            Complete Profile
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   const renderLocationInput = () => {
     switch (locationType) {
       case 'in_person':
         return (
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-2">
-                Venue Type
-              </label>
+              <label className="block text-sm font-medium mb-2">Venue Type</label>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                 {VENUE_TYPES.map((venue) => (
                   <button
@@ -942,7 +777,7 @@ export default function CreateTicketPage() {
                     className={`p-3 rounded-lg border flex flex-col items-center justify-center gap-2 transition-all ${
                       locationDetails.venueType === venue.id
                         ? 'border-primary bg-primary/5'
-                        : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                        : 'border-gray-200 dark:border-gray-700'
                     }`}
                   >
                     <venue.icon className="h-5 w-5" />
@@ -953,54 +788,42 @@ export default function CreateTicketPage() {
             </div>
             
             <div>
-              <label className="block text-sm font-medium mb-2">
-                Address
-              </label>
+              <label className="block text-sm font-medium mb-2">Address</label>
               <input
                 type="text"
                 value={locationDetails.address || ''}
                 onChange={(e) => handleLocationDetailsChange('address', e.target.value)}
                 placeholder="Street address"
-                className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
+                className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl"
               />
             </div>
             
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium mb-2">
-                  City
-                </label>
+                <label className="block text-sm font-medium mb-2">City</label>
                 <input
                   type="text"
                   value={locationDetails.city || ''}
                   onChange={(e) => handleLocationDetailsChange('city', e.target.value)}
                   placeholder="City"
-                  className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-2">
-                  Country
-                </label>
+                <label className="block text-sm font-medium mb-2">Country</label>
                 <div className="relative">
                   <Flag className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                   <select
                     value={locationDetails.country || ''}
                     onChange={(e) => handleLocationDetailsChange('country', e.target.value)}
-                    className="w-full pl-10 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary appearance-none"
+                    className="w-full pl-10 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl appearance-none"
                   >
-                    <option value="">Select country...</option>
                     {COUNTRIES.map((country) => (
                       <option key={country.value} value={country.value}>
                         {country.flag} {country.label}
                       </option>
                     ))}
                   </select>
-                  <div className="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
-                    <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </div>
                 </div>
               </div>
             </div>
@@ -1012,195 +835,96 @@ export default function CreateTicketPage() {
         return (
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-2">
-                Meeting ID
-              </label>
+              <label className="block text-sm font-medium mb-2">Meeting ID</label>
               <input
                 type="text"
                 value={locationDetails.meetingId || ''}
                 onChange={(e) => handleLocationDetailsChange('meetingId', e.target.value)}
-                placeholder={`${locationType === 'zoom' ? 'Zoom' : 'Google Meet'} Meeting ID`}
-                className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
+                placeholder="Meeting ID"
+                className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl"
               />
             </div>
-            
             <div>
-              <label className="block text-sm font-medium mb-2">
-                Password (optional)
-              </label>
+              <label className="block text-sm font-medium mb-2">Password (optional)</label>
               <input
                 type="text"
                 value={locationDetails.password || ''}
                 onChange={(e) => handleLocationDetailsChange('password', e.target.value)}
                 placeholder="Meeting password"
-                className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
+                className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl"
               />
             </div>
-            
-            <div className="text-sm text-gray-500">
-              {locationType === 'zoom' 
-                ? 'A Zoom meeting will be created automatically.'
-                : 'A Google Meet will be created automatically.'}
-            </div>
-          </div>
-        )
-      
-      case 'youtube':
-        return (
-          <div>
-            <label className="block text-sm font-medium mb-2">
-              YouTube Link
-            </label>
-            <input
-              type="url"
-              value={locationDetails.youtubeLink || ''}
-              onChange={(e) => handleLocationDetailsChange('youtubeLink', e.target.value)}
-              placeholder="https://youtube.com/live/your-stream-id or https://youtu.be/your-video-id"
-              className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
-            />
-            <p className="mt-2 text-sm text-gray-500">
-              Paste the link to your YouTube Live stream or premiere
-            </p>
-          </div>
-        )
-      
-      case 'twitch':
-        return (
-          <div>
-            <label className="block text-sm font-medium mb-2">
-              Twitch Link
-            </label>
-            <input
-              type="url"
-              value={locationDetails.twitchLink || ''}
-              onChange={(e) => handleLocationDetailsChange('twitchLink', e.target.value)}
-              placeholder="https://twitch.tv/your-channel"
-              className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
-            />
-            <p className="mt-2 text-sm text-gray-500">
-              Paste the link to your Twitch channel or stream
-            </p>
           </div>
         )
       
       case 'custom_link':
         return (
           <div>
-            <label className="block text-sm font-medium mb-2">
-              Custom Virtual Event Link
-            </label>
+            <label className="block text-sm font-medium mb-2">Custom Virtual Event Link</label>
             <input
               type="url"
               value={locationDetails.virtualLink || ''}
               onChange={(e) => handleLocationDetailsChange('virtualLink', e.target.value)}
               placeholder="https://your-event-platform.com/event-id"
-              className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl"
             />
-            <p className="mt-2 text-sm text-gray-500">
-              Paste the link to your virtual event (Zoom, Teams, etc.)
-            </p>
           </div>
         )
       
       default:
-        return (
-          <div className="text-center py-8 text-gray-500">
-            <Zap className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-            <p>Select a location type to configure</p>
-          </div>
-        )
+        return <div className="text-center py-8 text-gray-500">Select a location type</div>
     }
   }
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      {/* Header */}
       <div className="sticky top-0 z-10 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
         <div className="container mx-auto px-4 py-4 max-w-3xl">
           <div className="flex items-center justify-between">
-            <button
-              onClick={() => router.back()}
-              className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100"
-            >
+            <button onClick={() => router.back()} className="flex items-center gap-2 text-gray-600">
               <ArrowLeft className="h-5 w-5" />
               <span>Back</span>
             </button>
             <h1 className="text-xl font-bold">Create Event</h1>
-            <div className="w-20"></div> {/* Spacer for balance */}
+            <div className="w-20"></div>
           </div>
         </div>
       </div>
 
-      {/* Progress Bar */}
-      {isLoading && (
-        <div className="container mx-auto px-4 max-w-3xl py-2">
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow">
-            <div className="flex justify-between text-sm mb-2">
-              <span>Uploading...</span>
-              <span>{uploadProgress.total}%</span>
-            </div>
-            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-              <div 
-                className="bg-primary h-2 rounded-full transition-all duration-300"
-                style={{ width: `${uploadProgress.total}%` }}
-              ></div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Main Form */}
       <div className="container mx-auto px-4 py-6 max-w-3xl">
-        {/* Event Page URL Info */}
-        <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-          <div className="flex items-start gap-3">
-            <Info className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
-            <div className="text-sm">
-              <span className="font-medium">Event Page URL:</span> After creating your event, you'll receive a unique URL to share with attendees (e.g., https://cackpass.vercel.app/event/123)
-            </div>
+        {/* Email info banner */}
+        <div className="mb-6 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+          <div className="flex items-center gap-2">
+            <svg className="h-5 w-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+            <span className="text-sm text-green-700 dark:text-green-300">
+              Confirmation email will be sent to: <strong>{userEmail}</strong>
+            </span>
           </div>
-          {!formData.isFree && (
-            <div className="mt-3 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
-              <div className="flex items-center gap-2 text-green-700 dark:text-green-400">
-                <Check className="h-4 w-4" />
-                <span className="font-medium">Database Sync:</span>
-                <span className="text-sm">TicketType records will be automatically created in database</span>
-              </div>
-            </div>
-          )}
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-8">
-          {/* 1. Event Name */}
+          {/* Event Name */}
           <div>
-            <label className="block text-sm font-medium mb-2">
-              Event Name
-            </label>
+            <label className="block text-sm font-medium mb-2">Event Name</label>
             <input
               type="text"
               value={formData.eventName}
-              onChange={(e) => {
-                setFormData(prev => ({ ...prev, eventName: e.target.value }))
-              }}
+              onChange={(e) => setFormData(prev => ({ ...prev, eventName: e.target.value }))}
               placeholder="What's your event called?"
               maxLength={75}
               required
-              autoFocus
-              className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary text-lg"
+              className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-lg"
             />
-            <div className="mt-1 text-right text-sm text-gray-500">
-              {formData.eventName.length}/75 characters
-            </div>
+            <div className="mt-1 text-right text-sm text-gray-500">{formData.eventName.length}/75</div>
           </div>
 
-          {/* 2. Start & End Date/Time */}
+          {/* Date & Time */}
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Start */}
               <div>
-                <label className="block text-sm font-medium mb-2">
-                  Start <span className="text-xs text-gray-500">(GMT+1/WAT)</span>
-                </label>
+                <label className="block text-sm font-medium mb-2">Start</label>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="relative">
                     <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -1209,7 +933,7 @@ export default function CreateTicketPage() {
                       value={formData.startDate}
                       onChange={(e) => setFormData(prev => ({ ...prev, startDate: e.target.value }))}
                       required
-                      className="w-full pl-10 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
+                      className="w-full pl-10 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl"
                     />
                   </div>
                   <div className="relative">
@@ -1219,17 +943,13 @@ export default function CreateTicketPage() {
                       value={formData.startTime}
                       onChange={(e) => setFormData(prev => ({ ...prev, startTime: e.target.value }))}
                       required
-                      className="w-full pl-10 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
+                      className="w-full pl-10 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl"
                     />
                   </div>
                 </div>
               </div>
-
-              {/* End */}
               <div>
-                <label className="block text-sm font-medium mb-2">
-                  End <span className="text-xs text-gray-500">(GMT+1/WAT)</span>
-                </label>
+                <label className="block text-sm font-medium mb-2">End</label>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="relative">
                     <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -1238,7 +958,7 @@ export default function CreateTicketPage() {
                       value={formData.endDate}
                       onChange={(e) => setFormData(prev => ({ ...prev, endDate: e.target.value }))}
                       required
-                      className="w-full pl-10 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
+                      className="w-full pl-10 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl"
                     />
                   </div>
                   <div className="relative">
@@ -1248,45 +968,32 @@ export default function CreateTicketPage() {
                       value={formData.endTime}
                       onChange={(e) => setFormData(prev => ({ ...prev, endTime: e.target.value }))}
                       required
-                      className="w-full pl-10 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
+                      className="w-full pl-10 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl"
                     />
                   </div>
                 </div>
               </div>
             </div>
-            {dateError && (
-              <div className="text-sm text-red-500 mt-2">{dateError}</div>
-            )}
+            {dateError && <div className="text-sm text-red-500">{dateError}</div>}
           </div>
 
-          {/* 3. Event Category */}
+          {/* Category */}
           <div>
-            <label className="block text-sm font-medium mb-2">
-              Event Category
-            </label>
+            <label className="block text-sm font-medium mb-2">Event Category</label>
             <div className="relative">
               <Tag className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
               <select
                 value={formData.category}
                 onChange={handleCategoryChange}
                 required
-                className="w-full pl-10 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary appearance-none"
+                className="w-full pl-10 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl appearance-none"
               >
                 <option value="">Select category...</option>
                 {CATEGORIES.map((cat) => (
-                  <option key={cat.value} value={cat.value}>
-                    {cat.icon} {cat.label}
-                  </option>
+                  <option key={cat.value} value={cat.value}>{cat.icon} {cat.label}</option>
                 ))}
               </select>
-              <div className="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
-                <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </div>
             </div>
-
-            {/* Custom Category Input */}
             {showCustomCategory && (
               <div className="mt-4">
                 <input
@@ -1294,24 +1001,17 @@ export default function CreateTicketPage() {
                   value={formData.customCategory}
                   onChange={(e) => setFormData(prev => ({ ...prev, customCategory: e.target.value }))}
                   placeholder="Specify your category..."
-                  className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl"
                 />
               </div>
             )}
           </div>
 
-          {/* 4. Event Location */}
+          {/* Location */}
           <div>
-            <label className="block text-sm font-medium mb-2">
-              Event Location
-            </label>
-            
-            {/* Location Type Selector */}
+            <label className="block text-sm font-medium mb-2">Event Location</label>
             <div className="mb-6">
-              <div className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-3">
-                Choose how your event will be hosted
-              </div>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {LOCATION_TYPES.map((loc) => (
                   <button
                     key={loc.id}
@@ -1320,36 +1020,23 @@ export default function CreateTicketPage() {
                     className={`p-4 rounded-xl border flex flex-col items-center text-center gap-3 transition-all ${
                       locationType === loc.id
                         ? 'border-primary bg-primary/5'
-                        : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                        : 'border-gray-200 dark:border-gray-700'
                     }`}
                   >
-                    <div className={`p-3 rounded-lg ${
-                      locationType === loc.id ? 'bg-primary/10' : 'bg-gray-100 dark:bg-gray-800'
-                    }`}>
-                      <loc.icon className="h-5 w-5" />
-                    </div>
+                    <loc.icon className="h-5 w-5" />
                     <div>
-                      <div className="font-medium">{loc.label}</div>
-                      <div className="text-xs text-gray-500 mt-1">{loc.description}</div>
+                      <div className="font-medium text-sm">{loc.label}</div>
+                      <div className="text-xs text-gray-500">{loc.description}</div>
                     </div>
                   </button>
                 ))}
               </div>
             </div>
-
-            {/* Location Details */}
             <div className="mt-6 p-6 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl">
-              <div className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-4">
-                {locationType === 'in_person' ? 'Venue Details' : 'Virtual Event Setup'}
-              </div>
               {renderLocationInput()}
             </div>
-
-            {/* Preview */}
             <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-              <div className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
-                Location Preview
-              </div>
+              <div className="text-sm font-medium mb-1">Location Preview</div>
               <div className="flex items-center gap-2">
                 <MapPin className="h-4 w-4 text-gray-400" />
                 <span className="text-sm">{formatLocation()}</span>
@@ -1357,50 +1044,10 @@ export default function CreateTicketPage() {
             </div>
           </div>
 
-          {/* 5. Event Description */}
+          {/* Description */}
           <div>
-            <label className="block text-sm font-medium mb-2">
-              Event Description
-            </label>
-            
-            {/* Toolbar */}
-            <div className="flex gap-1 mb-2">
-              <button
-                type="button"
-                onClick={() => handleFormatText('bold')}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
-                title="Bold"
-              >
-                <Bold className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => handleFormatText('italic')}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
-                title="Italic"
-              >
-                <Italic className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => handleFormatText('link')}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
-                title="Add Link"
-              >
-                <LinkIcon className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => handleFormatText('emoji')}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
-                title="Add Emoji"
-              >
-                <Smile className="h-4 w-4" />
-              </button>
-            </div>
-
+            <label className="block text-sm font-medium mb-2">Event Description</label>
             <textarea
-              ref={descriptionRef}
               value={formData.description}
               onChange={(e) => {
                 setFormData(prev => ({ ...prev, description: e.target.value }))
@@ -1410,91 +1057,46 @@ export default function CreateTicketPage() {
               rows={4}
               required
               maxLength={2000}
-              className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+              className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl resize-none"
             />
-            <div className="mt-1 text-right text-sm text-gray-500">
-              {charCount}/2000 characters
-            </div>
+            <div className="mt-1 text-right text-sm text-gray-500">{charCount}/2000</div>
           </div>
 
-          {/* 6. Ticket Price */}
+          {/* Ticket Price */}
           <div>
-            <label className="block text-sm font-medium mb-3">
-              Ticket Price
-            </label>
-            
-            {/* Price Toggle */}
+            <label className="block text-sm font-medium mb-3">Ticket Price</label>
             <div className="grid grid-cols-2 gap-4 mb-4">
               <div>
-                <input
-                  type="radio"
-                  id="free-ticket"
-                  name="ticket-price-type"
-                  checked={formData.isFree}
-                  onChange={() => handlePriceTypeChange(true)}
-                  className="hidden"
-                />
-                <label
-                  htmlFor="free-ticket"
-                  className={`block p-4 border-2 rounded-xl cursor-pointer transition-all ${
-                    formData.isFree
-                      ? 'border-primary bg-primary/5'
-                      : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
-                  }`}
-                >
+                <input type="radio" id="free-ticket" name="ticket-price-type" checked={formData.isFree} onChange={() => handlePriceTypeChange(true)} className="hidden" />
+                <label htmlFor="free-ticket" className={`block p-4 border-2 rounded-xl cursor-pointer transition-all ${
+                  formData.isFree ? 'border-primary bg-primary/5' : 'border-gray-200 dark:border-gray-700'
+                }`}>
                   <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-lg ${formData.isFree ? 'bg-green-500/10' : 'bg-gray-100 dark:bg-gray-800'}`}>
-                      <span className="text-2xl">🎟️</span>
-                    </div>
-                    <div className="text-left">
-                      <div className="font-semibold">Free</div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400">$0.00</div>
-                    </div>
+                    <div className="p-2 rounded-lg bg-gray-100 dark:bg-gray-800"><span className="text-2xl">🎟️</span></div>
+                    <div><div className="font-semibold">Free</div><div className="text-sm text-gray-600">₦0.00</div></div>
                   </div>
                 </label>
               </div>
-              
               <div>
-                <input
-                  type="radio"
-                  id="paid-ticket"
-                  name="ticket-price-type"
-                  checked={!formData.isFree}
-                  onChange={() => handlePriceTypeChange(false)}
-                  className="hidden"
-                />
-                <label
-                  htmlFor="paid-ticket"
-                  className={`block p-4 border-2 rounded-xl cursor-pointer transition-all ${
-                    !formData.isFree
-                      ? 'border-primary bg-primary/5'
-                      : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
-                  }`}
-                >
+                <input type="radio" id="paid-ticket" name="ticket-price-type" checked={!formData.isFree} onChange={() => handlePriceTypeChange(false)} className="hidden" />
+                <label htmlFor="paid-ticket" className={`block p-4 border-2 rounded-xl cursor-pointer transition-all ${
+                  !formData.isFree ? 'border-primary bg-primary/5' : 'border-gray-200 dark:border-gray-700'
+                }`}>
                   <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-lg ${!formData.isFree ? 'bg-blue-500/10' : 'bg-gray-100 dark:bg-gray-800'}`}>
-                      <span className="text-2xl">💰</span>
-                    </div>
-                    <div className="text-left">
-                      <div className="font-semibold">Paid</div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400">Enter amount</div>
-                    </div>
+                    <div className="p-2 rounded-lg bg-gray-100 dark:bg-gray-800"><span className="text-2xl">💰</span></div>
+                    <div><div className="font-semibold">Paid</div><div className="text-sm text-gray-600">Enter amount</div></div>
                   </div>
                 </label>
               </div>
             </div>
 
-            {/* Price Input (shown when Paid is selected) */}
             {showPriceInput && (
               <div className="mt-4 space-y-4">
-                <div className="text-sm font-medium mb-2">Ticket Price Details</div>
                 <div className="grid grid-cols-3 gap-3">
                   <div className="col-span-2">
                     <div className="relative">
                       <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 font-medium">
-                        {
-                          CURRENCIES.find(c => c.value === formData.currency)?.symbol || '$'
-                        }
+                        {CURRENCIES.find(c => c.value === formData.currency)?.symbol || '₦'}
                       </div>
                       <input
                         type="number"
@@ -1502,9 +1104,9 @@ export default function CreateTicketPage() {
                         onChange={(e) => setFormData(prev => ({ ...prev, priceAmount: e.target.value }))}
                         placeholder="0.00"
                         min="0"
-                        step="0.01"
-                        required={!formData.isFree}
-                        className="w-full pl-10 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
+                        step="100"
+                        required
+                        className="w-full pl-10 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl"
                       />
                     </div>
                   </div>
@@ -1512,125 +1114,71 @@ export default function CreateTicketPage() {
                     <select
                       value={formData.currency}
                       onChange={(e) => setFormData(prev => ({ ...prev, currency: e.target.value }))}
-                      className="w-full px-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary appearance-none"
+                      className="w-full px-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl"
                     >
-                      {CURRENCIES.map((currency) => (
-                        <option key={currency.value} value={currency.value}>
-                          {currency.label}
-                        </option>
+                      {CURRENCIES.map((c) => (
+                        <option key={c.value} value={c.value}>{c.label}</option>
                       ))}
                     </select>
                   </div>
                 </div>
-                <div className="mt-1 text-sm text-gray-500">Per ticket</div>
                 
-                {/* Ticket Type Dropdown (only for paid events) */}
                 <div>
-                  <div className="text-sm font-medium mb-2">Ticket Type</div>
-                  <div className="relative">
-                    <Tag className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <select
-                      value={formData.ticketType}
-                      onChange={(e) => setFormData(prev => ({ ...prev, ticketType: e.target.value }))}
-                      required={!formData.isFree}
-                      className="w-full pl-10 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary appearance-none"
-                    >
-                      {TICKET_TYPES.map((type) => (
-                        <option key={type.value} value={type.value}>
-                          {type.label}
-                        </option>
-                      ))}
-                    </select>
-                    <div className="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
-                      <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </div>
-                  </div>
+                  <label className="block text-sm font-medium mb-2">Ticket Type</label>
+                  <select
+                    value={formData.ticketType}
+                    onChange={(e) => setFormData(prev => ({ ...prev, ticketType: e.target.value }))}
+                    className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl"
+                  >
+                    {TICKET_TYPES.map((type) => (
+                      <option key={type.value} value={type.value}>{type.label}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
             )}
           </div>
 
-          {/* 7. Ticket Capacity */}
+          {/* Capacity */}
           <div>
-            <label className="block text-sm font-medium mb-3">
-              Ticket Capacity
-            </label>
-            
-            {/* Capacity Toggle */}
+            <label className="block text-sm font-medium mb-3">Ticket Capacity</label>
             <div className="mb-4">
-              <label className="flex items-center gap-3 p-4 border border-gray-200 dark:border-gray-700 rounded-xl cursor-pointer hover:border-gray-300 dark:hover:border-gray-600 transition-all">
+              <label className="flex items-center gap-3 p-4 border border-gray-200 dark:border-gray-700 rounded-xl cursor-pointer">
                 <input
                   type="checkbox"
                   checked={formData.unlimitedCapacity}
                   onChange={(e) => handleCapacityToggle(e.target.checked)}
-                  className="w-5 h-5 rounded border-gray-300 text-primary focus:ring-primary"
+                  className="w-5 h-5 rounded border-gray-300 text-primary"
                 />
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-gray-100 dark:bg-gray-800 rounded-lg">
-                    <span className="text-xl font-bold">∞</span>
-                  </div>
-                  <div className="text-left">
-                    <div className="font-semibold">Unlimited tickets</div>
-                    <div className="text-sm text-gray-600 dark:text-gray-400">No capacity limit</div>
-                  </div>
-                </div>
+                <div className="p-2 bg-gray-100 dark:bg-gray-800 rounded-lg"><span className="text-xl font-bold">∞</span></div>
+                <div><div className="font-semibold">Unlimited tickets</div><div className="text-sm text-gray-600">No capacity limit</div></div>
               </label>
             </div>
-
-            {/* Capacity Input (shown when unlimited is unchecked) */}
             {showCapacityInput && (
-              <div className="mt-4">
-                <div className="relative">
-                  <Users className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                  <input
-                    type="number"
-                    value={formData.capacity}
-                    onChange={(e) => setFormData(prev => ({ ...prev, capacity: e.target.value }))}
-                    placeholder="Maximum number of tickets"
-                    min="1"
-                    required={!formData.unlimitedCapacity}
-                    className="w-full pl-10 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
-                  />
-                </div>
+              <div className="relative">
+                <Users className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <input
+                  type="number"
+                  value={formData.capacity}
+                  onChange={(e) => setFormData(prev => ({ ...prev, capacity: e.target.value }))}
+                  placeholder="Maximum number of tickets"
+                  min="1"
+                  required
+                  className="w-full pl-10 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl"
+                />
               </div>
             )}
           </div>
 
-          {/* 8. Event Image */}
+          {/* Event Image */}
           <div>
-            <label className="block text-sm font-medium mb-3">
-              Event Image
-            </label>
-            
-            {/* Upload Area */}
-            <div className="border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-xl p-8 text-center hover:border-primary transition-colors">
-              <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handleImageUpload}
-                accept="image/*"
-                className="hidden"
-              />
-              
+            <label className="block text-sm font-medium mb-3">Event Image</label>
+            <div className="border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-xl p-8 text-center">
+              <input type="file" id="image-upload" onChange={handleImageUpload} accept="image/*" className="hidden" />
               {formData.imagePreview ? (
                 <div className="relative">
-                  <img
-                    src={formData.imagePreview}
-                    alt="Event preview"
-                    className="w-full max-w-md mx-auto h-64 object-cover rounded-lg"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFormData(prev => ({ ...prev, image: null, imagePreview: '' }))
-                      if (fileInputRef.current) fileInputRef.current.value = ''
-                    }}
-                    className="absolute top-2 right-2 p-2 bg-red-500 text-white rounded-full hover:bg-red-600"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
+                  <img src={formData.imagePreview} alt="Event preview" className="w-full max-w-md mx-auto h-64 object-cover rounded-lg" />
+                  <button type="button" onClick={() => setFormData(prev => ({ ...prev, image: null, imagePreview: '' }))} className="absolute top-2 right-2 p-2 bg-red-500 text-white rounded-full">✕</button>
                 </div>
               ) : (
                 <>
@@ -1639,11 +1187,7 @@ export default function CreateTicketPage() {
                   </div>
                   <p className="font-medium mb-1">Upload Event Image</p>
                   <p className="text-sm text-gray-500">PNG, JPG, or GIF • Max 5MB</p>
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="mt-4 px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
-                  >
+                  <button type="button" onClick={() => document.getElementById('image-upload')?.click()} className="mt-4 px-6 py-2 bg-primary text-white rounded-lg">
                     Choose Image
                   </button>
                 </>
@@ -1651,32 +1195,13 @@ export default function CreateTicketPage() {
             </div>
           </div>
 
-          {/* Submit Buttons */}
+          {/* Submit */}
           <div className="flex gap-4 pt-8">
-            <button
-              type="button"
-              onClick={() => router.back()}
-              className="flex-1 py-4 border-2 border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-xl font-semibold hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-              disabled={isLoading}
-            >
+            <button type="button" onClick={() => router.back()} className="flex-1 py-4 border-2 border-gray-300 rounded-xl font-semibold" disabled={isLoading}>
               Cancel
             </button>
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="flex-1 py-4 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                  Creating...
-                </>
-              ) : (
-                <>
-                  <Save className="h-5 w-5" />
-                  Create Event
-                </>
-              )}
+            <button type="submit" disabled={isLoading} className="flex-1 py-4 bg-primary text-white rounded-xl font-semibold disabled:opacity-50 flex items-center justify-center gap-2">
+              {isLoading ? <><Loader2 className="h-5 w-5 animate-spin" /> Creating...</> : <><Save className="h-5 w-5" /> Create Event</>}
             </button>
           </div>
         </form>
