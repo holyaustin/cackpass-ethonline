@@ -74,6 +74,12 @@ PAYSTACK_SECRET_KEY=your_paystack_key
 # Smart contracts (get from deployment)
 NEXT_PUBLIC_CACKPASS_CORE_ADDRESS=0x...
 NEXT_PUBLIC_TICKET_MARKET_ADDRESS=0x...
+
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+
+ONRAMP1_URL=
+
+ONRAMP2_URL=
 ```
 
 ### 3. Get API keys:
