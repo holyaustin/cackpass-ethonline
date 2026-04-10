@@ -89,21 +89,15 @@ const getSafeAvatarUrl = (avatar?: string) => {
   return '/cackpas.jpg'
 }
 
-// Helper function to extract wallet address from Privy user
-function getWalletAddressFromUser(user: any): string | null {
-  if (!user) return null
-  if (user.wallet?.address && typeof user.wallet.address === 'string') {
-    return user.wallet.address
+// Helper function to get auth token from Privy
+const getAuthToken = async (getAccessToken: any) => {
+  try {
+    const token = await getAccessToken()
+    return token
+  } catch (error) {
+    console.error('Error getting access token:', error)
+    return null
   }
-  const linkedAccounts = user.linkedAccounts || []
-  const embeddedWallet = linkedAccounts.find(
-    (acc: any) => acc.type === 'wallet' && acc.walletClientType === 'privy'
-  )
-  if (embeddedWallet?.address) return embeddedWallet.address
-  for (const account of linkedAccounts) {
-    if (account.type === 'wallet' && account.address) return account.address
-  }
-  return null
 }
 
 export default function EventPage() {
@@ -117,7 +111,7 @@ export default function EventPage() {
 function EventPageContent() {
   const params = useParams()
   const router = useRouter()
-  const { authenticated, ready, user, getAccessToken } = usePrivy()
+  const { authenticated, ready, user, getAccessToken, logout } = usePrivy()
   
   const [event, setEvent] = useState<EventDataWithId | null>(null)
   const [ticketTypes, setTicketTypes] = useState<TicketTypeData[]>([])
@@ -129,18 +123,9 @@ function EventPageContent() {
   const [isFavorite, setIsFavorite] = useState(false)
   const [isGettingFreeTicket, setIsGettingFreeTicket] = useState(false)
   const [isProcessingPayment, setIsProcessingPayment] = useState(false)
-  const [walletAddress, setWalletAddress] = useState<string | null>(null)
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'paystack' | 'crypto'>('paystack')
   
   const eventId = params.id as string
-
-  // Extract wallet address from user
-  useEffect(() => {
-    if (authenticated && ready && user) {
-      const address = getWalletAddressFromUser(user)
-      setWalletAddress(address)
-    }
-  }, [authenticated, ready, user])
 
   useEffect(() => {
     const fetchEventData = async () => {
@@ -224,7 +209,8 @@ function EventPageContent() {
       
       const token = await getAccessToken()
       if (!token) {
-        toast.error('Authentication required')
+        toast.error('Authentication required. Please sign in again.')
+        router.push(`/?redirect=/events/${eventId}`)
         return
       }
 
@@ -243,6 +229,13 @@ function EventPageContent() {
       })
 
       const data = await response.json()
+
+      if (response.status === 401) {
+        toast.error('Session expired. Please sign in again.')
+        logout()
+        router.push(`/?redirect=/events/${eventId}`)
+        return
+      }
 
       if (!response.ok) {
         throw new Error(data.error || 'Failed to get free ticket')
@@ -279,9 +272,12 @@ function EventPageContent() {
       
       const token = await getAccessToken()
       if (!token) {
-        toast.error('Authentication required')
+        toast.error('Authentication required. Please sign in again.')
+        router.push(`/?redirect=/events/${eventId}`)
         return
       }
+
+      console.log('🔑 [DEBUG] Token obtained, length:', token.length)
 
       // Initialize transaction from backend
       const response = await fetch('/api/payments/paystack/initialize', {
@@ -301,9 +297,19 @@ function EventPageContent() {
 
       const data = await response.json()
 
+      if (response.status === 401) {
+        console.error('🔴 [DEBUG] Auth error:', data)
+        toast.error('Session expired. Please sign in again.')
+        logout()
+        router.push(`/?redirect=/events/${eventId}`)
+        return
+      }
+
       if (!response.ok) {
         throw new Error(data.message || data.error || 'Failed to initialize payment')
       }
+
+      console.log('💰 [DEBUG] Paystack init response:', data)
 
       // Initialize Paystack Popup
       if (window.PaystackPop && data.access_code) {
@@ -323,7 +329,6 @@ function EventPageContent() {
               
               if (verifyData.success) {
                 toast.success('Payment successful! Your tickets have been purchased. Check your email for details.')
-                // Redirect to tickets page after 2 seconds
                 setTimeout(() => {
                   router.push(`/dashboard/tickets?payment=success`)
                 }, 2000)
@@ -605,7 +610,7 @@ function EventPageContent() {
                           <div className="flex-1">
                             <div className="flex flex-wrap items-center justify-between mb-3">
                               <div><h3 className="font-semibold text-lg mb-1">{ticketType.name}</h3><div className="flex items-center gap-2"><span className="text-sm text-gray-600">{ticketType.category}</span>{ticketType.maxSupply > 0 && <span className="text-sm">• {available} of {ticketType.maxSupply} left</span>}{ticketType.maxSupply === 0 && <span className="text-sm">• Unlimited</span>}</div></div>
-                              <div className="text-right"><div className="text-2xl font-bold text-primary">{event.isFree ? 'FREE' : `${event.currency} ${ticketType.price}`}</div>{!event.isFree && <div className="text-sm text-gray-600">per ticket</div>}</div>
+                              <div className="text-right"><div className="text-2xl font-bold text-primary">{event.isFree ? 'FREE' : `₦${ticketType.price}`}</div>{!event.isFree && <div className="text-sm text-gray-600">per ticket</div>}</div>
                             </div>
                             {ticketType.description && <p className="text-gray-600 text-sm mb-3">{ticketType.description}</p>}
                           </div>
@@ -634,11 +639,11 @@ function EventPageContent() {
                       <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-900 rounded-xl">
                         <div className="flex justify-between items-start mb-4">
                           <div><h3 className="font-semibold mb-1">{selectedTicketType.name}</h3><p className="text-sm text-gray-600">{selectedTicketType.category}</p></div>
-                          <div className="text-right"><div className="text-2xl font-bold text-primary">{event.isFree ? 'FREE' : `${event.currency} ${selectedTicketType.price}`}</div><div className="text-sm text-gray-600">per ticket</div></div>
+                          <div className="text-right"><div className="text-2xl font-bold text-primary">{event.isFree ? 'FREE' : `₦${selectedTicketType.price}`}</div><div className="text-sm text-gray-600">per ticket</div></div>
                         </div>
                         <div className="flex items-center justify-between">
                           <div><p className="text-sm text-gray-600 mb-2">Quantity</p><div className="flex items-center gap-3"><button onClick={() => handleQuantityChange(-1)} disabled={selectedQuantity <= 1} className="w-10 h-10 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-100 disabled:opacity-50"><span className="text-lg">-</span></button><span className="text-xl font-semibold w-12 text-center">{selectedQuantity}</span><button onClick={() => handleQuantityChange(1)} className="w-10 h-10 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-100"><span className="text-lg">+</span></button></div></div>
-                          <div className="text-right"><p className="text-sm text-gray-600 mb-1">Total</p><div className="text-3xl font-bold text-primary">{event.isFree ? 'FREE' : `${event.currency} ${getTotalPrice()}`}</div></div>
+                          <div className="text-right"><p className="text-sm text-gray-600 mb-1">Total</p><div className="text-3xl font-bold text-primary">{event.isFree ? 'FREE' : `₦${getTotalPrice()}`}</div></div>
                         </div>
                       </div>
                     )}
@@ -686,7 +691,7 @@ function EventPageContent() {
                             className="w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-3 text-lg bg-green-600 hover:bg-green-700 text-white disabled:opacity-50 transition-all duration-200"
                           >
                             {isProcessingPayment ? <Loader2 className="h-5 w-5 animate-spin" /> : <CreditCard className="h-5 w-5" />}
-                            {isProcessingPayment ? 'Processing...' : `Pay with Card - $${totalPrice}`}
+                            {isProcessingPayment ? 'Processing...' : `Pay with Card - ₦${totalPrice}`}
                           </button>
                         )}
                         
