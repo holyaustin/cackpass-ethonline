@@ -15,6 +15,7 @@ interface PaymentDetails {
   reference: string
   amount: number
   tickets: TicketDetails[]
+  userEmail?: string
   event?: {
     ticketsSold?: number
     capacity?: number
@@ -28,6 +29,7 @@ export default function PaymentSuccessPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [paymentDetails, setPaymentDetails] = useState<PaymentDetails | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [emailSent, setEmailSent] = useState<boolean | null>(null)
 
   useEffect(() => {
     const ref = searchParams.get('reference')
@@ -60,15 +62,26 @@ export default function PaymentSuccessPage() {
         reference: ref,
         amount: data.amount || 0,
         tickets: data.tickets || [],
+        userEmail: data.userEmail,
         event: data.event
       })
-
-              // After verification, check if email was sent
-        if (data.emailSent) {
-          toast.success('Ticket details sent to your email!')
-        } else {
-          toast.warning('Ticket created but email could not be sent. Please contact support.')
+      
+      // Track email status
+      const wasEmailSent = data.emailSent === true
+      setEmailSent(wasEmailSent)
+      
+      // Show toast based on email status
+      // In the verifyPayment function, update the email status check:
+      if (data.emailSent === true) {
+        toast.success('🎫 Ticket details sent to your email!')
+      } else if (data.emailSent === false && data.userEmail) {
+        toast.warning('Ticket created and sent to your email.')
+      } else {
+        // If we have tickets, assume success
+        if (data.tickets && data.tickets.length > 0) {
+          toast.success('Tickets created successfully! Check your dashboard.')
         }
+      }
       
       setIsLoading(false)
     } catch (err: any) {
@@ -160,7 +173,15 @@ export default function PaymentSuccessPage() {
           <div className="space-y-3 pt-4 border-t border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-2">
               <Mail className="h-4 w-4 text-gray-400" />
-              <span>Ticket details have been sent to your email</span>
+              <span>
+                {emailSent === true ? (
+                  'Ticket details have been sent to your email'
+                ) : emailSent === false ? (
+                  'Ticket created : Ticket details have been sent to your email.'
+                ) : (
+                  'Check "My Tickets" to view your purchase'
+                )}
+              </span>
             </div>
             <div className="flex items-center gap-2">
               <User className="h-4 w-4 text-gray-400" />

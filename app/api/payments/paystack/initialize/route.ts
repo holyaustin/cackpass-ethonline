@@ -8,8 +8,16 @@ export async function POST(request: NextRequest) {
     // Parse request
     const { eventId, ticketTypeId, quantity, amount, email, userName } = await request.json();
 
+    console.log('📝 Initialize Payment Request:', { eventId, ticketTypeId, quantity, amount, email, userName });
+
     if (!eventId || !ticketTypeId || !quantity || !amount || !email) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return NextResponse.json({ error: 'Invalid email format' }, { status: 400 });
     }
 
     await connectDB();
@@ -170,7 +178,8 @@ export async function POST(request: NextRequest) {
       }
     });
 
-    // Create payment record
+    // Create payment record with complete metadata
+// When creating payment record, ensure customerEmail is set
     await Payment.create({
       paymentMethod: 'paystack',
       userId: user._id,
@@ -180,17 +189,21 @@ export async function POST(request: NextRequest) {
       ticketTypeId: realTicketTypeId,
       paymentStatus: 'pending',
       paymentReference: reference,
-      customerEmail: email,
+      customerEmail: email,  // CRITICAL: This must be set
       metadata: { 
         orderId: order._id, 
         userName: userName || email.split('@')[0],
         isVirtual,
         eventTitle: event.title,
-        ticketName
+        ticketName,
+        eventVenue: event.venue || 'Online Event',
+        eventStartDate: event.startDate,
+        eventEndDate: event.endDate
       }
     });
 
     console.log(`✅ Payment initialized successfully. Reference: ${reference}`);
+    console.log(`📧 Email will be sent to: ${email}`);
 
     return NextResponse.json({
       success: true,
