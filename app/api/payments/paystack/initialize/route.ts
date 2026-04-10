@@ -1,73 +1,115 @@
-//app/api/payments/paystack/initialize/route.ts
-
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/database/connection';
-import { Payment, TicketType, Order } from '@/lib/database/models';
+import { Payment, TicketType, Order, Event, User } from '@/lib/database/models';
+import mongoose from 'mongoose';
 
 export async function POST(request: NextRequest) {
   try {
-    // 1. Get token from header
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader?.startsWith('Bearer ')) {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
-    }
-
-    const token = authHeader.substring(7);
-
-    // 2. Verify token with Privy API (no SDK needed)
-    const privyAppId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
-    const privyAppSecret = process.env.PRIVY_APP_SECRET;
-
-    if (!privyAppId || !privyAppSecret) {
-      console.error('Privy credentials missing');
-      return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
-    }
-
-    // Call Privy's auth endpoint directly
-    const authResponse = await fetch('https://auth.privy.io/api/v1/auth/verify', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Basic ${Buffer.from(`${privyAppId}:${privyAppSecret}`).toString('base64')}`
-      },
-      body: JSON.stringify({ token })
-    });
-
-    if (!authResponse.ok) {
-      return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 });
-    }
-
-    const authData = await authResponse.json();
-    const userId = authData.userId;
-
-    if (!userId) {
-      return NextResponse.json({ error: 'User not found' }, { status: 401 });
-    }
-
-    // 3. Parse request
-    const { eventId, ticketTypeId, quantity, amount, email } = await request.json();
+    // Parse request
+    const { eventId, ticketTypeId, quantity, amount, email, userName } = await request.json();
 
     if (!eventId || !ticketTypeId || !quantity || !amount || !email) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // 4. Check ticket availability
     await connectDB();
-    const ticketType = await TicketType.findById(ticketTypeId);
     
-    if (!ticketType) {
-      return NextResponse.json({ error: 'Ticket type not found' }, { status: 404 });
+    // Find or create user by email
+    let user = await User.findOne({ email: email });
+    
+    if (!user) {
+      user = await User.create({
+        email: email,
+        loginMethod: 'email',
+        privyId: `guest-${Date.now()}`,
+        isOrganizer: false,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
+      console.log(`📝 Created new user for email: ${email} with ID: ${user._id}`);
+    } else {
+      console.log(`📝 Found existing user for email: ${email} with ID: ${user._id}`);
+    }
+    
+    // CRITICAL: Get fresh event data - use lean() to get plain object
+    const event = await Event.findById(eventId).lean();
+    if (!event) {
+      return NextResponse.json({ error: 'Event not found' }, { status: 404 });
+    }
+    
+    console.log(`📋 Event: ${event.title}`);
+    console.log(`   - isFree: ${event.isFree}`);
+    console.log(`   - price: ${event.price}`);
+    console.log(`   - capacity: ${event.capacity}`);
+    console.log(`   - unlimitedCapacity: ${event.unlimitedCapacity}`);
+    console.log(`   - ticketsSold: ${event.ticketsSold || 0}`);
+    
+    let ticketPrice = amount / quantity;
+    let ticketName = 'Ticket';
+    let isVirtual = false;
+    let realTicketTypeId = null;
+    let ticketType = null;
+    
+    // Check if this is a virtual ticket (starts with "virtual_")
+    const isVirtualTicket = ticketTypeId.toString().startsWith('virtual_');
+    
+    if (!isVirtualTicket && mongoose.Types.ObjectId.isValid(ticketTypeId)) {
+      // Real ticket type from database
+      realTicketTypeId = new mongoose.Types.ObjectId(ticketTypeId);
+      ticketType = await TicketType.findById(realTicketTypeId);
+      
+      if (!ticketType) {
+        return NextResponse.json({ error: 'Ticket type not found' }, { status: 404 });
+      }
+      
+      console.log(`🎫 Ticket Type: ${ticketType.name}`);
+      console.log(`   - maxSupply: ${ticketType.maxSupply}`);
+      console.log(`   - currentSupply: ${ticketType.currentSupply}`);
+      console.log(`   - price: ${ticketType.price}`);
+      
+      // Check availability for real ticket type
+      const available = ticketType.maxSupply - ticketType.currentSupply;
+      if (available < quantity) {
+        return NextResponse.json({ error: `Only ${available} tickets available for ${ticketType.name}` }, { status: 400 });
+      }
+      
+      ticketPrice = ticketType.price;
+      ticketName = ticketType.name;
+      
+      // Update ticket type supply
+      ticketType.currentSupply += quantity;
+      await ticketType.save();
+      console.log(`✅ UPDATED: Ticket type ${ticketType.name} currentSupply: ${ticketType.currentSupply}/${ticketType.maxSupply}`);
+      
+    } else {
+      // Virtual ticket - use event data
+      isVirtual = true;
+      ticketPrice = event.isFree ? 0 : event.price;
+      ticketName = event.isFree ? 'Free Admission' : 'General Admission';
+      realTicketTypeId = event._id;
+      console.log(`🎫 Virtual ticket for event: ${event.title}, price: ${ticketPrice}`);
+    }
+    
+    // DO NOT update ticketsSold here - only in verify endpoint
+    // This prevents double counting and ensures consistency
+    
+    // Verify amount matches ticket price
+    const expectedAmount = ticketPrice * quantity;
+    if (Math.abs(amount - expectedAmount) > 0.01) {
+      // Rollback if amount mismatch
+      if (!isVirtual && ticketType) {
+        ticketType.currentSupply -= quantity;
+        await ticketType.save();
+      }
+      return NextResponse.json({ 
+        error: `Amount mismatch. Expected: ${expectedAmount.toFixed(2)}` 
+      }, { status: 400 });
     }
 
-    const available = ticketType.maxSupply - ticketType.currentSupply;
-    if (available < quantity) {
-      return NextResponse.json({ error: `Only ${available} tickets available` }, { status: 400 });
-    }
-
-    // 5. Create payment reference
+    // Create payment reference
     const reference = `CACK-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
 
-    // 6. Initialize Paystack
+    // Initialize Paystack
     const paystackSecretKey = process.env.PAYSTACK_SECRET_KEY;
     const paystackResponse = await fetch('https://api.paystack.co/transaction/initialize', {
       method: 'POST',
@@ -78,43 +120,77 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         email,
         amount: Math.round(amount * 100),
-        currency: 'USD',
+        currency: 'NGN',
         reference,
-        callback_url: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/tickets?payment=success`,
-        metadata: { eventId, ticketTypeId, quantity, userId }
+        callback_url: `${process.env.NEXT_PUBLIC_APP_URL}/payment/success?reference=${reference}`,
+        metadata: { 
+          eventId, 
+          ticketTypeId: realTicketTypeId?.toString(),
+          quantity, 
+          userName,
+          isVirtual,
+          userEmail: email,
+          userId: user._id.toString(),
+          custom_fields: [
+            { display_name: "Event", variable_name: "event", value: event.title },
+            { display_name: "Ticket Type", variable_name: "ticket_type", value: ticketName },
+            { display_name: "Quantity", variable_name: "quantity", value: quantity.toString() }
+          ]
+        }
       })
     });
 
     const paystackData = await paystackResponse.json();
 
     if (!paystackData.status) {
+      // Rollback on Paystack error
+      if (!isVirtual && ticketType) {
+        ticketType.currentSupply -= quantity;
+        await ticketType.save();
+      }
       return NextResponse.json({ error: paystackData.message }, { status: 400 });
     }
 
-    // 7. Create order
+    // Create order
     const order = await Order.create({
-      userId,
+      userId: user._id,
       eventId,
-      ticketTypeId,
+      ticketTypeId: realTicketTypeId,
       quantity,
       totalAmount: amount,
       paymentMethod: 'paystack',
       paymentStatus: 'pending',
-      paymentReference: reference
+      paymentReference: reference,
+      customerEmail: email,
+      customerName: userName || email.split('@')[0],
+      metadata: {
+        isVirtual,
+        ticketName,
+        eventTitle: event.title
+      }
     });
 
-    // 8. Create payment record
+    // Create payment record
     await Payment.create({
       paymentMethod: 'paystack',
-      userId,
+      userId: user._id,
       eventId,
       amount,
       quantity,
-      ticketTypeId,
+      ticketTypeId: realTicketTypeId,
       paymentStatus: 'pending',
       paymentReference: reference,
-      metadata: { orderId: order._id }
+      customerEmail: email,
+      metadata: { 
+        orderId: order._id, 
+        userName: userName || email.split('@')[0],
+        isVirtual,
+        eventTitle: event.title,
+        ticketName
+      }
     });
+
+    console.log(`✅ Payment initialized successfully. Reference: ${reference}`);
 
     return NextResponse.json({
       success: true,
@@ -124,7 +200,7 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error('Paystack error:', error);
+    console.error('❌ Paystack error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

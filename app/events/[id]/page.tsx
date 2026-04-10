@@ -1,16 +1,13 @@
-//app/events/[id]/page.tsx
-
 'use client'
 
 import { useState, useEffect, Suspense } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { 
   Calendar, MapPin, Clock, Users, Ticket, 
-  Share2, Heart, ChevronLeft, ChevronRight,
-  Star, Tag, Globe, Shield, QrCode, Loader2,
-  ShoppingCart, CreditCard, Wallet, CheckCircle,
-  AlertCircle, ArrowRight, ExternalLink, User,
-  Building, Video, Mail, Check
+  Share2, Heart, ChevronLeft, Star, Tag, 
+  Globe, Shield, QrCode, Loader2,
+  CreditCard, Wallet, CheckCircle,
+  AlertCircle, User, Mail, Check
 } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
@@ -44,11 +41,7 @@ interface EventDataWithId {
   startDate: string
   endDate: string
   venue: string
-  location: {
-    address?: string
-    lat?: number
-    lng?: number
-  }
+  location: { address?: string; lat?: number; lng?: number }
   isVirtual: boolean
   isFree: boolean
   price: number
@@ -56,48 +49,37 @@ interface EventDataWithId {
   category: string
   imageCid?: string
   bannerImage?: string
-  onChainId?: number
   ticketType: string
   unlimitedCapacity: boolean
   capacity?: number
-  organizer: {
-    name: string
-    avatar: string
-    _id?: string
-  }
+  ticketsSold?: number
+  organizer: { name: string; avatar: string; _id?: string }
   attendees: number
   rating: number
 }
 
-const DEFAULT_ORGANIZER = {
-  name: 'Event Organizer',
-  avatar: '/cackpas.jpg'
-}
+const DEFAULT_ORGANIZER = { name: 'Event Organizer', avatar: '/cackpas.jpg' }
 
 const getSafeOrganizer = (organizer?: { name?: string; avatar?: string }) => {
   if (!organizer) return DEFAULT_ORGANIZER
-  return {
-    name: organizer.name || DEFAULT_ORGANIZER.name,
-    avatar: organizer.avatar || DEFAULT_ORGANIZER.avatar
-  }
+  return { name: organizer.name || DEFAULT_ORGANIZER.name, avatar: organizer.avatar || DEFAULT_ORGANIZER.avatar }
 }
 
 const getSafeAvatarUrl = (avatar?: string) => {
   if (!avatar || avatar.trim() === '') return '/cackpas.jpg'
   if (avatar.startsWith('http') || avatar.startsWith('/')) return avatar
-  if (!avatar.startsWith('/')) return `/${avatar}`
-  return '/cackpas.jpg'
+  return `/${avatar}`
 }
 
-// Helper function to get auth token from Privy
-const getAuthToken = async (getAccessToken: any) => {
-  try {
-    const token = await getAccessToken()
-    return token
-  } catch (error) {
-    console.error('Error getting access token:', error)
-    return null
+// Get wallet address from Privy user
+const getWalletAddress = (user: any): string | null => {
+  if (!user) return null
+  if (user.wallet?.address) return user.wallet.address
+  const linkedAccounts = user.linkedAccounts || []
+  for (const account of linkedAccounts) {
+    if (account.type === 'wallet' && account.address) return account.address
   }
+  return null
 }
 
 export default function EventPage() {
@@ -111,7 +93,7 @@ export default function EventPage() {
 function EventPageContent() {
   const params = useParams()
   const router = useRouter()
-  const { authenticated, ready, user, getAccessToken, logout } = usePrivy()
+  const { user, authenticated, ready, login } = usePrivy()
   
   const [event, setEvent] = useState<EventDataWithId | null>(null)
   const [ticketTypes, setTicketTypes] = useState<TicketTypeData[]>([])
@@ -124,26 +106,45 @@ function EventPageContent() {
   const [isGettingFreeTicket, setIsGettingFreeTicket] = useState(false)
   const [isProcessingPayment, setIsProcessingPayment] = useState(false)
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'paystack' | 'crypto'>('paystack')
+  const [userEmail, setUserEmail] = useState<string | null>(null)
+  const [isFetchingEmail, setIsFetchingEmail] = useState(false)
   
   const eventId = params.id as string
+  const walletAddress = getWalletAddress(user)
+  const isLoggedIn = authenticated && ready
+
+  // Fetch user email from database when logged in
+  useEffect(() => {
+    const fetchUserEmail = async () => {
+      if (!isLoggedIn || !walletAddress) return
+      
+      setIsFetchingEmail(true)
+      try {
+        const response = await fetch(`/api/auth/user?walletAddress=${walletAddress}`)
+        if (response.ok) {
+          const data = await response.json()
+          if (data.user?.email) {
+            setUserEmail(data.user.email)
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching user email:', error)
+      } finally {
+        setIsFetchingEmail(false)
+      }
+    }
+    fetchUserEmail()
+  }, [isLoggedIn, walletAddress])
 
   useEffect(() => {
     const fetchEventData = async () => {
       if (!eventId) return
-      
       try {
         setIsLoading(true)
-        
         const eventResponse = await fetch(`/api/events/${eventId}`)
-        if (!eventResponse.ok) {
-          throw new Error('Failed to fetch event')
-        }
-        
+        if (!eventResponse.ok) throw new Error('Failed to fetch event')
         const eventData = await eventResponse.json()
-        
-        if (!eventData.success || !eventData.event) {
-          throw new Error('Event not found')
-        }
+        if (!eventData.success || !eventData.event) throw new Error('Event not found')
         
         const transformedEvent = {
           ...eventData.event,
@@ -151,24 +152,19 @@ function EventPageContent() {
           _id: eventData.event._id,
           organizer: getSafeOrganizer(eventData.event.organizer)
         }
-        
         setEvent(transformedEvent)
         
         setIsLoadingTickets(true)
         const ticketsResponse = await fetch(`/api/events/${eventId}/tickets`)
-        
         if (ticketsResponse.ok) {
           const ticketsData = await ticketsResponse.json()
           const ticketTypesList = ticketsData.ticketTypes || []
           setTicketTypes(ticketTypesList)
-          if (ticketTypesList.length > 0) {
-            setSelectedTicketType(ticketTypesList[0])
-          }
+          if (ticketTypesList.length > 0) setSelectedTicketType(ticketTypesList[0])
         }
         
         const favorites = JSON.parse(localStorage.getItem('cackpass_favorites') || '[]')
         setIsFavorite(favorites.includes(eventId))
-        
       } catch (error) {
         console.error('Error loading event:', error)
         toast.error('Failed to load event details')
@@ -178,11 +174,9 @@ function EventPageContent() {
         setIsLoadingTickets(false)
       }
     }
-
     fetchEventData()
   }, [eventId, router])
 
-  // Load Paystack script
   useEffect(() => {
     if (typeof window !== 'undefined' && !window.PaystackPop) {
       const script = document.createElement('script')
@@ -193,9 +187,15 @@ function EventPageContent() {
   }, [])
 
   const handleGetFreeTicket = async () => {
-    if (!authenticated) {
-      toast.error('Please sign in to get a free ticket')
-      router.push(`/?redirect=/events/${eventId}`)
+    if (!isLoggedIn) {
+      toast.error('Please login to get a free ticket')
+      login()
+      return
+    }
+
+    if (!userEmail) {
+      toast.error('Please complete your profile with an email address first')
+      router.push('/complete-profile')
       return
     }
 
@@ -206,43 +206,22 @@ function EventPageContent() {
 
     try {
       setIsGettingFreeTicket(true)
-      
-      const token = await getAccessToken()
-      if (!token) {
-        toast.error('Authentication required. Please sign in again.')
-        router.push(`/?redirect=/events/${eventId}`)
-        return
-      }
-
-      const requestBody = {
-        eventId: eventId,
-        quantity: selectedQuantity,
-      }
-
       const response = await fetch('/api/tickets/free', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          eventId: eventId,
+          quantity: selectedQuantity,
+          userEmail: userEmail,
+          userName: userEmail.split('@')[0] || 'User'
+        })
       })
-
       const data = await response.json()
-
-      if (response.status === 401) {
-        toast.error('Session expired. Please sign in again.')
-        logout()
-        router.push(`/?redirect=/events/${eventId}`)
-        return
-      }
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to get free ticket')
-      }
-
+      if (!response.ok) throw new Error(data.error || 'Failed to get free ticket')
       if (data.success) {
         toast.success('Free ticket sent to your email! Check your inbox.')
+        // Refresh event data to update ticket count
+        setTimeout(() => window.location.reload(), 2000)
       }
     } catch (error) {
       console.error('Error getting free ticket:', error)
@@ -252,120 +231,95 @@ function EventPageContent() {
     }
   }
 
-  // Pay with Card (Paystack)
-  const handlePayWithCard = async () => {
-    if (!selectedTicketType) {
-      toast.error('Please select a ticket type')
-      return
-    }
-
-    if (!authenticated) {
-      toast.error('Please sign in to continue')
-      router.push(`/?redirect=/events/${eventId}`)
-      return
-    }
-
-    const totalPrice = selectedTicketType.price * selectedQuantity
-    
-    try {
-      setIsProcessingPayment(true)
-      
-      const token = await getAccessToken()
-      if (!token) {
-        toast.error('Authentication required. Please sign in again.')
-        router.push(`/?redirect=/events/${eventId}`)
-        return
-      }
-
-      console.log('🔑 [DEBUG] Token obtained, length:', token.length)
-
-      // Initialize transaction from backend
-      const response = await fetch('/api/payments/paystack/initialize', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          eventId,
-          ticketTypeId: selectedTicketType._id,
-          quantity: selectedQuantity,
-          amount: totalPrice,
-          email: user?.email?.address
-        })
-      })
-
-      const data = await response.json()
-
-      if (response.status === 401) {
-        console.error('🔴 [DEBUG] Auth error:', data)
-        toast.error('Session expired. Please sign in again.')
-        logout()
-        router.push(`/?redirect=/events/${eventId}`)
-        return
-      }
-
-      if (!response.ok) {
-        throw new Error(data.message || data.error || 'Failed to initialize payment')
-      }
-
-      console.log('💰 [DEBUG] Paystack init response:', data)
-
-      // Initialize Paystack Popup
-      if (window.PaystackPop && data.access_code) {
-        const paystack = new window.PaystackPop()
-        
-        paystack.resumeTransaction(data.access_code, {
-          onSuccess: async (transaction: any) => {
-            toast.loading('Verifying payment...')
-            
-            try {
-              const verifyResponse = await fetch(`/api/payments/paystack/verify?reference=${transaction.reference}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-              })
-              const verifyData = await verifyResponse.json()
-              
-              toast.dismiss()
-              
-              if (verifyData.success) {
-                toast.success('Payment successful! Your tickets have been purchased. Check your email for details.')
-                setTimeout(() => {
-                  router.push(`/dashboard/tickets?payment=success`)
-                }, 2000)
-              } else {
-                toast.error('Payment verification failed. Please contact support.')
-              }
-            } catch (verifyError) {
-              toast.dismiss()
-              console.error('Verification error:', verifyError)
-              toast.error('Payment verification failed. Please contact support.')
-            }
-            setIsProcessingPayment(false)
-          },
-          onCancel: () => {
-            toast.info('Payment cancelled')
-            setIsProcessingPayment(false)
-          },
-          onError: (error: any) => {
-            console.error('Paystack error:', error)
-            toast.error('Payment failed. Please try again.')
-            setIsProcessingPayment(false)
-          }
-        })
-      } else if (data.authorization_url) {
-        window.location.href = data.authorization_url
-      } else {
-        throw new Error('No payment URL received')
-      }
-
-    } catch (error) {
-      console.error('Paystack payment error:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to process payment')
-      setIsProcessingPayment(false)
-    }
+const handlePayWithCard = async () => {
+  if (!isLoggedIn) {
+    toast.error('Please login to purchase tickets')
+    login()
+    return
   }
 
-  // Pay with Crypto - Coming Soon
+  if (!userEmail) {
+    toast.error('Please complete your profile with an email address first')
+    router.push('/complete-profile')
+    return
+  }
+
+  if (!selectedTicketType) {
+    toast.error('Please select a ticket type')
+    return
+  }
+
+  const totalPrice = selectedTicketType.price * selectedQuantity
+  
+  try {
+    setIsProcessingPayment(true)
+
+    const response = await fetch('/api/payments/paystack/initialize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        eventId,
+        ticketTypeId: selectedTicketType._id,
+        quantity: selectedQuantity,
+        amount: totalPrice,
+        email: userEmail,
+        userName: userEmail.split('@')[0] || 'User'
+      })
+    })
+
+    const data = await response.json()
+    
+    if (!response.ok) {
+      throw new Error(data.message || data.error || 'Failed to initialize payment')
+    }
+
+    if (window.PaystackPop && data.access_code) {
+      const paystack = new window.PaystackPop()
+      paystack.resumeTransaction(data.access_code, {
+        onSuccess: async (transaction: any) => {
+          toast.loading('Verifying payment...')
+          try {
+            const verifyResponse = await fetch(`/api/payments/paystack/verify?reference=${transaction.reference}`)
+            const verifyData = await verifyResponse.json()
+            toast.dismiss()
+            if (verifyData.success) {
+              toast.success('Payment successful! Redirecting...')
+              // Redirect to payment success page
+              setTimeout(() => {
+                window.location.href = `/payment/success?reference=${transaction.reference}`
+              }, 1500)
+            } else {
+              toast.error('Payment verification failed. Please contact support.')
+            }
+          } catch (verifyError) {
+            toast.dismiss()
+            console.error('Verification error:', verifyError)
+            toast.error('Payment verification failed. Please contact support.')
+          }
+          setIsProcessingPayment(false)
+        },
+        onCancel: () => {
+          toast.info('Payment cancelled')
+          setIsProcessingPayment(false)
+        },
+        onError: (error: any) => {
+          console.error('Paystack error:', error)
+          toast.error('Payment failed. Please try again.')
+          setIsProcessingPayment(false)
+        }
+      })
+    } else if (data.authorization_url) {
+      window.location.href = data.authorization_url
+    } else {
+      throw new Error('No payment URL received')
+    }
+  } catch (error) {
+    console.error('Paystack payment error:', error)
+    toast.error(error instanceof Error ? error.message : 'Failed to process payment')
+    setIsProcessingPayment(false)
+  }
+}
+
   const handlePayWithCrypto = async () => {
     toast.info('🚀 Crypto payments are coming soon! Stay tuned for updates.')
   }
@@ -378,57 +332,50 @@ function EventPageContent() {
   const handleQuantityChange = (change: number) => {
     if (!selectedTicketType) return
     
-    const maxAvailable = selectedTicketType.maxSupply === 0 
-      ? 10 
-      : selectedTicketType.maxSupply - selectedTicketType.currentSupply
+    let maxAvailable = 10
+    if (selectedTicketType._id.toString().startsWith('virtual_') && event) {
+      if (!event.unlimitedCapacity) {
+        maxAvailable = (event.capacity || 0) - (event.ticketsSold || 0)
+      } else {
+        maxAvailable = 10
+      }
+    } else {
+      maxAvailable = selectedTicketType.maxSupply === 0 ? 10 : selectedTicketType.maxSupply - selectedTicketType.currentSupply
+    }
     
     const newQuantity = selectedQuantity + change
-    
     if (newQuantity < 1) {
       toast.error('Minimum quantity is 1')
       return
     }
-    
     if (newQuantity > maxAvailable && maxAvailable > 0) {
       toast.error(`Only ${maxAvailable} tickets available`)
       return
     }
-    
     setSelectedQuantity(newQuantity)
   }
 
   const handleShare = async () => {
     try {
       if (navigator.share) {
-        await navigator.share({
-          title: event?.title || 'Check out this event',
-          text: `Check out "${event?.title}" on CACK-pass`,
-          url: window.location.href,
-        })
+        await navigator.share({ title: event?.title, text: `Check out "${event?.title}" on CACK-pass`, url: window.location.href })
       } else {
         await navigator.clipboard.writeText(window.location.href)
         toast.success('Link copied to clipboard!')
       }
     } catch (error) {
-      if (!(error instanceof Error) || !error.message.includes('AbortError')) {
-        toast.error('Failed to share event')
-      }
+      if (!(error instanceof Error) || !error.message.includes('AbortError')) toast.error('Failed to share event')
     }
   }
 
   const handleFavoriteToggle = () => {
     const favorites = JSON.parse(localStorage.getItem('cackpass_favorites') || '[]')
-    
     if (isFavorite) {
-      const newFavorites = favorites.filter((id: string) => id !== eventId)
-      localStorage.setItem('cackpass_favorites', JSON.stringify(newFavorites))
+      localStorage.setItem('cackpass_favorites', JSON.stringify(favorites.filter((id: string) => id !== eventId)))
       setIsFavorite(false)
       toast.success('Removed from favorites')
     } else {
-      if (favorites.length >= 50) {
-        toast.error('Maximum 50 favorites allowed')
-        return
-      }
+      if (favorites.length >= 50) { toast.error('Maximum 50 favorites allowed'); return }
       favorites.push(eventId)
       localStorage.setItem('cackpass_favorites', JSON.stringify(favorites))
       setIsFavorite(true)
@@ -436,29 +383,43 @@ function EventPageContent() {
     }
   }
 
-  const formatDateTime = (dateString: string, includeTime: boolean = true) => {
+  const formatDateTime = (dateString: string) => {
     if (!dateString) return 'Date TBD'
     try {
       const date = new Date(dateString)
-      if (isNaN(date.getTime())) return 'Invalid date'
-      if (includeTime) return format(date, 'MMM d, yyyy • h:mm a')
-      return format(date, 'MMM d, yyyy')
-    } catch {
-      return 'Invalid date'
-    }
+      return format(date, 'MMM d, yyyy • h:mm a')
+    } catch { return 'Invalid date' }
   }
 
   const getImageUrl = () => {
     if (imageError) return '/placeholder-event.jpg'
     if (event?.imageCid) return `https://gateway.pinata.cloud/ipfs/${event.imageCid}`
-    if (event?.bannerImage && event.bannerImage.startsWith('http')) return event.bannerImage
+    if (event?.bannerImage?.startsWith('http')) return event.bannerImage
     return '/placeholder-event.jpg'
   }
 
   const getAvailableTickets = (ticketType: TicketTypeData) => {
+    // For virtual tickets, use event's capacity and ticketsSold
+    if (ticketType._id.toString().startsWith('virtual_') && event) {
+      if (event.unlimitedCapacity) return 'Unlimited'
+      const remaining = (event.capacity || 0) - (event.ticketsSold || 0)
+      return Math.max(0, remaining)
+    }
+    // For real ticket types
     if (ticketType.maxSupply === 0) return 'Unlimited'
-    const available = ticketType.maxSupply - ticketType.currentSupply
-    return Math.max(0, available)
+    return Math.max(0, ticketType.maxSupply - ticketType.currentSupply)
+  }
+
+  const isTicketAvailable = (ticketType: TicketTypeData) => {
+    // For virtual tickets, check event capacity
+    if (ticketType._id.toString().startsWith('virtual_') && event) {
+      if (event.unlimitedCapacity) return true
+      const remaining = (event.capacity || 0) - (event.ticketsSold || 0)
+      return remaining > 0
+    }
+    // For real ticket types
+    if (ticketType.maxSupply === 0) return true
+    return ticketType.currentSupply < ticketType.maxSupply
   }
 
   const getTotalPrice = () => {
@@ -469,9 +430,7 @@ function EventPageContent() {
   const isPastEvent = event?.endDate ? new Date(event.endDate) < new Date() : false
   const totalPrice = selectedTicketType ? (selectedTicketType.price * selectedQuantity).toFixed(2) : '0.00'
 
-  if (isLoading) {
-    return <LoadingSpinner fullScreen text="Loading event details..." />
-  }
+  if (isLoading) return <LoadingSpinner fullScreen text="Loading event details..." />
 
   if (!event) {
     return (
@@ -481,8 +440,7 @@ function EventPageContent() {
           <h2 className="text-2xl font-bold mb-2">Event Not Found</h2>
           <p className="text-gray-600 mb-6">The event you're looking for doesn't exist or has been removed.</p>
           <Link href="/events" className="btn-primary px-6 py-3 inline-flex items-center gap-2">
-            <ChevronLeft className="h-4 w-4" />
-            Browse Events
+            <ChevronLeft className="h-4 w-4" /> Browse Events
           </Link>
         </div>
       </div>
@@ -499,8 +457,7 @@ function EventPageContent() {
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <button onClick={() => router.back()} className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900">
-              <ChevronLeft className="h-5 w-5" />
-              <span>Back</span>
+              <ChevronLeft className="h-5 w-5" /> <span>Back</span>
             </button>
             <div className="flex items-center gap-3">
               <button onClick={handleFavoriteToggle} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors">
@@ -538,7 +495,7 @@ function EventPageContent() {
                 </div>
                 {!isPastEvent && !event.isFree && event.price > 0 && (
                   <div className="text-right">
-                    <div className="text-3xl md:text-4xl font-bold text-white mb-1">{event.currency} {event.price}</div>
+                    <div className="text-3xl md:text-4xl font-bold text-white mb-1">{event.currency} {event.price.toLocaleString()}</div>
                     <p className="text-white/80 text-sm">Starting price</p>
                   </div>
                 )}
@@ -550,28 +507,24 @@ function EventPageContent() {
 
       <div className="container mx-auto px-4 py-8 max-w-6xl">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Left Column - Event Details */}
+          {/* Left Column */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Event Details Card - FULL DESCRIPTION VISIBLE */}
+            {/* Description */}
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
               <h2 className="text-xl font-bold mb-4">About This Event</h2>
-              <div className="prose prose-gray dark:prose-invert max-w-none">
-                <p className="text-gray-700 dark:text-gray-300 whitespace-pre-line text-base leading-relaxed">
-                  {event.description || 'No description provided.'}
-                </p>
-              </div>
+              <p className="text-gray-700 dark:text-gray-300 whitespace-pre-line text-base leading-relaxed">
+                {event.description || 'No description provided.'}
+              </p>
             </div>
 
-            {/* Event Info Grid */}
+            {/* Event Info */}
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
               <h2 className="text-xl font-bold mb-6">Event Information</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <h3 className="font-semibold mb-3 flex items-center gap-2"><Calendar className="h-5 w-5 text-gray-400" />Date & Time</h3>
-                  <div className="space-y-3">
-                    <div><p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Start</p><p className="font-medium">{formatDateTime(event.startDate)}</p></div>
-                    <div><p className="text-sm text-gray-600 dark:text-gray-400 mb-1">End</p><p className="font-medium">{formatDateTime(event.endDate)}</p></div>
-                  </div>
+                  <div><p className="text-sm text-gray-600 mb-1">Start</p><p className="font-medium">{formatDateTime(event.startDate)}</p></div>
+                  <div className="mt-3"><p className="text-sm text-gray-600 mb-1">End</p><p className="font-medium">{formatDateTime(event.endDate)}</p></div>
                 </div>
                 <div>
                   <h3 className="font-semibold mb-3 flex items-center gap-2">
@@ -581,20 +534,20 @@ function EventPageContent() {
                   {!event.isVirtual ? (
                     <p className="font-medium">{event.venue || event.location?.address || 'Location TBD'}</p>
                   ) : (
-                    <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl">
+                    <div className="mt-4 p-4 bg-blue-50 rounded-xl">
                       <div className="flex items-center gap-2 mb-2"><Globe className="h-5 w-5 text-blue-500" /><span className="font-semibold">Virtual Event</span></div>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">Joining details will be provided after ticket purchase</p>
+                      <p className="text-sm text-gray-600">Joining details will be provided after ticket purchase</p>
                     </div>
                   )}
                 </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
-                <div><h3 className="font-semibold mb-3 flex items-center gap-2"><Tag className="h-5 w-5 text-gray-400" />Category</h3><span className="inline-block px-3 py-1.5 bg-gray-100 dark:bg-gray-700 rounded-full text-sm">{event.category.charAt(0).toUpperCase() + event.category.slice(1)}</span></div>
-                <div><h3 className="font-semibold mb-3">Organizer</h3><div className="flex items-center gap-3"><div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center overflow-hidden"><img src={organizerAvatar} alt={organizer.name} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).src = '/cackpas.jpg' }} /></div><p className="font-medium truncate">{organizer.name}</p></div></div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6 pt-6 border-t border-gray-200">
+                <div><h3 className="font-semibold mb-3 flex items-center gap-2"><Tag className="h-5 w-5 text-gray-400" />Category</h3><span className="inline-block px-3 py-1.5 bg-gray-100 rounded-full text-sm">{event.category.charAt(0).toUpperCase() + event.category.slice(1)}</span></div>
+                <div><h3 className="font-semibold mb-3">Organizer</h3><div className="flex items-center gap-3"><div className="w-12 h-12 bg-primary/10 rounded-full overflow-hidden"><img src={organizerAvatar} alt={organizer.name} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).src = '/cackpas.jpg' }} /></div><p className="font-medium truncate">{organizer.name}</p></div></div>
               </div>
             </div>
             
-            {/* Ticket Types Card */}
+            {/* Ticket Types */}
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
               <h2 className="text-xl font-bold mb-6">Available Tickets</h2>
               {isLoadingTickets ? (
@@ -603,14 +556,23 @@ function EventPageContent() {
                 <div className="space-y-4">
                   {ticketTypes.map((ticketType) => {
                     const available = getAvailableTickets(ticketType)
-                    const isAvailable = ticketType.maxSupply === 0 || ticketType.currentSupply < ticketType.maxSupply
+                    const isAvailable = isTicketAvailable(ticketType)
                     return (
-                      <div key={ticketType._id} onClick={() => isAvailable && handleTicketTypeSelect(ticketType)} className={`p-5 rounded-xl border-2 cursor-pointer transition-all ${selectedTicketType?._id === ticketType._id ? 'border-primary bg-primary/5' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'} ${!isAvailable ? 'opacity-60 cursor-not-allowed' : ''}`}>
+                      <div key={ticketType._id} onClick={() => isAvailable && handleTicketTypeSelect(ticketType)} className={`p-5 rounded-xl border-2 cursor-pointer transition-all ${selectedTicketType?._id === ticketType._id ? 'border-primary bg-primary/5' : 'border-gray-200 hover:border-gray-300'} ${!isAvailable ? 'opacity-60 cursor-not-allowed' : ''}`}>
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                           <div className="flex-1">
                             <div className="flex flex-wrap items-center justify-between mb-3">
-                              <div><h3 className="font-semibold text-lg mb-1">{ticketType.name}</h3><div className="flex items-center gap-2"><span className="text-sm text-gray-600">{ticketType.category}</span>{ticketType.maxSupply > 0 && <span className="text-sm">• {available} of {ticketType.maxSupply} left</span>}{ticketType.maxSupply === 0 && <span className="text-sm">• Unlimited</span>}</div></div>
-                              <div className="text-right"><div className="text-2xl font-bold text-primary">{event.isFree ? 'FREE' : `₦${ticketType.price}`}</div>{!event.isFree && <div className="text-sm text-gray-600">per ticket</div>}</div>
+                              <div>
+                                <h3 className="font-semibold text-lg mb-1">{ticketType.name}</h3>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm text-gray-600">{ticketType.category}</span>
+                                  <span className="text-sm">• {available} of {ticketType.maxSupply > 0 ? ticketType.maxSupply : (event.capacity || 'Unlimited')} left</span>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-2xl font-bold text-primary">{event.isFree ? 'FREE' : `₦${ticketType.price.toLocaleString()}`}</div>
+                                {!event.isFree && <div className="text-sm text-gray-600">per ticket</div>}
+                              </div>
                             </div>
                             {ticketType.description && <p className="text-gray-600 text-sm mb-3">{ticketType.description}</p>}
                           </div>
@@ -632,120 +594,145 @@ function EventPageContent() {
               <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
                 <h2 className="text-xl font-bold mb-6">Get Your Ticket</h2>
                 {isPastEvent ? (
-                  <div className="text-center py-8"><Clock className="h-16 w-16 mx-auto text-gray-400 mb-4" /><h3 className="font-semibold mb-2">Event Has Ended</h3><p className="text-gray-600 mb-6">This event has already taken place.</p><Link href="/events" className="btn-primary px-6 py-3 inline-flex items-center gap-2 w-full justify-center"><Ticket className="h-4 w-4" />Browse Upcoming Events</Link></div>
+                  <div className="text-center py-8"><Clock className="h-16 w-16 mx-auto text-gray-400 mb-4" /><h3 className="font-semibold mb-2">Event Has Ended</h3><Link href="/events" className="btn-primary px-6 py-3 inline-flex items-center gap-2 w-full justify-center"><Ticket className="h-4 w-4" />Browse Upcoming Events</Link></div>
                 ) : (
                   <>
                     {selectedTicketType && (
                       <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-900 rounded-xl">
                         <div className="flex justify-between items-start mb-4">
                           <div><h3 className="font-semibold mb-1">{selectedTicketType.name}</h3><p className="text-sm text-gray-600">{selectedTicketType.category}</p></div>
-                          <div className="text-right"><div className="text-2xl font-bold text-primary">{event.isFree ? 'FREE' : `₦${selectedTicketType.price}`}</div><div className="text-sm text-gray-600">per ticket</div></div>
+                          <div className="text-right"><div className="text-2xl font-bold text-primary">{event.isFree ? 'FREE' : `₦${selectedTicketType.price.toLocaleString()}`}</div><div className="text-sm text-gray-600">per ticket</div></div>
                         </div>
                         <div className="flex items-center justify-between">
-                          <div><p className="text-sm text-gray-600 mb-2">Quantity</p><div className="flex items-center gap-3"><button onClick={() => handleQuantityChange(-1)} disabled={selectedQuantity <= 1} className="w-10 h-10 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-100 disabled:opacity-50"><span className="text-lg">-</span></button><span className="text-xl font-semibold w-12 text-center">{selectedQuantity}</span><button onClick={() => handleQuantityChange(1)} className="w-10 h-10 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-100"><span className="text-lg">+</span></button></div></div>
-                          <div className="text-right"><p className="text-sm text-gray-600 mb-1">Total</p><div className="text-3xl font-bold text-primary">{event.isFree ? 'FREE' : `₦${getTotalPrice()}`}</div></div>
+                          <div>
+                            <p className="text-sm text-gray-600 mb-2">Quantity</p>
+                            <div className="flex items-center gap-3">
+                              <button onClick={() => handleQuantityChange(-1)} disabled={selectedQuantity <= 1} className="w-10 h-10 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-100 disabled:opacity-50"><span className="text-lg">-</span></button>
+                              <span className="text-xl font-semibold w-12 text-center">{selectedQuantity}</span>
+                              <button onClick={() => handleQuantityChange(1)} className="w-10 h-10 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-100"><span className="text-lg">+</span></button>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm text-gray-600 mb-1">Total</p>
+                            <div className="text-3xl font-bold text-primary">{event.isFree ? 'FREE' : `₦${Number(getTotalPrice()).toLocaleString()}`}</div>
+                          </div>
                         </div>
                       </div>
                     )}
                     
-                    {event.isFree ? (
+                    {/* FREE EVENT BUTTON */}
+                    {event.isFree && (
                       <button onClick={handleGetFreeTicket} disabled={isGettingFreeTicket} className="w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-3 text-lg bg-green-500 hover:bg-green-600 text-white disabled:opacity-50">
                         {isGettingFreeTicket ? <Loader2 className="h-5 w-5 animate-spin" /> : <Mail className="h-5 w-5" />}
                         {isGettingFreeTicket ? 'Processing...' : 'Get Free Ticket'}
                       </button>
-                    ) : null}
+                    )}
                     
-                    {!event.isFree && selectedTicketType && selectedTicketType.price > 0 ? (
+                    {/* PAID EVENT - Check if user can purchase */}
+                    {!event.isFree && selectedTicketType && selectedTicketType.price > 0 && (
                       <div className="space-y-4">
-                        {/* Payment Method Selection - Responsive */}
-                        <div className="flex flex-col sm:flex-row gap-3 mb-4">
-                          <button 
-                            onClick={() => setSelectedPaymentMethod('paystack')} 
-                            className={`flex-1 py-3 rounded-xl font-medium flex items-center justify-center gap-2 transition-all ${
-                              selectedPaymentMethod === 'paystack' 
-                                ? 'bg-primary text-white' 
-                                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                            }`}
-                          >
-                            <CreditCard className="h-4 w-4" />
-                            Pay with Card (Paystack)
+                        {/* If not logged in */}
+                        {!isLoggedIn ? (
+                          <button onClick={() => login()} className="w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-2 text-base bg-primary hover:bg-primary-dark text-white transition-all">
+                            <User className="h-5 w-5" />
+                            Login to Purchase
                           </button>
-                          <button 
-                            onClick={() => setSelectedPaymentMethod('crypto')} 
-                            className={`flex-1 py-3 rounded-xl font-medium flex items-center justify-center gap-2 transition-all ${
-                              selectedPaymentMethod === 'crypto' 
-                                ? 'bg-primary text-white' 
-                                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                            }`}
-                          >
-                            <Wallet className="h-4 w-4" />
-                            Pay with Crypto (Coming soon)
+                        ) : !userEmail && !isFetchingEmail ? (
+                          <button onClick={() => router.push('/complete-profile')} className="w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-2 text-base bg-yellow-500 hover:bg-yellow-600 text-white transition-all">
+                            <Mail className="h-5 w-5" />
+                            Complete Profile to Purchase
                           </button>
-                        </div>
-                        
-                        {/* Pay with Card (Paystack) Button */}
-                        {selectedPaymentMethod === 'paystack' && (
-                          <button 
-                            onClick={handlePayWithCard} 
-                            disabled={isProcessingPayment} 
-                            className="w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-3 text-lg bg-green-600 hover:bg-green-700 text-white disabled:opacity-50 transition-all duration-200"
-                          >
-                            {isProcessingPayment ? <Loader2 className="h-5 w-5 animate-spin" /> : <CreditCard className="h-5 w-5" />}
-                            {isProcessingPayment ? 'Processing...' : `Pay with Card - ₦${totalPrice}`}
+                        ) : isFetchingEmail ? (
+                          <button disabled className="w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-2 text-base bg-gray-400 text-white cursor-not-allowed">
+                            <Loader2 className="h-5 w-5 animate-spin" />
+                            Loading...
                           </button>
+                        ) : (
+                          <>
+                            {/* Payment Method Selection - Responsive */}
+                            <div className="flex flex-col sm:flex-row gap-3 mb-4">
+                              <button 
+                                onClick={() => setSelectedPaymentMethod('paystack')} 
+                                className={`flex-1 py-3 px-2 rounded-xl font-medium flex items-center justify-center gap-1.5 sm:gap-2 transition-all text-sm sm:text-base ${
+                                  selectedPaymentMethod === 'paystack' 
+                                    ? 'bg-primary text-white' 
+                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200'
+                                }`}
+                              >
+                                <CreditCard className="h-4 w-4 flex-shrink-0" />
+                                <span className="truncate">Pay with Card</span>
+                              </button>
+                              <button 
+                                onClick={() => setSelectedPaymentMethod('crypto')} 
+                                className={`flex-1 py-3 px-2 rounded-xl font-medium flex items-center justify-center gap-1.5 sm:gap-2 transition-all text-sm sm:text-base ${
+                                  selectedPaymentMethod === 'crypto' 
+                                    ? 'bg-primary text-white' 
+                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200'
+                                }`}
+                              >
+                                <Wallet className="h-4 w-4 flex-shrink-0" />
+                                <span className="truncate">Pay with Crypto</span>
+                              </button>
+                            </div>
+                            
+                            {selectedPaymentMethod === 'paystack' && (
+                              <button 
+                                onClick={handlePayWithCard} 
+                                disabled={isProcessingPayment} 
+                                className="w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-2 text-sm sm:text-base bg-green-600 hover:bg-green-700 text-white disabled:opacity-50 transition-all duration-200"
+                              >
+                                {isProcessingPayment ? <Loader2 className="h-5 w-5 animate-spin" /> : <CreditCard className="h-5 w-5" />}
+                                <span className="truncate">{isProcessingPayment ? 'Processing...' : `Pay ₦${Number(totalPrice).toLocaleString()} with Card`}</span>
+                              </button>
+                            )}
+                            
+                            {selectedPaymentMethod === 'crypto' && (
+                              <button 
+                                onClick={handlePayWithCrypto} 
+                                className="w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-2 text-sm sm:text-base bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white transition-all duration-200"
+                              >
+                                <Wallet className="h-5 w-5" />
+                                <span className="truncate">Pay with Crypto (Coming Soon)</span>
+                              </button>
+                            )}
+                            
+                            <div className="text-xs text-gray-500 dark:text-gray-400 text-center">
+                              {selectedPaymentMethod === 'paystack' 
+                                ? '🔒 Secure payment via Paystack (Card, Bank Transfer, USSD)' 
+                                : '🚀 Crypto payments are coming soon! Stay tuned for updates.'}
+                            </div>
+                          </>
                         )}
-                        
-                        {/* Pay with Crypto Button - Coming Soon */}
-                        {selectedPaymentMethod === 'crypto' && (
-                          <button 
-                            onClick={handlePayWithCrypto} 
-                            className="w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-3 text-lg bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white transition-all duration-200"
-                          >
-                            <Wallet className="h-5 w-5" />
-                            Pay with Crypto (Coming Soon)
-                          </button>
-                        )}
-                        
-                        {/* Info Messages */}
-                        <div className="text-xs text-gray-500 dark:text-gray-400 text-center">
-                          {selectedPaymentMethod === 'paystack' 
-                            ? '🔒 Secure payment via Paystack (Card, Bank Transfer, USSD)' 
-                            : '🚀 Crypto payments are coming soon! Stay tuned for updates.'}
-                        </div>
-                      </div>
-                    ) : null}
-                    
-                    {event.isFree && authenticated && (
-                      <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                        <div className="flex items-center gap-2"><Mail className="h-4 w-4 text-green-500" /><span className="text-sm font-medium">Email Delivery</span></div>
-                        <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">Your free ticket will be sent to your registered email address</p>
                       </div>
                     )}
                     
-                    <div className="mt-6 space-y-4">
+                    {event.isFree && (
+                      <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                        <div className="flex items-center gap-2"><Mail className="h-4 w-4 text-green-500" /><span className="text-sm font-medium">Email Delivery</span></div>
+                        <p className="text-xs text-gray-600 mt-1">Your free ticket will be sent to your registered email address</p>
+                      </div>
+                    )}
+                    
+                    <div className="mt-6 space-y-3">
                       <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                        <Shield className="h-5 w-5 text-green-500" />
-                        <div><p className="font-medium text-sm">Secure Payment</p><p className="text-xs text-gray-600 dark:text-gray-400">PCI-DSS compliant payment processing</p></div>
+                        <Shield className="h-5 w-5 text-green-500 flex-shrink-0" />
+                        <div><p className="font-medium text-sm">Secure Payment</p><p className="text-xs text-gray-600">PCI-DSS compliant payment processing</p></div>
                       </div>
                       <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                        <QrCode className="h-5 w-5 text-blue-500" />
-                        <div><p className="font-medium text-sm">Digital Ticket</p><p className="text-xs text-gray-600 dark:text-gray-400">QR code for easy entry, stored in your account</p></div>
-                      </div>
-                      <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                        <Ticket className="h-5 w-5 text-purple-500" />
-                        <div><p className="font-medium text-sm">Instant Delivery</p><p className="text-xs text-gray-600 dark:text-gray-400">Tickets available immediately in your dashboard</p></div>
+                        <QrCode className="h-5 w-5 text-blue-500 flex-shrink-0" />
+                        <div><p className="font-medium text-sm">Digital Ticket</p><p className="text-xs text-gray-600">QR code for easy entry</p></div>
                       </div>
                     </div>
                     
-                    <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
-                      <p className="text-sm text-gray-600 dark:text-gray-400 text-center">Need help? <a href="mailto:support@cackpass.com" className="text-primary hover:underline font-medium">Contact our support team</a></p>
+                    <div className="mt-6 pt-6 border-t border-gray-200">
+                      <p className="text-sm text-gray-600 text-center">Need help? <a href="mailto:support@cackpass.com" className="text-primary hover:underline font-medium">Contact support</a></p>
                     </div>
                   </>
                 )}
               </div>
               <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl text-center">
                 <div className="flex items-center justify-center gap-2 mb-2"><Shield className="h-4 w-4 text-green-500" /><span className="text-sm font-medium">100% Secure Transactions</span></div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">Powered by Paystack • PCI-DSS Level 1 Certified</p>
+                <p className="text-xs text-gray-500">Powered by Paystack • PCI-DSS Level 1 Certified</p>
               </div>
             </div>
           </div>

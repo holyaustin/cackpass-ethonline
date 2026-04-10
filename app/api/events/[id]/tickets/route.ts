@@ -1,7 +1,6 @@
-// app/api/events/[id]/tickets/route.ts - FIXED
 import { NextRequest, NextResponse } from 'next/server'
 import { connectDB } from '@/lib/database/connection'
-import { Event } from '@/lib/database/models'
+import { Event, TicketType } from '@/lib/database/models'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,6 +20,7 @@ export async function GET(
       )
     }
     
+    // Get event for capacity info
     const event = await Event.findById(id).lean()
     
     if (!event) {
@@ -30,40 +30,83 @@ export async function GET(
       )
     }
     
-    // Create virtual ticket from event data
-    let ticketTypeName = 'General Admission'
-    switch (event.ticketType) {
-      case 'GeneralAdmission':
-        ticketTypeName = 'General Admission'
-        break
-      case 'ReservedSeating':
-        ticketTypeName = 'Reserved Seating'
-        break
-      case 'VIPPremium':
-        ticketTypeName = 'VIP Premium'
-        break
-      case 'Others':
-        ticketTypeName = event.title
-        break
-      default:
-        ticketTypeName = 'General Admission'
-    }
+    // Find real ticket types in the database
+    let ticketTypes = await TicketType.find({ eventId: id }).lean()
     
-    const virtualTicket = {
-      _id: `virtual-${event._id}`,
-      name: ticketTypeName,
-      description: `${ticketTypeName} ticket for ${event.title}`,
-      category: event.ticketType || 'GeneralAdmission',
-      price: event.isFree ? 0 : event.price,
-      maxSupply: event.unlimitedCapacity ? 0 : (event.capacity || 100),
-      currentSupply: 0,
-      isActive: true,
-      eventId: event._id.toString()
+    // If no ticket types exist, create virtual ticket from event data
+    if (!ticketTypes || ticketTypes.length === 0) {
+      let ticketTypeName = 'General Admission'
+      let category = 'GeneralAdmission'
+      let onChainCategoryId = 0
+      
+      switch (event.ticketType) {
+        case 'GeneralAdmission':
+          ticketTypeName = 'General Admission'
+          category = 'GeneralAdmission'
+          onChainCategoryId = 0
+          break
+        case 'ReservedSeating':
+          ticketTypeName = 'Reserved Seating'
+          category = 'ReservedSeating'
+          onChainCategoryId = 1
+          break
+        case 'VIPPremium':
+          ticketTypeName = 'VIP Premium'
+          category = 'VIPPremium'
+          onChainCategoryId = 2
+          break
+        case 'Others':
+          ticketTypeName = event.title
+          category = 'Others'
+          onChainCategoryId = 3
+          break
+        default:
+          ticketTypeName = 'General Admission'
+          category = 'GeneralAdmission'
+          onChainCategoryId = 0
+      }
+      
+      // Calculate remaining tickets for virtual ticket
+      const soldTickets = event.ticketsSold || 0
+      const totalCapacity = event.unlimitedCapacity ? 0 : event.capacity
+      const remainingTickets = event.unlimitedCapacity ? 0 : (event.capacity - soldTickets)
+      
+      console.log(`📊 Virtual ticket calculation:`);
+      console.log(`   - Total capacity: ${totalCapacity === 0 ? 'Unlimited' : totalCapacity}`);
+      console.log(`   - Tickets sold: ${soldTickets}`);
+      console.log(`   - Remaining: ${remainingTickets === 0 ? 'Unlimited' : remainingTickets}`);
+      
+      const virtualTicket = {
+        _id: `virtual_${event._id}`,
+        name: ticketTypeName,
+        description: `${ticketTypeName} ticket for ${event.title}`,
+        category: category,
+        price: event.isFree ? 0 : event.price,
+        maxSupply: totalCapacity,
+        currentSupply: soldTickets, // This shows how many sold
+        isActive: true,
+        eventId: event._id.toString(),
+        isVirtual: true
+      }
+      
+      ticketTypes = [virtualTicket]
+    } else {
+      // Format real ticket types - include updated currentSupply
+      ticketTypes = ticketTypes.map(ticket => ({
+        ...ticket,
+        _id: ticket._id.toString(),
+        eventId: ticket.eventId.toString()
+      }))
     }
     
     return NextResponse.json({
       success: true,
-      ticketTypes: [virtualTicket]
+      ticketTypes: ticketTypes,
+      event: {
+        capacity: event.capacity,
+        ticketsSold: event.ticketsSold || 0,
+        unlimitedCapacity: event.unlimitedCapacity
+      }
     })
     
   } catch (error: any) {

@@ -83,6 +83,7 @@ const EventSchema = new mongoose.Schema({
   },
   unlimitedCapacity: { type: Boolean, default: true },
   capacity: { type: Number },
+  ticketsSold: { type: Number, default: 0 }, // ADD THIS - default 0
   onChainId: { type: Number },
   isOnChain: { type: Boolean, default: false },
   transactionHash: { type: String }, // ADDED - missing field

@@ -1,8 +1,7 @@
-// app/events/page.tsx - FIXED VERSION
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Search, Filter, Calendar, MapPin, Ticket, Globe, Users, Clock, ChevronRight, Loader2, Sparkles, ArrowRight } from 'lucide-react'
+import { Search, Filter, Calendar, MapPin, Ticket, Globe, Users, Clock, ChevronRight, Loader2, Sparkles, ArrowRight, TrendingDown, TrendingUp } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 
@@ -31,6 +30,7 @@ interface Event {
   ticketType: string
   unlimitedCapacity: boolean
   capacity?: number
+  ticketsSold?: number  // ADD THIS FIELD
   organizerId?: any
   organizerWallet: string
   isOnChain: boolean
@@ -88,12 +88,31 @@ function formatTimeHelper(dateString: string | Date) {
   }
 }
 
+function getRemainingTickets(event: Event): number | string {
+  if (event.unlimitedCapacity) return 'Unlimited'
+  const total = event.capacity || 0
+  const sold = event.ticketsSold || 0
+  const remaining = total - sold
+  return Math.max(0, remaining)
+}
+
+function getSoldPercentage(event: Event): number {
+  if (event.unlimitedCapacity || !event.capacity) return 0
+  const total = event.capacity
+  const sold = event.ticketsSold || 0
+  return (sold / total) * 100
+}
+
 // ==================== EVENT CARD COMPONENT ====================
 function EventCard({ event }: { event: Event }) {
   const categoryInfo = getCategoryInfo(event.category)
   const isEventUpcoming = isUpcoming(event.startDate)
   const eventDate = new Date(event.startDate)
   const eventTime = new Date(event.startDateTime || event.startDate)
+  const remainingTickets = getRemainingTickets(event)
+  const soldPercentage = getSoldPercentage(event)
+  const isAlmostSoldOut = !event.unlimitedCapacity && soldPercentage >= 80 && soldPercentage < 100
+  const isSoldOut = !event.unlimitedCapacity && soldPercentage >= 100
 
   const imageUrl = event.imageCid 
     ? `https://gateway.pinata.cloud/ipfs/${event.imageCid}`
@@ -131,6 +150,15 @@ function EventCard({ event }: { event: Event }) {
           </div>
         )}
         
+        {/* Sold Out Badge */}
+        {isSoldOut && (
+          <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+            <span className="px-6 py-3 bg-gradient-to-r from-red-600 to-red-700 text-white text-xl font-bold rounded-xl shadow-2xl rotate-12">
+              SOLD OUT
+            </span>
+          </div>
+        )}
+        
         {/* Price Badge */}
         <div className="absolute bottom-3 left-3">
           <span className={`px-4 py-2 text-white text-sm font-bold rounded-xl shadow-xl flex items-center gap-2 backdrop-blur-md ${
@@ -146,7 +174,7 @@ function EventCard({ event }: { event: Event }) {
             ) : (
               <>
                 <span className="text-lg">💰</span>
-                <span className="font-black">{event.currency} {event.price}</span>
+                <span className="font-black">{event.currency} {event.price.toLocaleString()}</span>
               </>
             )}
           </span>
@@ -189,13 +217,40 @@ function EventCard({ event }: { event: Event }) {
             </span>
           </div>
           
-          {!event.unlimitedCapacity && event.capacity && (
-            <div className="flex items-center text-text">
-              <Users className="h-4 w-4 text-text-light mr-2 flex-shrink-0" />
-              <div className="text-sm">
-                <span className="font-medium">{event.capacity}</span>
-                <span className="text-text-light"> spots available</span>
+          {/* Ticket Availability - NEW SECTION */}
+          {isEventUpcoming && !isSoldOut && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <div className="flex items-center text-text">
+                  <Users className="h-4 w-4 text-text-light mr-2 flex-shrink-0" />
+                  <span className="font-medium">
+                    {remainingTickets === 'Unlimited' 
+                      ? 'Unlimited tickets' 
+                      : `${remainingTickets} of ${event.capacity} left`
+                    }
+                  </span>
+                </div>
+                {isAlmostSoldOut && !event.unlimitedCapacity && (
+                  <div className="flex items-center gap-1 text-orange-500 text-xs font-semibold">
+                    <TrendingDown className="h-3 w-3" />
+                    Almost sold out!
+                  </div>
+                )}
               </div>
+              
+              {/* Progress Bar - Show only for limited capacity */}
+              {!event.unlimitedCapacity && event.capacity && (
+                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 overflow-hidden">
+                  <div 
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      isAlmostSoldOut 
+                        ? 'bg-gradient-to-r from-orange-500 to-red-500' 
+                        : 'bg-gradient-to-r from-primary to-purple-600'
+                    }`}
+                    style={{ width: `${Math.min(soldPercentage, 100)}%` }}
+                  />
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -203,11 +258,16 @@ function EventCard({ event }: { event: Event }) {
         <div className="flex gap-3">
           <Link
             href={`/events/${event._id}`}
-            className="btn-primary flex-1 py-3 text-center text-sm"
+            className={`flex-1 py-3 text-center text-sm rounded-xl font-medium transition-all ${
+              isSoldOut && isEventUpcoming
+                ? 'bg-gray-400 cursor-not-allowed text-white'
+                : 'btn-primary'
+            }`}
+            aria-disabled={isSoldOut && isEventUpcoming}
           >
-            View Details
+            {isSoldOut && isEventUpcoming ? 'Sold Out' : 'View Details'}
           </Link>
-          {isEventUpcoming && (
+          {isEventUpcoming && !isSoldOut && (
             <Link
               href={`/events/${event._id}`}
               className="btn-outline flex-1 py-3 text-center text-sm"
@@ -220,12 +280,20 @@ function EventCard({ event }: { event: Event }) {
         <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
           <div className="flex items-center justify-between text-xs text-text-light">
             <span>🎫 {event.ticketType}</span>
-            {event.isOnChain && (
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-                On-chain
-              </span>
-            )}
+            <div className="flex items-center gap-3">
+              {event.isOnChain && (
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                  On-chain
+                </span>
+              )}
+              {!event.unlimitedCapacity && event.ticketsSold !== undefined && event.ticketsSold > 0 && (
+                <span className="flex items-center gap-1">
+                  <TrendingUp className="h-3 w-3" />
+                  {event.ticketsSold} sold
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -278,13 +346,11 @@ export default function EventsPage() {
       const data = await response.json()
       console.log('📦 API Response data:', data)
       
-      // Handle different response structures
       let fetchedEvents: Event[] = []
       let total = 0
       let pages = 1
       
       if (data.success) {
-        // Check different possible response structures
         if (data.events && Array.isArray(data.events)) {
           fetchedEvents = data.events
           total = data.total || data.events.length
@@ -364,22 +430,18 @@ export default function EventsPage() {
 
   // Display events based on filters (client-side filtering as backup)
   const displayEvents = events.filter(event => {
-    // Filter by search
     if (search && !event.title.toLowerCase().includes(search.toLowerCase()) &&
         !(event.description || '').toLowerCase().includes(search.toLowerCase())) {
       return false
     }
     
-    // Filter by price
     if (priceFilter === 'free' && !event.isFree) return false
     if (priceFilter === 'paid' && event.isFree) return false
     
-    // Filter by date
     const isEventUpcoming = new Date(event.startDate) > new Date()
     if (dateFilter === 'upcoming' && !isEventUpcoming) return false
     if (dateFilter === 'past' && isEventUpcoming) return false
     
-    // Filter by category
     if (selectedCategory !== 'all' && event.category !== selectedCategory) return false
     
     return true
