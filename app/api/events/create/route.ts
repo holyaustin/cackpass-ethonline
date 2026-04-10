@@ -1,4 +1,3 @@
-// app/api/events/create/route.ts - 
 import { NextRequest, NextResponse } from 'next/server'
 import { connectDB } from '@/lib/database/connection'
 import { Event, TicketType, User } from '@/lib/database/models'
@@ -10,7 +9,7 @@ export async function POST(request: NextRequest) {
     
     const body = await request.json()
     
-    console.log('Received event data:', JSON.stringify(body, null, 2))
+    console.log('📝 [API] Received event data:', JSON.stringify(body, null, 2))
     
     // Validate required fields
     if (!body.organizerId && !body.organizerWallet) {
@@ -27,7 +26,6 @@ export async function POST(request: NextRequest) {
     let userId = body.organizerId
     let userWallet = body.organizerWallet
     
-    // If we have organizerId, verify it's a valid ObjectId
     if (userId && mongoose.Types.ObjectId.isValid(userId)) {
       const userExists = await User.findById(userId)
       if (!userExists) {
@@ -40,16 +38,14 @@ export async function POST(request: NextRequest) {
         )
       }
     } else if (userWallet) {
-      // Find user by wallet address
       const userByWallet = await User.findOne({ walletAddress: userWallet })
       if (userByWallet) {
         userId = userByWallet._id
       } else {
-        // Create new user with wallet
         const newUser = new User({
           walletAddress: userWallet,
           loginMethod: 'wallet',
-          organizer: true,
+          isOrganizer: true,
           createdAt: new Date(),
           updatedAt: new Date()
         })
@@ -78,21 +74,14 @@ export async function POST(request: NextRequest) {
     
     // Prepare event data
     const eventData: any = {
-      // Core fields
       organizerId: userId,
       organizerWallet: userWallet,
       title: body.title,
       description: body.description,
       category: body.category,
       customCategory: body.customCategory || undefined,
-      
-      // Location
-      venue: body.location,
-      location: {
-        address: body.location
-      },
-      
-      // Virtual
+      venue: body.venue || body.location,
+      location: { address: body.location || body.venue },
       isVirtual: isVirtual,
       ...(isVirtual && {
         virtualOptions: {
@@ -102,28 +91,18 @@ export async function POST(request: NextRequest) {
           virtualLink: virtualOptions.virtualLink || ''
         }
       }),
-      
-      // Dates
       startDate: body.startDateTime ? new Date(body.startDateTime) : 
                 (body.startDate ? new Date(`${body.startDate}T${body.startTime || '00:00'}`) : new Date()),
       endDate: body.endDateTime ? new Date(body.endDateTime) :
               (body.endDate ? new Date(`${body.endDate}T${body.endTime || '23:59'}`) : new Date()),
       startDateTime: body.startDateTime || (body.startDate ? new Date(`${body.startDate}T${body.startTime || '00:00'}`) : null),
       endDateTime: body.endDateTime || (body.endDate ? new Date(`${body.endDate}T${body.endTime || '23:59'}`) : null),
-      
-      // Pricing
       isFree: Boolean(body.isFree),
       price: body.price || (body.priceAmount ? parseFloat(body.priceAmount) : 0),
       currency: body.currency || 'USD',
-      
-      // Ticket type
       ticketType: body.ticketType || 'GeneralAdmission',
-      
-      // Capacity
       unlimitedCapacity: Boolean(body.unlimitedCapacity),
       capacity: body.capacity ? parseInt(body.capacity) : undefined,
-      
-      // Blockchain
       isOnChain: Boolean(body.isOnChain),
       transactionHash: body.transactionHash,
       gaslessWallet: body.gaslessWallet,
@@ -132,12 +111,8 @@ export async function POST(request: NextRequest) {
       metadataCid: body.metadataCid,
       metadataURI: body.metadataURI,
       onChainId: body.onChainId,
-      
-      // Status
       status: body.status || 'published',
       isActive: body.isActive !== false,
-      
-      // Timestamps
       createdAt: new Date(),
       updatedAt: new Date()
     }
@@ -152,27 +127,79 @@ export async function POST(request: NextRequest) {
     // Create event
     const event = new Event(eventData)
     await event.save()
+    console.log(`✅ [API] Event created: ${event._id} - ${event.title}`)
     
-    // Create TicketType for paid events
-    if (!eventData.isFree && eventData.ticketType) {
-      const ticketType = new TicketType({
-        eventId: event._id,
-        name: `${eventData.title} - ${eventData.ticketType}`,
-        description: `Ticket for ${eventData.title}`,
-        category: eventData.ticketType,
-        price: eventData.price || 0,
-        maxSupply: eventData.unlimitedCapacity ? 0 : (eventData.capacity || 100),
-        currentSupply: 0,
-        metadataURI: eventData.metadataURI,
-        isActive: true
-      })
-      await ticketType.save()
+    // ========== CREATE TICKET TYPES - USING EXACT SAME PATTERN AS MIGRATION SCRIPT ==========
+    let ticketTypesCreated = 0
+    
+    // Determine ticket type name based on event's ticketType field (same as migration script)
+    let ticketTypeName = ''
+    let category = ''
+    let onChainCategoryId = 0
+
+    switch (event.ticketType) {
+      case 'GeneralAdmission':
+        ticketTypeName = 'General Admission'
+        category = 'GeneralAdmission'
+        onChainCategoryId = 0
+        break
+      case 'ReservedSeating':
+        ticketTypeName = 'Reserved Seating'
+        category = 'ReservedSeating'
+        onChainCategoryId = 1
+        break
+      case 'VIPPremium':
+        ticketTypeName = 'VIP Premium'
+        category = 'VIPPremium'
+        onChainCategoryId = 2
+        break
+      case 'Others':
+        ticketTypeName = event.title
+        category = 'Others'
+        onChainCategoryId = 3
+        break
+      default:
+        ticketTypeName = 'General Admission'
+        category = 'GeneralAdmission'
+        onChainCategoryId = 0
     }
+
+    // Create ticket type - EXACT same structure as migration script
+    const ticketTypeData = {
+      eventId: event._id,
+      name: ticketTypeName,
+      description: `Ticket for ${event.title}`,
+      category: category,
+      price: event.isFree ? 0 : event.price,
+      maxSupply: event.unlimitedCapacity ? 0 : (event.capacity || 100),
+      currentSupply: 0,
+      isActive: true,
+      onChainCategoryId: onChainCategoryId,
+    }
+
+    console.log(`🎫 [API] Creating ticket type: ${ticketTypeName} - $${ticketTypeData.price}`)
+
+    const ticketType = new TicketType(ticketTypeData)
+    await ticketType.save()
+    ticketTypesCreated++
+    
+    console.log(`   ✅ Created ticket type: ${ticketType.name} (ID: ${ticketType._id})`)
+    console.log(`✅ [API] Total ticket types created: ${ticketTypesCreated}`)
+    
+    // Verify ticket types were actually saved
+    const verifyTicketTypes = await TicketType.find({ eventId: event._id })
+    console.log(`🔍 [API] Verification: Found ${verifyTicketTypes.length} ticket types in database for this event`)
+    
+    // Redirect to the newly created event page
+    const eventUrl = `/events/${event._id}`
     
     return NextResponse.json({
       success: true,
       eventId: event._id,
-      message: 'Event created successfully',
+      ticketTypesCreated: ticketTypesCreated,
+      ticketTypesCount: verifyTicketTypes.length,
+      redirectUrl: eventUrl,
+      message: `Event created successfully with ${ticketTypesCreated} ticket type(s)`,
       event: {
         id: event._id,
         title: event.title,
@@ -182,7 +209,7 @@ export async function POST(request: NextRequest) {
     }, { status: 201 })
     
   } catch (error: any) {
-    console.error('Event creation error:', error)
+    console.error('❌ [API] Event creation error:', error)
     return NextResponse.json(
       { 
         success: false, 
@@ -192,8 +219,6 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-
-
 }
 
 // PUT endpoint - Update event with blockchain info
@@ -225,7 +250,6 @@ export async function PUT(request: NextRequest) {
       )
     }
     
-    // Update blockchain fields
     if (onChainId !== undefined) event.onChainId = onChainId
     if (transactionHash !== undefined) event.transactionHash = transactionHash
     if (ticketId !== undefined) event.ticketId = ticketId

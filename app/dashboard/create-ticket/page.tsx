@@ -9,7 +9,7 @@ import {
   Upload, X, Check, Globe, Video, Camera,
   Bold, Italic, Link as LinkIcon, Save,
   Loader2, Map, Building, Home, Coffee, Zap,
-  Monitor, MessageSquare, Info, Flag
+  Monitor, MessageSquare, Info, Flag, Plus, Trash2
 } from 'lucide-react'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { toast } from 'sonner'
@@ -66,7 +66,7 @@ const CURRENCIES = [
   { value: 'GBP', label: 'GBP', symbol: '£' },
 ]
 
-// Ticket types
+// Ticket types enum
 const TICKET_TYPES = [
   { value: 'GeneralAdmission', label: 'General Admission' },
   { value: 'ReservedSeating', label: 'Reserved Seating' },
@@ -86,7 +86,7 @@ interface LocationDetails {
   password?: string;
 }
 
-// Type guards for wallet accounts (copied from complete-profile page)
+// Type guards for wallet accounts
 function isWalletAccount(account: any): account is { type: 'wallet'; address: string; walletClientType?: string } {
   if (typeof account !== 'object' || account === null) return false
   if (account.type !== 'wallet') return false
@@ -115,120 +115,62 @@ function isOAuthAccount(account: any): account is { type: 'oauth'; provider: str
 
 // Helper function to extract wallet address from Privy user
 function extractWalletAddress(user: any): string | null {
-  console.log('🔍 Extracting wallet from Privy user:', {
-    hasDirectWallet: !!user?.wallet?.address,
-    linkedAccountsCount: user?.linkedAccounts?.length || 0
-  })
-  
-  // Check direct wallet object (for embedded wallets)
   if (user?.wallet?.address && typeof user.wallet.address === 'string') {
-    console.log('✅ Found direct wallet address:', user.wallet.address)
     return user.wallet.address
   }
   
-  // Check linked accounts
   const linkedAccounts = user?.linkedAccounts || []
-  
-  // First, try to find embedded wallet (Privy wallet)
   const embeddedWallet = linkedAccounts.find(isEmbeddedWallet)
-  if (embeddedWallet) {
-    console.log('✅ Found embedded wallet in linked accounts:', embeddedWallet.address)
-    return embeddedWallet.address
-  }
+  if (embeddedWallet) return embeddedWallet.address
   
-  // If no embedded wallet, try to find any wallet
   const anyWallet = linkedAccounts.find(isWalletAccount)
-  if (anyWallet) {
-    console.log('✅ Found wallet in linked accounts:', anyWallet.address)
-    return anyWallet.address
-  }
+  if (anyWallet) return anyWallet.address
   
-  console.log('❌ No wallet found in user object')
   return null
 }
 
-// Helper function to extract email from Privy user (copied from complete-profile page)
+// Helper function to extract email from Privy user
 function extractEmailFromPrivyUser(privyUser: any): string {
   const linkedAccounts = privyUser.linkedAccounts || []
-  let email = ''
   
-  console.log('📧 Checking Privy user for email:', {
-    userId: privyUser.id,
-    linkedAccountsCount: linkedAccounts.length
-  })
-  
-  // 1. Check email linked accounts first
   for (const account of linkedAccounts) {
-    if (isEmailAccount(account)) {
-      email = account.address
-      console.log('✅ Found email from email account:', email)
-      break
+    if (isEmailAccount(account) && account.address) {
+      return account.address
     }
-    
     if (isOAuthAccount(account) && account.email) {
-      email = account.email
-      console.log('✅ Found email from OAuth account:', email, 'provider:', account.provider)
-      break
+      return account.email
     }
   }
   
-  // 2. Check for verified emails
-  if (!email && privyUser.email) {
+  if (privyUser.email) {
     if (typeof privyUser.email === 'object' && privyUser.email.address) {
-      email = privyUser.email.address
-      console.log('✅ Found email from email object:', email)
+      return privyUser.email.address
     } else if (typeof privyUser.email === 'string') {
-      email = privyUser.email
-      console.log('✅ Found email from string:', email)
+      return privyUser.email
     }
   }
   
-  // 3. Check for any email in the user object
-  if (!email && privyUser.emailAddresses && Array.isArray(privyUser.emailAddresses)) {
+  if (privyUser.emailAddresses && Array.isArray(privyUser.emailAddresses)) {
     const emailObj = privyUser.emailAddresses.find((e: any) => e && e.address)
-    if (emailObj) {
-      email = emailObj.address
-      console.log('✅ Found email from emailAddresses:', email)
+    if (emailObj && emailObj.address) {
+      return emailObj.address
     }
   }
   
-  if (!email) {
-    console.log('❌ No email found in Privy user')
-  }
-  
-  return email || ''
+  return ''
 }
 
 // Helper function to fetch user email from database
-async function fetchUserEmailFromDatabase(walletAddress: string): Promise<string | null> {
+async function fetchUserEmailFromDatabase(walletAddress: string): Promise<string> {
   try {
-    console.log('📧 [DB] Fetching user email from database for wallet:', walletAddress)
-    
     const response = await fetch(`/api/auth/user?walletAddress=${walletAddress}`)
-    
-    if (!response.ok) {
-      console.error('❌ [DB] Failed to fetch user:', response.status)
-      return null
-    }
-    
+    if (!response.ok) return ''
     const data = await response.json()
-    console.log('📧 [DB] User data from database:', {
-      hasUser: !!data.user,
-      hasEmail: !!data.user?.email,
-      email: data.user?.email,
-      needsProfileCompletion: data.needsProfileCompletion
-    })
-    
-    if (data.user && data.user.email) {
-      console.log('✅ [DB] Found email in database:', data.user.email)
-      return data.user.email
-    }
-    
-    console.log('❌ [DB] No email found in database for this user')
-    return null
+    if (data.user && data.user.email) return data.user.email
+    return ''
   } catch (error) {
-    console.error('❌ [DB] Error fetching user email:', error)
-    return null
+    console.error('Error fetching user email:', error)
+    return ''
   }
 }
 
@@ -236,62 +178,10 @@ export default function CreateTicketPage() {
   const { user, authenticated, ready } = usePrivy()
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
-  const [userEmail, setUserEmail] = useState<string | null>(null)
+  const [userEmail, setUserEmail] = useState<string>('')
   const [walletAddress, setWalletAddress] = useState<string | null>(null)
   const [isFetchingEmail, setIsFetchingEmail] = useState(true)
   
-  // Log user info on component mount and fetch email from database
-  useEffect(() => {
-    const loadUserData = async () => {
-      if (!ready || !authenticated || !user) {
-        console.log('⏳ [LOAD] Waiting for user to be ready...')
-        return
-      }
-      
-      console.log('👤 [LOAD] User object from Privy:', {
-        hasWallet: !!user.wallet?.address,
-        hasEmail: !!user.email?.address,
-        linkedAccountsCount: user.linkedAccounts?.length || 0
-      })
-      
-      // Extract wallet address
-      const wallet = extractWalletAddress(user)
-      setWalletAddress(wallet)
-      
-      if (!wallet) {
-        console.error('❌ [LOAD] No wallet address found')
-        setIsFetchingEmail(false)
-        return
-      }
-      
-      // Try to get email from Privy first
-      let email = extractEmailFromPrivyUser(user)
-      
-      if (email) {
-        console.log('✅ [LOAD] Email found in Privy:', email)
-        setUserEmail(email)
-        setIsFetchingEmail(false)
-        return
-      }
-      
-      // If no email in Privy, fetch from database
-      console.log('📧 [LOAD] No email in Privy, fetching from database...')
-      const dbEmail = await fetchUserEmailFromDatabase(wallet)
-      
-      if (dbEmail) {
-        console.log('✅ [LOAD] Email found in database:', dbEmail)
-        setUserEmail(dbEmail)
-      } else {
-        console.warn('⚠️ [LOAD] No email found in Privy or database')
-        setUserEmail(null)
-      }
-      
-      setIsFetchingEmail(false)
-    }
-    
-    loadUserData()
-  }, [ready, authenticated, user])
-
   // Form state
   const [formData, setFormData] = useState({
     eventName: '',
@@ -345,6 +235,32 @@ export default function CreateTicketPage() {
       }))
     }
   }, [ready, authenticated])
+
+  // Load user data
+  useEffect(() => {
+    const loadUserData = async () => {
+      if (!ready || !authenticated || !user) return
+      
+      const wallet = extractWalletAddress(user)
+      setWalletAddress(wallet)
+      
+      if (!wallet) {
+        setIsFetchingEmail(false)
+        return
+      }
+      
+      let email = extractEmailFromPrivyUser(user)
+      
+      if (!email) {
+        email = await fetchUserEmailFromDatabase(wallet)
+      }
+      
+      setUserEmail(email)
+      setIsFetchingEmail(false)
+    }
+    
+    loadUserData()
+  }, [ready, authenticated, user])
 
   // Validate dates
   useEffect(() => {
@@ -454,35 +370,22 @@ export default function CreateTicketPage() {
     }
   }
 
-  // FIXED: Email sending function with database fallback
+  // Email sending function
   const sendOrganizerEmail = async (eventData: any, eventId: string) => {
-    console.log('📧 [EMAIL] sendOrganizerEmail function STARTED')
-    console.log('📧 [EMAIL] Current userEmail from state:', userEmail)
-    console.log('📧 [EMAIL] Current walletAddress:', walletAddress)
-    
     try {
       let organizerEmail = userEmail
       
-      // If we don't have email in state, try to fetch it from database again
       if (!organizerEmail && walletAddress) {
-        console.log('📧 [EMAIL] No email in state, fetching from database...')
         organizerEmail = await fetchUserEmailFromDatabase(walletAddress)
-        
-        if (organizerEmail) {
-          console.log('✅ [EMAIL] Email fetched from database:', organizerEmail)
-          setUserEmail(organizerEmail) // Update state for future use
-        }
+        if (organizerEmail) setUserEmail(organizerEmail)
       }
       
-      console.log('📧 [EMAIL] Final organizerEmail:', organizerEmail)
-      
       if (!organizerEmail) {
-        console.error('❌ [EMAIL] No organizer email found!')
-        toast.error('Cannot send confirmation email: No email address found in your profile. Please complete your profile first.')
+        console.error('No organizer email found!')
+        toast.warning('Event created but email notification could not be sent - no email found')
         return
       }
 
-      // Format date for email
       const eventDate = new Date(eventData.startDateTime)
       const formattedDate = eventDate.toLocaleDateString('en-US', {
         weekday: 'long',
@@ -510,43 +413,29 @@ export default function CreateTicketPage() {
         capacity: eventData.unlimitedCapacity ? 'Unlimited' : eventData.capacity,
       }
 
-      console.log('📧 [EMAIL] Sending email with payload:', emailPayload)
-
       const response = await fetch('/api/email/organizer-event-created', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(emailPayload)
       })
 
-      console.log('📧 [EMAIL] API Response status:', response.status)
-      
-      const result = await response.json()
-      console.log('📧 [EMAIL] API Response body:', result)
-
       if (!response.ok) {
-        console.error('❌ [EMAIL] Email API error:', result)
-        toast.warning(`Event created but email notification failed: ${result.error || 'Unknown error'}`)
+        toast.warning(`Event created but email notification failed`)
       } else {
-        console.log('✅ [EMAIL] Organizer email sent successfully to:', organizerEmail)
         toast.success(`Event created! Confirmation email sent to ${organizerEmail}`)
       }
       
     } catch (emailError) {
-      console.error('❌ [EMAIL] Exception in sendOrganizerEmail:', emailError)
+      console.error('Email error:', emailError)
       toast.warning('Event created but email notification could not be sent')
     }
-  };
+  }
 
   // Main submit handler
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    console.log('🚀 [SUBMIT] Form submission started')
-    console.log('🚀 [SUBMIT] User email from state:', userEmail)
-    console.log('🚀 [SUBMIT] Wallet address:', walletAddress)
-    
     if (!walletAddress) {
-      console.error('❌ [SUBMIT] No wallet address found')
       toast.error('Please ensure your wallet is connected')
       return
     }
@@ -617,7 +506,7 @@ export default function CreateTicketPage() {
         toast.success('Image uploaded!')
       }
 
-      // Create event in database
+      // Prepare base event data
       const eventData = {
         title: formData.eventName,
         startDateTime: new Date(`${formData.startDate}T${formData.startTime}`).toISOString(),
@@ -655,7 +544,6 @@ export default function CreateTicketPage() {
 
       console.log('📝 [SUBMIT] Saving event to database:', eventData)
 
-      // Save to database
       toast.info('Saving event to database...')
       
       const dbResponse = await fetch('/api/events', {
@@ -673,41 +561,45 @@ export default function CreateTicketPage() {
       }
 
       const savedEventId = dbResult.eventId
-      console.log('✅ [SUBMIT] Event saved successfully with ID:', savedEventId)
-      toast.success('Event saved to database!')
+      const ticketTypesCreated = dbResult.ticketTypesCreated || 0
+      const redirectUrl = dbResult.redirectUrl || `/events/${savedEventId}`
+      
+      console.log(`✅ [SUBMIT] Event saved with ID: ${savedEventId}`)
+      console.log(`✅ [SUBMIT] Ticket types created: ${ticketTypesCreated}`)
+      console.log(`✅ [SUBMIT] Redirect URL: ${redirectUrl}`)
+      
+      if (ticketTypesCreated === 0) {
+        toast.warning('Event created but ticket types were not created. Please check your configuration.')
+      } else {
+        toast.success(`Event saved! Created ${ticketTypesCreated} ticket type(s).`)
+      }
 
-      // 🔥 Send email to organizer - uses database email if needed
-      console.log('📧 [SUBMIT] Calling sendOrganizerEmail...')
+      // Send email notification
       await sendOrganizerEmail(eventData, savedEventId)
-      console.log('✅ [SUBMIT] sendOrganizerEmail completed')
 
-      // Success message
       const successMessage = formData.isFree 
         ? 'Free event created successfully!'
         : `Paid event created successfully! Ticket price: ${formData.currency === 'NGN' ? '₦' : '$'}${formData.priceAmount}`
       
       toast.success(successMessage)
       
-      const eventUrl = `${window.location.origin}/events/${savedEventId}`
+      const eventUrl = `${window.location.origin}${redirectUrl}`
       
       toast.info(
         <div className="space-y-2">
           <div className="font-semibold">Event Created!</div>
-          <div className="text-sm">Share this URL with attendees:</div>
-          <div className="text-xs bg-blue-50 dark:bg-blue-900/30 p-2 rounded break-all">
-            {eventUrl}
-          </div>
-          <div className="text-xs text-green-600 dark:text-green-400 mt-1">
-            ✓ Confirmation email sent to {userEmail || 'your email'}
+          <div className="text-sm">Redirecting to event page...</div>
+          <div className="text-xs text-green-600 mt-1">
+            ✓ {ticketTypesCreated} ticket type(s) created
           </div>
         </div>,
-        { duration: 8000 }
+        { duration: 2000 }
       )
       
-      // Redirect after delay
+      // Redirect to the newly created event page after 2 seconds
       setTimeout(() => {
-        router.push(`/dashboard?created=${savedEventId}`)
-      }, 4000)
+        router.push(redirectUrl)
+      }, 2000)
 
     } catch (error) {
       console.error('❌ [SUBMIT] Event creation error:', error)
@@ -717,7 +609,7 @@ export default function CreateTicketPage() {
     }
   }
 
-  // Show loading while fetching email
+  // Loading states
   if (!ready || isFetchingEmail) {
     return <LoadingSpinner fullScreen text="Loading your profile..." />
   }
@@ -727,16 +619,14 @@ export default function CreateTicketPage() {
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="text-center">
           <h2 className="text-2xl font-bold mb-4">Please login</h2>
-          <p className="text-gray-600 dark:text-gray-400 mb-6">
-            Login to create events
-          </p>
+          <p className="text-gray-600 mb-6">Login to create events</p>
         </div>
       </div>
     )
   }
 
   // Show warning if no email found
-  if (!userEmail) {
+  if (!userEmail || userEmail === '') {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 text-center">
@@ -746,13 +636,13 @@ export default function CreateTicketPage() {
             </svg>
           </div>
           <h2 className="text-2xl font-bold mb-3">Email Required</h2>
-          <p className="text-gray-600 dark:text-gray-400 mb-6">
+          <p className="text-gray-600 mb-6">
             Please complete your profile with an email address before creating events.
             This is where event confirmations will be sent.
           </p>
           <button
             onClick={() => router.push('/complete-profile')}
-            className="w-full py-3 bg-primary text-white rounded-xl font-medium hover:bg-primary-dark transition-colors"
+            className="w-full py-3 bg-primary text-white rounded-xl font-medium"
           >
             Complete Profile
           </button>
@@ -812,7 +702,7 @@ export default function CreateTicketPage() {
               <div>
                 <label className="block text-sm font-medium mb-2">Country</label>
                 <div className="relative">
-                  <Flag className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                   <select
                     value={locationDetails.country || ''}
                     onChange={(e) => handleLocationDetailsChange('country', e.target.value)}
@@ -1044,7 +934,7 @@ export default function CreateTicketPage() {
             </div>
           </div>
 
-          {/* Description */}
+          {/* Description - Increased limit */}
           <div>
             <label className="block text-sm font-medium mb-2">Event Description</label>
             <textarea
@@ -1054,12 +944,12 @@ export default function CreateTicketPage() {
                 setCharCount(e.target.value.length)
               }}
               placeholder="Tell people about your event..."
-              rows={4}
+              rows={8}
               required
-              maxLength={2000}
+              maxLength={5000}
               className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl resize-none"
             />
-            <div className="mt-1 text-right text-sm text-gray-500">{charCount}/2000</div>
+            <div className="mt-1 text-right text-sm text-gray-500">{charCount}/5000</div>
           </div>
 
           {/* Ticket Price */}
@@ -1178,7 +1068,9 @@ export default function CreateTicketPage() {
               {formData.imagePreview ? (
                 <div className="relative">
                   <img src={formData.imagePreview} alt="Event preview" className="w-full max-w-md mx-auto h-64 object-cover rounded-lg" />
-                  <button type="button" onClick={() => setFormData(prev => ({ ...prev, image: null, imagePreview: '' }))} className="absolute top-2 right-2 p-2 bg-red-500 text-white rounded-full">✕</button>
+                  <button type="button" onClick={() => setFormData(prev => ({ ...prev, image: null, imagePreview: '' }))} className="absolute top-2 right-2 p-2 bg-red-500 text-white rounded-full">
+                    <X className="h-4 w-4" />
+                  </button>
                 </div>
               ) : (
                 <>
