@@ -311,7 +311,6 @@ export async function POST(request: NextRequest) {
               <h4>⚠️ Important Information</h4>
               <ul>
                 <li>Please arrive at least 30 minutes before the event starts</li>
-                <li>Bring a valid ID matching the name on the ticket</li>
                 <li>Show your QR code at the entrance (digital or printed)</li>
                 <li>Tickets are non-transferable without prior authorization</li>
               </ul>
