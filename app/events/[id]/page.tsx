@@ -14,6 +14,7 @@ import { toast } from 'sonner'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { usePrivy } from '@privy-io/react-auth'
 import { format } from 'date-fns'
+import ShareDropdown from '@/components/common/ShareDropdown'
 
 declare global {
   interface Window {
@@ -220,7 +221,6 @@ function EventPageContent() {
       if (!response.ok) throw new Error(data.error || 'Failed to get free ticket')
       if (data.success) {
         toast.success('Free ticket sent to your email! Check your inbox.')
-        // Refresh event data to update ticket count
         setTimeout(() => window.location.reload(), 2000)
       }
     } catch (error) {
@@ -231,94 +231,93 @@ function EventPageContent() {
     }
   }
 
-const handlePayWithCard = async () => {
-  if (!isLoggedIn) {
-    toast.error('Please login to purchase tickets')
-    login()
-    return
-  }
-
-  if (!userEmail) {
-    toast.error('Please complete your profile with an email address first')
-    router.push('/complete-profile')
-    return
-  }
-
-  if (!selectedTicketType) {
-    toast.error('Please select a ticket type')
-    return
-  }
-
-  const totalPrice = selectedTicketType.price * selectedQuantity
-  
-  try {
-    setIsProcessingPayment(true)
-
-    const response = await fetch('/api/payments/paystack/initialize', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        eventId,
-        ticketTypeId: selectedTicketType._id,
-        quantity: selectedQuantity,
-        amount: totalPrice,
-        email: userEmail,
-        userName: userEmail.split('@')[0] || 'User'
-      })
-    })
-
-    const data = await response.json()
-    
-    if (!response.ok) {
-      throw new Error(data.message || data.error || 'Failed to initialize payment')
+  const handlePayWithCard = async () => {
+    if (!isLoggedIn) {
+      toast.error('Please login to purchase tickets')
+      login()
+      return
     }
 
-    if (window.PaystackPop && data.access_code) {
-      const paystack = new window.PaystackPop()
-      paystack.resumeTransaction(data.access_code, {
-        onSuccess: async (transaction: any) => {
-          toast.loading('Verifying payment...')
-          try {
-            const verifyResponse = await fetch(`/api/payments/paystack/verify?reference=${transaction.reference}`)
-            const verifyData = await verifyResponse.json()
-            toast.dismiss()
-            if (verifyData.success) {
-              toast.success('Payment successful! Redirecting...')
-              // Redirect to payment success page
-              setTimeout(() => {
-                window.location.href = `/payment/success?reference=${transaction.reference}`
-              }, 1500)
-            } else {
+    if (!userEmail) {
+      toast.error('Please complete your profile with an email address first')
+      router.push('/complete-profile')
+      return
+    }
+
+    if (!selectedTicketType) {
+      toast.error('Please select a ticket type')
+      return
+    }
+
+    const totalPrice = selectedTicketType.price * selectedQuantity
+  
+    try {
+      setIsProcessingPayment(true)
+
+      const response = await fetch('/api/payments/paystack/initialize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          eventId,
+          ticketTypeId: selectedTicketType._id,
+          quantity: selectedQuantity,
+          amount: totalPrice,
+          email: userEmail,
+          userName: userEmail.split('@')[0] || 'User'
+        })
+      })
+
+      const data = await response.json()
+    
+      if (!response.ok) {
+        throw new Error(data.message || data.error || 'Failed to initialize payment')
+      }
+
+      if (window.PaystackPop && data.access_code) {
+        const paystack = new window.PaystackPop()
+        paystack.resumeTransaction(data.access_code, {
+          onSuccess: async (transaction: any) => {
+            toast.loading('Verifying payment...')
+            try {
+              const verifyResponse = await fetch(`/api/payments/paystack/verify?reference=${transaction.reference}`)
+              const verifyData = await verifyResponse.json()
+              toast.dismiss()
+              if (verifyData.success) {
+                toast.success('Payment successful! Redirecting...')
+                setTimeout(() => {
+                  window.location.href = `/payment/success?reference=${transaction.reference}`
+                }, 1500)
+              } else {
+                toast.error('Payment verification failed. Please contact support.')
+              }
+            } catch (verifyError) {
+              toast.dismiss()
+              console.error('Verification error:', verifyError)
               toast.error('Payment verification failed. Please contact support.')
             }
-          } catch (verifyError) {
-            toast.dismiss()
-            console.error('Verification error:', verifyError)
-            toast.error('Payment verification failed. Please contact support.')
+            setIsProcessingPayment(false)
+          },
+          onCancel: () => {
+            toast.info('Payment cancelled')
+            setIsProcessingPayment(false)
+          },
+          onError: (error: any) => {
+            console.error('Paystack error:', error)
+            toast.error('Payment failed. Please try again.')
+            setIsProcessingPayment(false)
           }
-          setIsProcessingPayment(false)
-        },
-        onCancel: () => {
-          toast.info('Payment cancelled')
-          setIsProcessingPayment(false)
-        },
-        onError: (error: any) => {
-          console.error('Paystack error:', error)
-          toast.error('Payment failed. Please try again.')
-          setIsProcessingPayment(false)
-        }
-      })
-    } else if (data.authorization_url) {
-      window.location.href = data.authorization_url
-    } else {
-      throw new Error('No payment URL received')
+        })
+      } else if (data.authorization_url) {
+        window.location.href = data.authorization_url
+      } else {
+        throw new Error('No payment URL received')
+      }
+    } catch (error) {
+      console.error('Paystack payment error:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to process payment')
+      setIsProcessingPayment(false)
     }
-  } catch (error) {
-    console.error('Paystack payment error:', error)
-    toast.error(error instanceof Error ? error.message : 'Failed to process payment')
-    setIsProcessingPayment(false)
   }
-}
 
   const handlePayWithCrypto = async () => {
     toast.info('🚀 Crypto payments are coming soon! Stay tuned for updates.')
@@ -355,19 +354,6 @@ const handlePayWithCard = async () => {
     setSelectedQuantity(newQuantity)
   }
 
-  const handleShare = async () => {
-    try {
-      if (navigator.share) {
-        await navigator.share({ title: event?.title, text: `Check out "${event?.title}" on CACK-pass`, url: window.location.href })
-      } else {
-        await navigator.clipboard.writeText(window.location.href)
-        toast.success('Link copied to clipboard!')
-      }
-    } catch (error) {
-      if (!(error instanceof Error) || !error.message.includes('AbortError')) toast.error('Failed to share event')
-    }
-  }
-
   const handleFavoriteToggle = () => {
     const favorites = JSON.parse(localStorage.getItem('cackpass_favorites') || '[]')
     if (isFavorite) {
@@ -399,25 +385,21 @@ const handlePayWithCard = async () => {
   }
 
   const getAvailableTickets = (ticketType: TicketTypeData) => {
-    // For virtual tickets, use event's capacity and ticketsSold
     if (ticketType._id.toString().startsWith('virtual_') && event) {
       if (event.unlimitedCapacity) return 'Unlimited'
       const remaining = (event.capacity || 0) - (event.ticketsSold || 0)
       return Math.max(0, remaining)
     }
-    // For real ticket types
     if (ticketType.maxSupply === 0) return 'Unlimited'
     return Math.max(0, ticketType.maxSupply - ticketType.currentSupply)
   }
 
   const isTicketAvailable = (ticketType: TicketTypeData) => {
-    // For virtual tickets, check event capacity
     if (ticketType._id.toString().startsWith('virtual_') && event) {
       if (event.unlimitedCapacity) return true
       const remaining = (event.capacity || 0) - (event.ticketsSold || 0)
       return remaining > 0
     }
-    // For real ticket types
     if (ticketType.maxSupply === 0) return true
     return ticketType.currentSupply < ticketType.maxSupply
   }
@@ -463,9 +445,13 @@ const handlePayWithCard = async () => {
               <button onClick={handleFavoriteToggle} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors">
                 <Heart className={`h-5 w-5 ${isFavorite ? 'fill-red-500 text-red-500' : 'text-gray-400'}`} />
               </button>
-              <button onClick={handleShare} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors">
-                <Share2 className="h-5 w-5 text-gray-400" />
-              </button>
+              
+              {/* Share Dropdown */}
+              <ShareDropdown 
+                url={`${process.env.NEXT_PUBLIC_APP_URL || window.location.origin}/events/${eventId}`}
+                title={event.title}
+                eventTitle={event.title}
+              />
             </div>
           </div>
         </div>
@@ -631,7 +617,6 @@ const handlePayWithCard = async () => {
                     {/* PAID EVENT - Check if user can purchase */}
                     {!event.isFree && selectedTicketType && selectedTicketType.price > 0 && (
                       <div className="space-y-4">
-                        {/* If not logged in */}
                         {!isLoggedIn ? (
                           <button onClick={() => login()} className="w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-2 text-base bg-primary hover:bg-primary-dark text-white transition-all">
                             <User className="h-5 w-5" />
@@ -649,7 +634,6 @@ const handlePayWithCard = async () => {
                           </button>
                         ) : (
                           <>
-                            {/* Payment Method Selection - Responsive */}
                             <div className="flex flex-col sm:flex-row gap-3 mb-4">
                               <button 
                                 onClick={() => setSelectedPaymentMethod('paystack')} 
