@@ -7,7 +7,7 @@ import {
   Share2, Heart, ChevronLeft, Star, Tag, 
   Globe, Shield, QrCode, Loader2,
   CreditCard, Wallet, CheckCircle,
-  AlertCircle, User, Mail, Check
+  AlertCircle, User, Mail, Check, Settings
 } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
@@ -54,6 +54,7 @@ interface EventDataWithId {
   unlimitedCapacity: boolean
   capacity?: number
   ticketsSold?: number
+  organizerWallet: string
   organizer: { name: string; avatar: string; _id?: string }
   attendees: number
   rating: number
@@ -72,7 +73,7 @@ const getSafeAvatarUrl = (avatar?: string) => {
   return `/${avatar}`
 }
 
-// Get wallet address from Privy user
+// Helper functions to extract wallet address and email from Privy user
 const getWalletAddress = (user: any): string | null => {
   if (!user) return null
   if (user.wallet?.address) return user.wallet.address
@@ -81,6 +82,19 @@ const getWalletAddress = (user: any): string | null => {
     if (account.type === 'wallet' && account.address) return account.address
   }
   return null
+}
+
+// Helper to fetch user email by wallet address
+const fetchUserEmailByWallet = async (wallet: string): Promise<string | null> => {
+  try {
+    const res = await fetch(`/api/auth/user?walletAddress=${wallet}`)
+    if (!res.ok) return null
+    const data = await res.json()
+    return data.user?.email || null
+  } catch (error) {
+    console.error('Failed to fetch user email:', error)
+    return null
+  }
 }
 
 export default function EventPage() {
@@ -109,24 +123,22 @@ function EventPageContent() {
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'paystack' | 'crypto'>('paystack')
   const [userEmail, setUserEmail] = useState<string | null>(null)
   const [isFetchingEmail, setIsFetchingEmail] = useState(false)
+  const [isOrganizer, setIsOrganizer] = useState(false)
   
   const eventId = params.id as string
   const walletAddress = getWalletAddress(user)
   const isLoggedIn = authenticated && ready
 
-  // Fetch user email from database when logged in
+  // Fetch logged‑in user's email from database
   useEffect(() => {
     const fetchUserEmail = async () => {
       if (!isLoggedIn || !walletAddress) return
-      
       setIsFetchingEmail(true)
       try {
         const response = await fetch(`/api/auth/user?walletAddress=${walletAddress}`)
         if (response.ok) {
           const data = await response.json()
-          if (data.user?.email) {
-            setUserEmail(data.user.email)
-          }
+          if (data.user?.email) setUserEmail(data.user.email)
         }
       } catch (error) {
         console.error('Error fetching user email:', error)
@@ -137,6 +149,7 @@ function EventPageContent() {
     fetchUserEmail()
   }, [isLoggedIn, walletAddress])
 
+  // Fetch event data
   useEffect(() => {
     const fetchEventData = async () => {
       if (!eventId) return
@@ -151,6 +164,7 @@ function EventPageContent() {
           ...eventData.event,
           id: eventData.event._id || eventData.event.id,
           _id: eventData.event._id,
+          organizerWallet: eventData.event.organizerWallet,
           organizer: getSafeOrganizer(eventData.event.organizer)
         }
         setEvent(transformedEvent)
@@ -178,6 +192,22 @@ function EventPageContent() {
     fetchEventData()
   }, [eventId, router])
 
+  // Determine if the logged‑in user is the event organizer (by email)
+  useEffect(() => {
+    const checkOrganizer = async () => {
+      if (!event || !userEmail) return
+      try {
+        // Fetch organizer's email using organizerWallet
+        const organizerEmail = await fetchUserEmailByWallet(event.organizerWallet)
+        setIsOrganizer(organizerEmail === userEmail)
+      } catch (error) {
+        console.error('Failed to check organizer status:', error)
+        setIsOrganizer(false)
+      }
+    }
+    checkOrganizer()
+  }, [event, userEmail])
+
   useEffect(() => {
     if (typeof window !== 'undefined' && !window.PaystackPop) {
       const script = document.createElement('script')
@@ -193,18 +223,15 @@ function EventPageContent() {
       login()
       return
     }
-
     if (!userEmail) {
       toast.error('Please complete your profile with an email address first')
       router.push('/complete-profile')
       return
     }
-
     if (!selectedTicketType) {
       toast.error('Please select a ticket type')
       return
     }
-
     try {
       setIsGettingFreeTicket(true)
       const response = await fetch('/api/tickets/free', {
@@ -237,23 +264,18 @@ function EventPageContent() {
       login()
       return
     }
-
     if (!userEmail) {
       toast.error('Please complete your profile with an email address first')
       router.push('/complete-profile')
       return
     }
-
     if (!selectedTicketType) {
       toast.error('Please select a ticket type')
       return
     }
-
     const totalPrice = selectedTicketType.price * selectedQuantity
-  
     try {
       setIsProcessingPayment(true)
-
       const response = await fetch('/api/payments/paystack/initialize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -266,13 +288,8 @@ function EventPageContent() {
           userName: userEmail.split('@')[0] || 'User'
         })
       })
-
       const data = await response.json()
-    
-      if (!response.ok) {
-        throw new Error(data.message || data.error || 'Failed to initialize payment')
-      }
-
+      if (!response.ok) throw new Error(data.message || data.error || 'Failed to initialize payment')
       if (window.PaystackPop && data.access_code) {
         const paystack = new window.PaystackPop()
         paystack.resumeTransaction(data.access_code, {
@@ -330,7 +347,6 @@ function EventPageContent() {
 
   const handleQuantityChange = (change: number) => {
     if (!selectedTicketType) return
-    
     let maxAvailable = 10
     if (selectedTicketType._id.toString().startsWith('virtual_') && event) {
       if (!event.unlimitedCapacity) {
@@ -341,7 +357,6 @@ function EventPageContent() {
     } else {
       maxAvailable = selectedTicketType.maxSupply === 0 ? 10 : selectedTicketType.maxSupply - selectedTicketType.currentSupply
     }
-    
     const newQuantity = selectedQuantity + change
     if (newQuantity < 1) {
       toast.error('Minimum quantity is 1')
@@ -413,7 +428,6 @@ function EventPageContent() {
   const totalPrice = selectedTicketType ? (selectedTicketType.price * selectedQuantity).toFixed(2) : '0.00'
 
   if (isLoading) return <LoadingSpinner fullScreen text="Loading event details..." />
-
   if (!event) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
@@ -445,7 +459,18 @@ function EventPageContent() {
               <button onClick={handleFavoriteToggle} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors">
                 <Heart className={`h-5 w-5 ${isFavorite ? 'fill-red-500 text-red-500' : 'text-gray-400'}`} />
               </button>
-              
+
+              {/* Edit button – only visible to the event organizer (by email) */}
+              {isOrganizer && (
+                <Link
+                  href={`/dashboard/edit-event/${eventId}`}
+                  className="flex items-center gap-2 px-4 py-2 bg-secondary text-white rounded-xl hover:bg-primary-dark transition-all shadow-sm"
+                  title="Edit event"
+                >
+                  <Settings className="h-4 w-4" />
+                  <span className="text-base font-medium">Edit Event</span>
+                </Link>
+              )}
               {/* Share Dropdown */}
               <ShareDropdown 
                 url={`${process.env.NEXT_PUBLIC_APP_URL || window.location.origin}/events/${eventId}`}
