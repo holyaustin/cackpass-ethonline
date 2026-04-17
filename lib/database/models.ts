@@ -94,6 +94,7 @@ const EventSchema = new mongoose.Schema({
     enum: ['draft', 'published', 'cancelled', 'completed'],
     default: 'published'
   },
+  scannerEmails: { type: [String], default: [] },
   isActive: { type: Boolean, default: true },
 }, {
   timestamps: true

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
 import QRCode from 'qrcode';
+import { connectDB } from '@/lib/database/connection';
+import { MyTicket, Event } from '@/lib/database/models';
+import { generateTicketHMAC } from '@/lib/qr-security';
 
 // Create transporter outside the handler for reuse
 let transporter: nodemailer.Transporter | null = null;
@@ -29,7 +32,6 @@ export async function POST(request: NextRequest) {
   console.log('📧 Ticket confirmation email API called');
   
   try {
-    // Parse request body
     const body = await request.json();
     console.log('📧 Request body:', body);
 
@@ -45,46 +47,35 @@ export async function POST(request: NextRequest) {
       reference,
     } = body;
 
-    // Validate required fields
     if (!email) {
-      console.error('❌ Missing recipient email');
-      return NextResponse.json(
-        { error: 'Recipient email is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Recipient email is required' }, { status: 400 });
     }
 
     if (!eventTitle) {
-      console.error('❌ Missing eventTitle');
-      return NextResponse.json(
-        { error: 'Event title is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Event title is required' }, { status: 400 });
     }
 
-    // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      console.error('❌ Invalid email format:', email);
-      return NextResponse.json(
-        { error: 'Invalid email format' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Invalid email format' }, { status: 400 });
     }
 
-    // Check Gmail credentials
     const gmailUser = process.env.GMAIL_USER;
     const gmailPass = process.env.GMAIL_APP_PASSWORD;
     
     if (!gmailUser || !gmailPass) {
-      console.error('❌ Missing Gmail credentials in environment');
-      return NextResponse.json(
-        { error: 'Email service not configured' },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: 'Email service not configured' }, { status: 500 });
     }
 
-    // Format date
+    await connectDB();
+
+    // Find event by title
+    const event = await Event.findOne({ title: eventTitle });
+    if (!event) {
+      console.error(`Event not found: ${eventTitle}`);
+      // Continue without event ID (QR code will still work but without HMAC)
+    }
+
     const formattedDate = eventDate ? new Date(eventDate).toLocaleDateString('en-US', {
       weekday: 'long',
       year: 'numeric',
@@ -97,42 +88,65 @@ export async function POST(request: NextRequest) {
       minute: '2-digit'
     }) : 'Time to be announced';
 
-    // Generate QR code for the ticket
-    let qrCodeDataUrl = '';
-    try {
-      const qrData = JSON.stringify({
-        reference,
-        eventTitle,
-        ticketCount,
-        email,
-        date: formattedDate,
-        venue
-      });
-      
-      qrCodeDataUrl = await QRCode.toDataURL(qrData, {
-        width: 200,
-        margin: 2,
-        color: {
-          dark: '#D95427',
-          light: '#ffffff'
-        }
-      });
-      console.log('✅ QR code generated successfully');
-    } catch (qrError) {
-      console.error('❌ QR code generation failed:', qrError);
-      // Continue without QR code
+    // Find all tickets for this order
+    const tickets = await MyTicket.find({ ticketNumber: { $regex: `^${reference}-` } });
+    
+    if (tickets.length === 0) {
+      console.error(`No tickets found for reference: ${reference}`);
     }
 
-    console.log('📧 Sending ticket confirmation email to:', email);
-    console.log('📧 Using Gmail account:', gmailUser);
+    // Generate QR codes for each ticket (one per ticket)
+    const qrCodes: { ticketNumber: string; qrDataUrl: string }[] = [];
+    
+    for (const ticket of tickets) {
+      try {
+        const hmac = event ? generateTicketHMAC(ticket.ticketNumber, event._id.toString()) : '';
+        const qrPayload = JSON.stringify({
+          ticketNumber: ticket.ticketNumber,
+          eventId: event ? event._id.toString() : '',
+          sig: hmac,
+        });
+        
+        const qrDataUrl = await QRCode.toDataURL(qrPayload, {
+          width: 200,
+          margin: 2,
+          color: {
+            dark: '#D95427',
+            light: '#ffffff'
+          }
+        });
+        
+        qrCodes.push({ ticketNumber: ticket.ticketNumber, qrDataUrl });
+      } catch (qrError) {
+        console.error(`❌ QR code generation failed for ticket ${ticket.ticketNumber}:`, qrError);
+      }
+    }
 
-    // Email HTML template for ticket confirmation
+    console.log(`✅ Generated ${qrCodes.length} QR codes for ${tickets.length} tickets`);
+
+    // Build email HTML with multiple QR codes
+    const ticketsHtml = qrCodes.map((qr, index) => `
+      <div class="ticket-item" style="margin-bottom: 30px; border-bottom: 1px solid #eee; padding-bottom: 20px;">
+        <h3 style="color: #D95427; margin-bottom: 10px;">Ticket #${index + 1}</h3>
+        <div class="ticket-detail" style="margin-bottom: 10px;">
+          <span class="label" style="font-weight: 600;">Ticket ID:</span>
+          <span class="value">${qr.ticketNumber}</span>
+        </div>
+        <div class="qr-code" style="text-align: center; margin: 15px 0;">
+          <img src="${qr.qrDataUrl}" alt="Ticket QR Code" style="max-width: 180px; height: auto;" />
+          <p style="margin-top: 10px; font-size: 12px; color: #6c757d;">
+            Scan this QR code at the event entrance
+          </p>
+        </div>
+      </div>
+    `).join('');
+
     const emailHtml = `
       <!DOCTYPE html>
       <html>
       <head>
         <meta charset="UTF-8">
-        <title>Your Ticket - CACK-pass</title>
+        <title>Your Tickets - CACK-pass</title>
         <style>
           body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -158,13 +172,8 @@ export async function POST(request: NextRequest) {
             color: white;
             margin: -20px -20px 0 -20px;
           }
-          .header h1 {
-            margin: 0;
-            font-size: 28px;
-          }
-          .content {
-            padding: 30px 20px;
-          }
+          .header h1 { margin: 0; font-size: 28px; }
+          .content { padding: 30px 20px; }
           .ticket-card {
             background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
             border-radius: 12px;
@@ -175,30 +184,12 @@ export async function POST(request: NextRequest) {
           .ticket-detail {
             display: flex;
             justify-content: space-between;
-            padding: 10px 0;
+            padding: 8px 0;
             border-bottom: 1px solid #dee2e6;
           }
-          .ticket-detail:last-child {
-            border-bottom: none;
-          }
-          .label {
-            font-weight: 600;
-            color: #495057;
-          }
-          .value {
-            color: #212529;
-          }
-          .qr-code {
-            text-align: center;
-            margin: 20px 0;
-            padding: 20px;
-            background: white;
-            border-radius: 12px;
-          }
-          .qr-code img {
-            max-width: 200px;
-            height: auto;
-          }
+          .ticket-detail:last-child { border-bottom: none; }
+          .label { font-weight: 600; color: #495057; }
+          .value { color: #212529; }
           .button {
             display: inline-block;
             background: linear-gradient(135deg, #D95427 0%, #B8431F 100%);
@@ -217,16 +208,6 @@ export async function POST(request: NextRequest) {
             border-top: 1px solid #dee2e6;
             margin-top: 20px;
           }
-          .badge {
-            display: inline-block;
-            background: #28a745;
-            color: white;
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 600;
-            margin-left: 10px;
-          }
           .info-box {
             background: #fff3cd;
             border-left: 4px solid #ffc107;
@@ -234,21 +215,14 @@ export async function POST(request: NextRequest) {
             margin: 20px 0;
             border-radius: 8px;
           }
-          .info-box h4 {
-            margin: 0 0 10px 0;
-            color: #856404;
-          }
-          .info-box ul {
-            margin: 0;
-            padding-left: 20px;
-            color: #856404;
-          }
+          .info-box h4 { margin: 0 0 10px 0; color: #856404; }
+          .info-box ul { margin: 0; padding-left: 20px; color: #856404; }
         </style>
       </head>
       <body>
         <div class="container">
           <div class="header">
-            <h1>🎫 Your Ticket is Ready!</h1>
+            <h1>🎫 Your Tickets are Ready!</h1>
             <p>Thank you for your purchase</p>
           </div>
           
@@ -291,15 +265,10 @@ export async function POST(request: NextRequest) {
               </div>
             </div>
             
-            ${qrCodeDataUrl ? `
-            <div class="qr-code">
-              <h3 style="margin-bottom: 15px;">Your Digital Ticket</h3>
-              <img src="${qrCodeDataUrl}" alt="Ticket QR Code" />
-              <p style="margin-top: 15px; font-size: 12px; color: #6c757d;">
-                Scan this QR code at the event entrance
-              </p>
-            </div>
-            ` : ''}
+            <h3 style="margin-top: 30px;">Your Digital Tickets</h3>
+            <p>Each ticket has its own QR code. Please keep them safe.</p>
+            
+            ${ticketsHtml}
             
             <div style="text-align: center;">
               <a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard/tickets" class="button">
@@ -312,6 +281,7 @@ export async function POST(request: NextRequest) {
               <ul>
                 <li>Please arrive at least 30 minutes before the event starts</li>
                 <li>Show your QR code at the entrance (digital or printed)</li>
+                <li>Each ticket must be scanned separately for entry</li>
                 <li>Tickets are non-transferable without prior authorization</li>
               </ul>
             </div>
@@ -320,37 +290,25 @@ export async function POST(request: NextRequest) {
           <div class="footer">
             <p>© ${new Date().getFullYear()} CACK-pass. All rights reserved.</p>
             <p>Need help? Contact us at <a href="mailto:support@cackpass.com">support@cackpass.com</a></p>
-            <p style="font-size: 11px;">This is an automated message, please do not reply.</p>
           </div>
         </div>
       </body>
       </html>
     `;
 
-    // Create transporter and send email
     const transporter = getTransporter();
-    
     const mailOptions = {
       from: `"CACK-pass" <${gmailUser}>`,
       to: email,
-      subject: `🎫 Your Ticket for ${eventTitle} - CACK-pass`,
+      subject: `🎫 Your Tickets for ${eventTitle} - CACK-pass`,
       html: emailHtml,
-      attachments: qrCodeDataUrl ? [] : undefined, // QR code is embedded as data URL
     };
-
-    console.log('📧 Sending ticket confirmation mail with options:', {
-      from: mailOptions.from,
-      to: mailOptions.to,
-      subject: mailOptions.subject,
-    });
 
     const info = await transporter.sendMail(mailOptions);
     
     console.log('✅ Ticket confirmation email sent successfully:', {
       messageId: info.messageId,
-      response: info.response,
-      accepted: info.accepted,
-      rejected: info.rejected,
+      to: email,
     });
 
     return NextResponse.json({
@@ -361,53 +319,8 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error('❌ Ticket confirmation email error details:', {
-      message: error.message,
-      code: error.code,
-      command: error.command,
-      response: error.response,
-      stack: error.stack,
-    });
-
-    // Handle specific error types
-    if (error.code === 'EAUTH') {
-      return NextResponse.json(
-        { 
-          error: 'Email authentication failed. Please check your Gmail credentials.',
-          details: 'Invalid app password or 2FA not configured'
-        },
-        { status: 401 }
-      );
-    }
-
-    if (error.code === 'ESOCKET') {
-      return NextResponse.json(
-        { 
-          error: 'Network error. Please check your internet connection.',
-          details: error.message
-        },
-        { status: 503 }
-      );
-    }
-
-    if (error.code === 'ECONNECTION') {
-      return NextResponse.json(
-        { 
-          error: 'Connection failed. Gmail SMTP might be blocked.',
-          details: error.message
-        },
-        { status: 503 }
-      );
-    }
-
-    return NextResponse.json(
-      { 
-        error: 'Failed to send ticket confirmation email',
-        details: error.message,
-        code: error.code
-      },
-      { status: 500 }
-    );
+    console.error('❌ Ticket confirmation email error:', error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
@@ -422,10 +335,7 @@ export async function GET(request: NextRequest) {
       const gmailPass = process.env.GMAIL_APP_PASSWORD;
       
       if (!gmailUser || !gmailPass) {
-        return NextResponse.json(
-          { error: 'Missing Gmail credentials' },
-          { status: 500 }
-        );
+        return NextResponse.json({ error: 'Missing Gmail credentials' }, { status: 500 });
       }
 
       const transporter = nodemailer.createTransport({
@@ -446,10 +356,7 @@ export async function GET(request: NextRequest) {
         messageId: info.messageId,
       });
     } catch (error: any) {
-      return NextResponse.json(
-        { error: error.message, code: error.code },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: error.message, code: error.code }, { status: 500 });
     }
   }
 
@@ -457,7 +364,7 @@ export async function GET(request: NextRequest) {
     message: 'CACK-pass Ticket Purchase Confirmation Email',
     endpoints: {
       'POST /': 'Send ticket confirmation email to customer',
-      'GET /?test=holyaustin@yahoo.com': 'Send test email to verify configuration',
+      'GET /?test=email@example.com': 'Send test email to verify configuration',
     },
   });
 }

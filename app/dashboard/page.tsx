@@ -1,4 +1,4 @@
-// app/dashboard/page.tsx 
+// app/dashboard/page.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -7,7 +7,7 @@ import {
   Ticket, Wallet, Plus, History, Send, Settings, 
   Calendar, Users, QrCode, ChevronRight, Sparkles,
   LogIn, User, CreditCard, Globe, Copy, RefreshCw,
-  AlertCircle
+  AlertCircle, Loader2, Shield, Mail, Scan
 } from 'lucide-react'
 import Link from 'next/link'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
@@ -75,10 +75,8 @@ async function fetchUSDCBalance(walletAddress: string): Promise<{
   try {
     console.log('💰 Fetching USDC balance for:', walletAddress)
     
-    // Use Lisk Mainnet RPC URL
     const provider = new ethers.JsonRpcProvider(LISK_MAINNET_RPC_URL)
     
-    // Test connection to Lisk Mainnet
     try {
       const network = await provider.getNetwork()
       console.log('✅ Connected to Lisk Mainnet:', {
@@ -95,24 +93,17 @@ async function fetchUSDCBalance(walletAddress: string): Promise<{
       }
     }
     
-    // Create USDC contract instance
     const usdcContract = new ethers.Contract(
       LISK_MAINNET_USDC_ADDRESS,
       USDC_ABI,
       provider
     )
     
-    // Get USDC balance
     const rawBalance = await usdcContract.balanceOf(walletAddress)
     const decimals = await usdcContract.decimals()
     
-    // Convert to proper USDC amount
     const usdcBalance = ethers.formatUnits(rawBalance, decimals)
-    
-    // Format with 2 decimal places
     const usdcBalanceFormatted = parseFloat(usdcBalance).toFixed(2)
-    
-    // Since USDC is pegged to USD, 1 USDC = 1 USD
     const usdBalance = usdcBalanceFormatted
     
     console.log('✅ USDC balance fetched successfully:', {
@@ -154,12 +145,19 @@ export default function DashboardPage() {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [walletAddress, setWalletAddress] = useState<string | null>(null)
   const [balanceUpdateTime, setBalanceUpdateTime] = useState<string>('')
+  const [userEmail, setUserEmail] = useState<string | null>(null)
 
-  // Fetch wallet address when user is authenticated
+  // Events the user can scan (organiser or scanner)
+  const [scanEvents, setScanEvents] = useState<any[]>([])
+  const [loadingScanEvents, setLoadingScanEvents] = useState(false)
+
+  // Fetch wallet address and email when user is authenticated
   useEffect(() => {
     if (authenticated && ready && user) {
       const address = getWalletAddressFromUser(user)
       setWalletAddress(address)
+      const email = user?.email?.address || null
+      setUserEmail(email)
     }
   }, [authenticated, ready, user])
 
@@ -175,6 +173,31 @@ export default function DashboardPage() {
       }))
     }
   }, [walletAddress, authenticated, ready])
+
+  // Fetch scan-authorised events
+  useEffect(() => {
+    const fetchScanEvents = async () => {
+      if (!walletAddress && !userEmail) return
+      setLoadingScanEvents(true)
+      try {
+        const res = await fetch(`/api/events/scan-authorised`, {
+          headers: {
+            'x-wallet-address': walletAddress || '',
+            'x-user-email': userEmail || '',
+          },
+        })
+        const data = await res.json()
+        if (data.events) {
+          setScanEvents(data.events)
+        }
+      } catch (error) {
+        console.error('Failed to fetch scan events', error)
+      } finally {
+        setLoadingScanEvents(false)
+      }
+    }
+    fetchScanEvents()
+  }, [walletAddress, userEmail])
 
   const fetchDashboardData = async (showToast = false) => {
     if (!walletAddress) {
@@ -193,7 +216,6 @@ export default function DashboardPage() {
     setStats(prev => ({ ...prev, isLoading: true, error: null }))
 
     try {
-      // Fetch real USDC balance from Lisk Mainnet
       const balanceData = await fetchUSDCBalance(walletAddress)
       
       if (balanceData.success) {
@@ -205,7 +227,6 @@ export default function DashboardPage() {
           error: null
         }))
         
-        // Set update time
         const now = new Date()
         setBalanceUpdateTime(now.toLocaleTimeString([], { 
           hour: '2-digit', 
@@ -227,14 +248,11 @@ export default function DashboardPage() {
         }
       }
       
-      // Fetch other dashboard data (tickets, events count)
-      const ticketCount = 3
-      const upcomingEvents = 2
-      
+      // Placeholder for other dashboard data
       setStats(prev => ({
         ...prev,
-        ticketCount,
-        upcomingEvents
+        ticketCount: 3,
+        upcomingEvents: 2
       }))
       
     } catch (error: any) {
@@ -369,6 +387,15 @@ export default function DashboardPage() {
     },
   ]
 
+  // Filter only upcoming events (startDate > now)
+  const upcomingScanEvents = scanEvents.filter(ev => {
+    const eventDate = new Date(ev.startDate)
+    return eventDate > new Date()
+  })
+
+  // Show section only if there is at least one upcoming event
+  const showScanSection = upcomingScanEvents.length > 0
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-950">
       <div className="container mx-auto px-4 py-6 max-w-6xl">
@@ -387,7 +414,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Balance Card - Updated for USDC on Lisk Mainnet */}
+        {/* Balance Card */}
         <div className="glass-card rounded-3xl p-6 mb-8 bg-gradient-to-r from-primary to-primary-dark text-white font-extrabold">
           <div className="flex items-center justify-between mb-6">
             <div>
@@ -465,7 +492,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Dashboard Menu */}
+        {/* Quick Actions Menu */}
         <div className="space-y-3">
           <h2 className="text-lg font-semibold mb-4">Quick Actions</h2>
           {menuItems.map((item) => (
@@ -500,6 +527,56 @@ export default function DashboardPage() {
             </Link>
           ))}
         </div>
+
+        {/* Events You Can Scan – only shown if there are upcoming events */}
+        {showScanSection && (
+          <div className="mt-8">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold">Events You Can Scan</h2>
+            </div>
+            <div className="space-y-3">
+              {upcomingScanEvents.map((ev) => (
+                <div key={ev._id} className="glass-card rounded-2xl p-4 flex items-center justify-between flex-wrap gap-3">
+                  <div className="flex items-center gap-3">
+                    {/* Visual icon for identification */}
+                    <div className="w-10 h-10 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+                      <Scan className="h-5 w-5 text-green-600 dark:text-green-400" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold">{ev.title}</h3>
+                      <p className="text-sm text-gray-500">
+                        {new Date(ev.startDate).toLocaleDateString()}
+                      </p>
+                      {ev.isOrganizer && (
+                        <span className="inline-block text-xs text-primary mt-1 bg-primary/10 px-2 py-0.5 rounded-full">
+                          Organizer
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    {ev.isOrganizer && (
+                      <Link
+                        href={`/dashboard/event-scanners/${ev._id}`}
+                        className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-2"
+                      >
+                        <Mail className="h-4 w-4" />
+                        Manage Scanners
+                      </Link>
+                    )}
+                    <Link
+                      href={`/events/${ev._id}/scan`}
+                      className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors flex items-center gap-2"
+                    >
+                      <QrCode className="h-4 w-4" />
+                      Scan Tickets
+                    </Link>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Events Quick Access */}
         <div className="mt-8">
