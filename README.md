@@ -1,5 +1,5 @@
 # CACK-pass 🎟️  
-**Web3 Event Ticketing Platform for all**
+**web2/Web3 Event Ticketing Platform for all**
 
 ## 🚀 Quick Start
 
