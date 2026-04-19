@@ -81,15 +81,108 @@ export default function ScanPage() {
     }
   };
 
-  // 3. Initialize scanner when container is ready and permission granted
+  // 3. Helper to fetch event ID by title (for old QR codes)
+  const fetchEventIdByTitle = async (title: string): Promise<string | null> => {
+    try {
+      const res = await fetch(`/api/events?search=${encodeURIComponent(title)}&limit=1`);
+      const data = await res.json();
+      if (data.success && data.events && data.events.length > 0) {
+        return data.events[0]._id;
+      }
+      return null;
+    } catch (err) {
+      console.error('Failed to fetch event by title:', err);
+      return null;
+    }
+  };
+
+  // 4. Process a scanned QR code (supports both old and new formats)
+  const processQrCode = async (decodedText: string) => {
+    if (processing) return;
+    setProcessing(true);
+
+    try {
+      let ticketNumber: string | undefined;
+      let qrEventId: string | undefined;
+      let signature: string | undefined;
+
+      // Attempt to parse JSON
+      let parsed;
+      try {
+        parsed = JSON.parse(decodedText);
+      } catch {
+        throw new Error('Invalid QR code format (not JSON)');
+      }
+
+      // Check for new format (ticketNumber + eventId)
+      if (parsed.ticketNumber && parsed.eventId) {
+        ticketNumber = parsed.ticketNumber;
+        qrEventId = parsed.eventId;
+        signature = parsed.sig;
+      }
+      // Check for old format (reference + eventTitle)
+      else if (parsed.reference && parsed.eventTitle) {
+        // Find the actual event ID using the title
+        const foundEventId = await fetchEventIdByTitle(parsed.eventTitle);
+        if (!foundEventId) throw new Error('Event not found for old QR code');
+        qrEventId = foundEventId;
+
+        // Find the ticket number in the database using reference and event ID
+        const ticket = await fetch(`/api/tickets/find-by-reference?reference=${parsed.reference}&eventId=${foundEventId}`)
+          .then(res => res.json())
+          .catch(() => null);
+        if (!ticket?.ticketNumber) throw new Error('Ticket not found for this reference');
+        ticketNumber = ticket.ticketNumber;
+        signature = ''; // old QR codes have no HMAC
+      } else {
+        throw new Error('Unrecognised QR code format');
+      }
+
+      // Verify event ID matches the current event
+      if (qrEventId !== eventId) {
+        throw new Error(`Ticket does not belong to this event (QR event: ${qrEventId}, current: ${eventId})`);
+      }
+
+      // Call verification API
+      const verifyRes = await fetch('/api/tickets/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ticketNumber,
+          eventId: qrEventId,
+          signature,
+          scannerUserId: user?.id,
+        }),
+      });
+
+      const data = await verifyRes.json();
+
+      setResultModal({
+        show: true,
+        success: verifyRes.ok,
+        message: verifyRes.ok ? 'Ticket verified! Entry granted.' : data.error || 'Verification failed',
+      });
+      scannerRef.current?.pause(true);
+    } catch (err: any) {
+      console.error('QR processing error:', err);
+      setResultModal({
+        show: true,
+        success: false,
+        message: err.message || 'Invalid QR code',
+      });
+      scannerRef.current?.pause(true);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  // 5. Initialize scanner when container is ready and permission granted
   useEffect(() => {
     if (!authorized || cameraPermission !== 'granted') return;
 
-    // Ensure the container div exists
     const container = containerRef.current;
     if (!container) return;
 
-    // Clean up previous scanner
     if (scannerRef.current) {
       scannerRef.current.clear().catch(console.error);
       scannerRef.current = null;
@@ -105,49 +198,9 @@ export default function ScanPage() {
     scannerRef.current = html5Scanner;
 
     html5Scanner.render(
-      async (decodedText: string) => {
-        if (processing) return;
-        setProcessing(true);
-
-        try {
-          const qrData = JSON.parse(decodedText);
-          const { ticketNumber, eventId: qrEventId, sig } = qrData;
-
-          if (qrEventId !== eventId) throw new Error('Ticket does not belong to this event');
-
-          const verifyRes = await fetch('/api/tickets/verify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              ticketNumber,
-              eventId: qrEventId,
-              signature: sig,
-              scannerUserId: user?.id,
-            }),
-          });
-
-          const data = await verifyRes.json();
-
-          setResultModal({
-            show: true,
-            success: verifyRes.ok,
-            message: verifyRes.ok ? 'Ticket verified! Entry granted.' : data.error || 'Verification failed',
-          });
-
-          html5Scanner.pause(true);
-        } catch (err: any) {
-          setResultModal({
-            show: true,
-            success: false,
-            message: err.message || 'Invalid QR code',
-          });
-          html5Scanner.pause(true);
-        } finally {
-          setProcessing(false);
-        }
-      },
+      (decodedText: string) => processQrCode(decodedText),
       (err: any) => {
-        // Ignore non-critical scanning errors
+        // Ignore non-critical scanning errors (e.g., no QR found)
       }
     );
 
@@ -157,7 +210,7 @@ export default function ScanPage() {
         scannerRef.current = null;
       }
     };
-  }, [authorized, cameraPermission, eventId, processing, user?.id]);
+  }, [authorized, cameraPermission, eventId, processing]);
 
   const resetScanner = () => {
     setResultModal({ show: false, success: false, message: '' });
