@@ -1,3 +1,4 @@
+// app/api/email/ticket-confirmation/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
 import QRCode from 'qrcode';
@@ -95,7 +96,7 @@ export async function POST(request: NextRequest) {
       console.error(`No tickets found for reference: ${reference}`);
     }
 
-    // Generate QR codes for each ticket (one per ticket)
+    // Generate QR codes for each ticket (one per ticket) with enhanced settings
     const qrCodes: { ticketNumber: string; qrDataUrl: string }[] = [];
     
     for (const ticket of tickets) {
@@ -107,11 +108,13 @@ export async function POST(request: NextRequest) {
           sig: hmac,
         });
         
+        // ENHANCED QR CODE OPTIONS – better scannability
         const qrDataUrl = await QRCode.toDataURL(qrPayload, {
-          width: 200,
-          margin: 2,
+          width: 300,                      // increased from 200
+          margin: 4,                       // increased from 2
+          errorCorrectionLevel: 'H',       // High error correction
           color: {
-            dark: '#D95427',
+            dark: '#000000',
             light: '#ffffff'
           }
         });

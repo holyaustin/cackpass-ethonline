@@ -1,3 +1,5 @@
+//app/dashboard/event-scanners/[eventId]/page.tsx
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -6,14 +8,10 @@ import { usePrivy } from '@privy-io/react-auth';
 import { toast } from 'sonner';
 import { Plus, Trash2, Mail, ArrowLeft, Loader2 } from 'lucide-react';
 
-interface Scanner {
-  email: string;
-}
-
 export default function EventScannersPage() {
   const { eventId } = useParams();
   const router = useRouter();
-  const { getAccessToken } = usePrivy();
+  const { getAccessToken, authenticated, ready, user } = usePrivy();
   const [scanners, setScanners] = useState<string[]>([]);
   const [newEmail, setNewEmail] = useState('');
   const [loading, setLoading] = useState(true);
@@ -21,9 +19,15 @@ export default function EventScannersPage() {
   const [eventTitle, setEventTitle] = useState('');
 
   useEffect(() => {
+    if (!ready) return;
+    if (!authenticated) {
+      toast.error('Please login to manage scanners');
+      router.push('/');
+      return;
+    }
     fetchEventDetails();
     fetchScanners();
-  }, [eventId]);
+  }, [eventId, ready, authenticated]);
 
   const fetchEventDetails = async () => {
     try {
@@ -38,7 +42,12 @@ export default function EventScannersPage() {
   };
 
   const fetchScanners = async () => {
+    if (!authenticated || !ready) return;
     const token = await getAccessToken();
+    if (!token) {
+      toast.error('Authentication failed. Please refresh the page.');
+      return;
+    }
     try {
       const res = await fetch(`/api/events/${eventId}/scanners`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -46,10 +55,15 @@ export default function EventScannersPage() {
       if (res.ok) {
         const data = await res.json();
         setScanners(data.scanners || []);
+      } else if (res.status === 401) {
+        toast.error('Session expired. Please refresh the page.');
+      } else {
+        const err = await res.json();
+        toast.error(err.error || 'Failed to load scanners');
       }
     } catch (error) {
       console.error('Failed to fetch scanners:', error);
-      toast.error('Failed to load scanners');
+      toast.error('Network error. Please check your connection.');
     } finally {
       setLoading(false);
     }
@@ -61,9 +75,25 @@ export default function EventScannersPage() {
       return;
     }
 
+    if (!authenticated || !ready) {
+      toast.error('Please wait, still loading...');
+      return;
+    }
+
     setSaving(true);
     const token = await getAccessToken();
+    if (!token) {
+      toast.error('Authentication token missing. Please refresh the page.');
+      setSaving(false);
+      return;
+    }
+
+    console.log('Adding scanner:', newEmail, 'Event ID:', eventId);
+
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
       const res = await fetch(`/api/events/${eventId}/scanners`, {
         method: 'POST',
         headers: {
@@ -71,27 +101,42 @@ export default function EventScannersPage() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ email: newEmail }),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
 
       if (res.ok) {
-        toast.success('Scanner added successfully');
+        const data = await res.json();
+        setScanners(data.scanners || []);
         setNewEmail('');
-        fetchScanners();
+        toast.success('Scanner added successfully');
       } else {
         const error = await res.json();
         toast.error(error.error || 'Failed to add scanner');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Add scanner error:', error);
-      toast.error('Failed to add scanner');
+      if (error.name === 'AbortError') {
+        toast.error('Request timed out. Please try again.');
+      } else {
+        toast.error('Network error. Please check your connection.');
+      }
     } finally {
       setSaving(false);
     }
   };
 
   const removeScanner = async (email: string) => {
+    if (!authenticated || !ready) return;
+
     setSaving(true);
     const token = await getAccessToken();
+    if (!token) {
+      toast.error('Authentication failed');
+      setSaving(false);
+      return;
+    }
+
     try {
       const res = await fetch(`/api/events/${eventId}/scanners`, {
         method: 'DELETE',
@@ -103,26 +148,31 @@ export default function EventScannersPage() {
       });
 
       if (res.ok) {
+        const data = await res.json();
+        setScanners(data.scanners || []);
         toast.success('Scanner removed successfully');
-        fetchScanners();
       } else {
         const error = await res.json();
         toast.error(error.error || 'Failed to remove scanner');
       }
     } catch (error) {
       console.error('Remove scanner error:', error);
-      toast.error('Failed to remove scanner');
+      toast.error('Network error. Please try again.');
     } finally {
       setSaving(false);
     }
   };
 
-  if (loading) {
+  if (!ready || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
+  }
+
+  if (!authenticated) {
+    return null;
   }
 
   return (
@@ -143,7 +193,6 @@ export default function EventScannersPage() {
           </p>
           <p className="text-sm text-gray-500 mb-6">
             Add email addresses of staff who will scan tickets at this event.
-            These users will be able to access the scanner page for this event.
           </p>
 
           <div className="flex gap-2 mb-6">
@@ -169,7 +218,7 @@ export default function EventScannersPage() {
             <h3 className="font-semibold mb-3">Authorized Scanners</h3>
             {scanners.length === 0 ? (
               <p className="text-gray-500 text-center py-8">
-                No scanners added yet. Add email addresses above.
+                No scanners added yet.
               </p>
             ) : (
               scanners.map((email) => (
