@@ -27,6 +27,7 @@
     "dotenv": "^17.2.3",
     "ethers": "^6.16.0",
     "html5-qrcode": "^2.3.8",
+    "jsqr": "^1.4.0",
     "lru-cache": "^11.2.5",
     "lucide-react": "^0.562.0",
     "mongodb": "^7.0.0",
