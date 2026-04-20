@@ -1,3 +1,4 @@
+// app/events/[id]/page.tsx (full version with user discount code input)
 'use client'
 
 import { useState, useEffect, Suspense } from 'react'
@@ -7,7 +8,8 @@ import {
   Share2, Heart, ChevronLeft, Star, Tag, 
   Globe, Shield, QrCode, Loader2,
   CreditCard, Wallet, CheckCircle,
-  AlertCircle, User, Mail, Check, Settings
+  AlertCircle, User, Mail, Check, Settings,
+  Percent, X
 } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
@@ -60,6 +62,16 @@ interface EventDataWithId {
   rating: number
 }
 
+interface DiscountCode {
+  _id: string
+  code: string
+  discountPercent: number
+  maxUses: number
+  usedCount: number
+  expiresAt: string | null
+  isActive: boolean
+}
+
 const DEFAULT_ORGANIZER = { name: 'Event Organizer', avatar: '/cackpas.jpg' }
 
 const getSafeOrganizer = (organizer?: { name?: string; avatar?: string }) => {
@@ -97,6 +109,9 @@ const fetchUserEmailByWallet = async (wallet: string): Promise<string | null> =>
   }
 }
 
+// Helper to check if a string is a valid MongoDB ObjectId
+const isValidObjectId = (id: string): boolean => /^[0-9a-fA-F]{24}$/.test(id)
+
 export default function EventPage() {
   return (
     <Suspense fallback={<LoadingSpinner fullScreen text="Loading event..." />}>
@@ -125,6 +140,23 @@ function EventPageContent() {
   const [isFetchingEmail, setIsFetchingEmail] = useState(false)
   const [isOrganizer, setIsOrganizer] = useState(false)
   
+  // Discount management state (for organizer)
+  const [showDiscountModal, setShowDiscountModal] = useState(false)
+  const [existingDiscounts, setExistingDiscounts] = useState<DiscountCode[]>([])
+  const [isLoadingDiscounts, setIsLoadingDiscounts] = useState(false)
+  const [discountFormData, setDiscountFormData] = useState({
+    code: '',
+    discountPercent: 15,
+    maxUses: 15,
+    expiresAt: '',
+  })
+  const [isCreatingDiscount, setIsCreatingDiscount] = useState(false)
+
+  // User discount code state
+  const [discountCode, setDiscountCode] = useState('')
+  const [appliedDiscount, setAppliedDiscount] = useState<{ percent: number; amount: number; codeId: string } | null>(null)
+  const [isVerifyingDiscount, setIsVerifyingDiscount] = useState(false)
+
   const eventId = params.id as string
   const walletAddress = getWalletAddress(user)
   const isLoggedIn = authenticated && ready
@@ -197,7 +229,6 @@ function EventPageContent() {
     const checkOrganizer = async () => {
       if (!event || !userEmail) return
       try {
-        // Fetch organizer's email using organizerWallet
         const organizerEmail = await fetchUserEmailByWallet(event.organizerWallet)
         setIsOrganizer(organizerEmail === userEmail)
       } catch (error) {
@@ -207,6 +238,112 @@ function EventPageContent() {
     }
     checkOrganizer()
   }, [event, userEmail])
+
+  // Fetch existing discounts when modal opens – with validation
+  const fetchDiscounts = async () => {
+    if (!eventId || !isValidObjectId(eventId)) {
+      toast.error('Invalid event ID. Cannot load discounts.')
+      return
+    }
+    setIsLoadingDiscounts(true)
+    try {
+      const res = await fetch(`/api/events/${eventId}/discounts`)
+      const data = await res.json()
+      if (res.ok) setExistingDiscounts(data.discounts || [])
+      else toast.error(data.error || 'Failed to load discounts')
+    } catch (error) {
+      console.error('Error fetching discounts:', error)
+      toast.error('Network error while loading discounts')
+    } finally {
+      setIsLoadingDiscounts(false)
+    }
+  }
+
+  const handleOpenDiscountModal = () => {
+    if (!eventId || !isValidObjectId(eventId)) {
+      toast.error('Event ID is invalid. Cannot manage discounts.')
+      return
+    }
+    setDiscountFormData({
+      code: '',
+      discountPercent: 15,
+      maxUses: 15,
+      expiresAt: '',
+    })
+    fetchDiscounts()
+    setShowDiscountModal(true)
+  }
+
+  const handleCreateDiscount = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!eventId || !isValidObjectId(eventId)) {
+      toast.error('Invalid event ID. Cannot create discount.')
+      return
+    }
+    if (!discountFormData.code.trim()) {
+      toast.error('Discount code is required')
+      return
+    }
+    setIsCreatingDiscount(true)
+    try {
+      const res = await fetch(`/api/events/${eventId}/discounts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: discountFormData.code.toUpperCase(),
+          discountPercent: discountFormData.discountPercent,
+          maxUses: discountFormData.maxUses,
+          expiresAt: discountFormData.expiresAt || null,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to create discount')
+      toast.success('Discount code created successfully')
+      setDiscountFormData({
+        code: '',
+        discountPercent: 15,
+        maxUses: 15,
+        expiresAt: '',
+      })
+      fetchDiscounts() // refresh list
+    } catch (error: any) {
+      console.error('Create discount error:', error)
+      toast.error(error.message)
+    } finally {
+      setIsCreatingDiscount(false)
+    }
+  }
+
+  // User discount validation
+  const applyDiscount = async () => {
+    if (!discountCode.trim() || !selectedTicketType) return
+    setIsVerifyingDiscount(true)
+    try {
+      const res = await fetch('/api/discount/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: discountCode,
+          eventId,
+          quantity: selectedQuantity,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      const discountAmount = (selectedTicketType.price * selectedQuantity * data.discountPercent) / 100
+      setAppliedDiscount({
+        percent: data.discountPercent,
+        amount: discountAmount,
+        codeId: data.codeId,
+      })
+      toast.success(`${data.discountPercent}% discount applied!`)
+    } catch (err: any) {
+      toast.error(err.message)
+      setAppliedDiscount(null)
+    } finally {
+      setIsVerifyingDiscount(false)
+    }
+  }
 
   useEffect(() => {
     if (typeof window !== 'undefined' && !window.PaystackPop) {
@@ -273,7 +410,17 @@ function EventPageContent() {
       toast.error('Please select a ticket type')
       return
     }
-    const totalPrice = selectedTicketType.price * selectedQuantity
+    let totalPrice = selectedTicketType.price * selectedQuantity
+    let discountCodeValue = discountCode.trim()
+    let discountPercent = 0
+    let discountAmountValue = 0
+
+    if (appliedDiscount) {
+      discountPercent = appliedDiscount.percent
+      discountAmountValue = appliedDiscount.amount
+      totalPrice = totalPrice - discountAmountValue
+    }
+
     try {
       setIsProcessingPayment(true)
       const response = await fetch('/api/payments/paystack/initialize', {
@@ -284,8 +431,12 @@ function EventPageContent() {
           ticketTypeId: selectedTicketType._id,
           quantity: selectedQuantity,
           amount: totalPrice,
+          originalAmount: selectedTicketType.price * selectedQuantity,
           email: userEmail,
-          userName: userEmail.split('@')[0] || 'User'
+          userName: userEmail.split('@')[0] || 'User',
+          discountCode: discountCodeValue,
+          discountPercent,
+          discountAmount: discountAmountValue,
         })
       })
       const data = await response.json()
@@ -421,11 +572,112 @@ function EventPageContent() {
 
   const getTotalPrice = () => {
     if (!selectedTicketType || event?.isFree) return '0.00'
-    return (selectedTicketType.price * selectedQuantity).toFixed(2)
+    let price = selectedTicketType.price * selectedQuantity
+    if (appliedDiscount) price = price - appliedDiscount.amount
+    return price.toFixed(2)
   }
 
   const isPastEvent = event?.endDate ? new Date(event.endDate) < new Date() : false
   const totalPrice = selectedTicketType ? (selectedTicketType.price * selectedQuantity).toFixed(2) : '0.00'
+
+  // Discount modal component (inline)
+  const DiscountModal = () => {
+    if (!showDiscountModal) return null
+
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80" onClick={() => setShowDiscountModal(false)}>
+        <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6" onClick={(e) => e.stopPropagation()}>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-2xl font-bold">Manage Discount Codes</h2>
+            <button onClick={() => setShowDiscountModal(false)} className="p-1 hover:bg-gray-100 rounded-full">
+              <X className="h-6 w-6" />
+            </button>
+          </div>
+
+          {/* Existing discounts list */}
+          <div className="mb-6">
+            <h3 className="text-lg font-semibold mb-2">Existing Discounts</h3>
+            {isLoadingDiscounts ? (
+              <Loader2 className="h-5 w-5 animate-spin mx-auto" />
+            ) : existingDiscounts.length === 0 ? (
+              <p className="text-gray-500 text-sm">No discounts created yet.</p>
+            ) : (
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {existingDiscounts.map((discount) => (
+                  <div key={discount._id} className="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <div>
+                      <span className="font-mono font-bold">{discount.code}</span>
+                      <span className="ml-2 text-sm">({discount.discountPercent}% off)</span>
+                      <div className="text-xs text-gray-500">Used: {discount.usedCount}/{discount.maxUses}</div>
+                    </div>
+                    {discount.expiresAt && (
+                      <span className="text-xs text-gray-400">
+                        Expires: {new Date(discount.expiresAt).toLocaleDateString()}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Create new discount form */}
+          <form onSubmit={handleCreateDiscount} className="space-y-4 ">
+            <div>
+              <label className="block text-sm font-medium mb-1">Discount Code</label>
+              <input
+                type="text"
+                value={discountFormData.code}
+                onChange={(e) => setDiscountFormData({ ...discountFormData, code: e.target.value.toUpperCase() })}
+                placeholder="e.g., EARLYBIRD"
+                className="w-full px-3 py-2 border text-white rounded-lg dark:bg-gray-700 dark:border-gray-600"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Discount Percent (%)</label>
+              <input
+                type="number"
+                value={discountFormData.discountPercent}
+                onChange={(e) => setDiscountFormData({ ...discountFormData, discountPercent: parseInt(e.target.value) })}
+                min="1"
+                max="100"
+                className="w-full px-3 py-2 border text-white rounded-lg dark:bg-gray-700 dark:border-gray-600"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Max Uses (Total tickets)</label>
+              <input
+                type="number"
+                value={discountFormData.maxUses}
+                onChange={(e) => setDiscountFormData({ ...discountFormData, maxUses: parseInt(e.target.value) })}
+                min="1"
+                className="w-full px-3 py-2 border text-white rounded-lg dark:bg-gray-700 dark:border-gray-600"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Expiry Date (optional)</label>
+              <input
+                type="date"
+                value={discountFormData.expiresAt}
+                onChange={(e) => setDiscountFormData({ ...discountFormData, expiresAt: e.target.value })}
+                className="w-full px-3 py-2 border text-white rounded-lg dark:bg-gray-700 dark:border-gray-600"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={isCreatingDiscount}
+              className="w-full py-2 bg-primary text-white rounded-lg font-semibold hover:bg-primary-dark disabled:opacity-50"
+            >
+              {isCreatingDiscount ? <Loader2 className="h-5 w-5 animate-spin mx-auto" /> : 'Create Discount Code'}
+            </button>
+          </form>
+        </div>
+      </div>
+    )
+  }
 
   if (isLoading) return <LoadingSpinner fullScreen text="Loading event details..." />
   if (!event) {
@@ -460,7 +712,7 @@ function EventPageContent() {
                 <Heart className={`h-5 w-5 ${isFavorite ? 'fill-red-500 text-red-500' : 'text-gray-400'}`} />
               </button>
 
-              {/* Edit button – only visible to the event organizer (by email) */}
+              {/* Edit button – only visible to the event organizer */}
               {isOrganizer && (
                 <Link
                   href={`/dashboard/edit-event/${eventId}`}
@@ -471,6 +723,19 @@ function EventPageContent() {
                   <span className="text-base font-medium">Edit Event</span>
                 </Link>
               )}
+
+              {/* Manage Discounts button – only visible to organizer */}
+              {isOrganizer && (
+                <button
+                  onClick={handleOpenDiscountModal}
+                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-all shadow-sm"
+                  title="Manage discount codes"
+                >
+                  <Percent className="h-4 w-4" />
+                  <span className="text-base font-medium">Discounts</span>
+                </button>
+              )}
+
               {/* Share Dropdown */}
               <ShareDropdown 
                 url={`${process.env.NEXT_PUBLIC_APP_URL || window.location.origin}/events/${eventId}`}
@@ -481,6 +746,9 @@ function EventPageContent() {
           </div>
         </div>
       </div>
+
+      {/* Discount Modal */}
+      <DiscountModal />
 
       {/* Event Header Image */}
       <div className="relative h-64 md:h-80 lg:h-96">
@@ -625,7 +893,9 @@ function EventPageContent() {
                           </div>
                           <div className="text-right">
                             <p className="text-sm text-gray-600 mb-1">Total</p>
-                            <div className="text-3xl font-bold text-primary">{event.isFree ? 'FREE' : `₦${Number(getTotalPrice()).toLocaleString()}`}</div>
+                            <div className="text-3xl font-bold text-primary">
+                              {event.isFree ? 'FREE' : `₦${Number(getTotalPrice()).toLocaleString()}`}
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -637,6 +907,34 @@ function EventPageContent() {
                         {isGettingFreeTicket ? <Loader2 className="h-5 w-5 animate-spin" /> : <Mail className="h-5 w-5" />}
                         {isGettingFreeTicket ? 'Processing...' : 'Get Free Ticket'}
                       </button>
+                    )}
+                    
+                    {/* PAID EVENT - Discount Code Input (for customers) */}
+                    {!event.isFree && selectedTicketType && selectedTicketType.price > 0 && (
+                      <div className="mb-4">
+                        <label className="block text-sm font-medium mb-2">Discount Code</label>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={discountCode}
+                            onChange={(e) => setDiscountCode(e.target.value.toUpperCase())}
+                            placeholder="Enter discount code"
+                            className="flex-1 px-4 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
+                          />
+                          <button
+                            onClick={applyDiscount}
+                            disabled={isVerifyingDiscount || !discountCode}
+                            className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50"
+                          >
+                            {isVerifyingDiscount ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Apply'}
+                          </button>
+                        </div>
+                        {appliedDiscount && (
+                          <p className="text-sm text-green-600 dark:text-green-400 mt-1">
+                            {appliedDiscount.percent}% discount applied (₦{appliedDiscount.amount.toLocaleString()} off)
+                          </p>
+                        )}
+                      </div>
                     )}
                     
                     {/* PAID EVENT - Check if user can purchase */}
@@ -691,7 +989,7 @@ function EventPageContent() {
                                 className="w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-2 text-sm sm:text-base bg-green-600 hover:bg-green-700 text-white disabled:opacity-50 transition-all duration-200"
                               >
                                 {isProcessingPayment ? <Loader2 className="h-5 w-5 animate-spin" /> : <CreditCard className="h-5 w-5" />}
-                                <span className="truncate">{isProcessingPayment ? 'Processing...' : `Pay ₦${Number(totalPrice).toLocaleString()} with Card`}</span>
+                                <span className="truncate">{isProcessingPayment ? 'Processing...' : `Pay ₦${Number(getTotalPrice()).toLocaleString()} with Card`}</span>
                               </button>
                             )}
                             

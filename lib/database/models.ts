@@ -378,6 +378,17 @@ const BackendSignerSchema = new mongoose.Schema({
   metadata: { type: mongoose.Schema.Types.Mixed, default: {} },
 }, { timestamps: true })
 
+// DiscountCode Schema
+const DiscountCodeSchema = new mongoose.Schema({
+  code: { type: String, required: true, uppercase: true, unique: true },
+  discountPercent: { type: Number, required: true, min: 0, max: 100 },
+  maxUses: { type: Number, required: true, default: 1 },        // total tickets allowed
+  usedCount: { type: Number, default: 0 },
+  eventId: { type: mongoose.Schema.Types.ObjectId, ref: 'Event', required: true },
+  isActive: { type: Boolean, default: true },
+  expiresAt: { type: Date, default: null },
+}, { timestamps: true });
+
 // ========================
 // INDEXES - Define ALL indexes here (NOT in field definitions)
 // ========================
@@ -391,6 +402,12 @@ const createIndexes = (schema: mongoose.Schema, indexes: Array<[any, any?]>) => 
     })
   }
 }
+// Indexes createIndexes
+createIndexes(DiscountCodeSchema, [
+  [{ code: 1 }, { unique: true }],
+  [{ eventId: 1 }],
+  [{ isActive: 1 }],
+]);
 
 // User indexes
 createIndexes(UserSchema, [
@@ -496,6 +513,7 @@ createIndexes(BackendSignerSchema, [[{ address: 1 }, { unique: true }], [{ contr
 // PREVENT MODEL OVERWRITE
 // ========================
 export const User = mongoose.models.User || mongoose.model('User', UserSchema)
+export const DiscountCode = mongoose.models.DiscountCode || mongoose.model('DiscountCode', DiscountCodeSchema)
 export const UserProfile = mongoose.models.UserProfile || mongoose.model('UserProfile', UserProfileSchema)
 export const Event = mongoose.models.Event || mongoose.model('Event', EventSchema)
 export const TicketType = mongoose.models.TicketType || mongoose.model('TicketType', TicketTypeSchema)

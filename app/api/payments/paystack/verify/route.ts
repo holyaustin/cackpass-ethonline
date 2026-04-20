@@ -1,6 +1,7 @@
+// app/api/payments/paystack/verify/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/database/connection';
-import { Payment, Order, MyTicket, TicketType, Event, User } from '@/lib/database/models';
+import { Payment, Order, MyTicket, TicketType, Event, User, DiscountCode } from '@/lib/database/models';
 import nodemailer from 'nodemailer';
 import QRCode from 'qrcode';
 
@@ -188,7 +189,8 @@ export async function GET(request: NextRequest) {
       status: payment.paymentStatus,
       userId: payment.userId,
       amount: payment.amount,
-      quantity: payment.quantity
+      quantity: payment.quantity,
+      discountCode: payment.metadata?.discountCode,
     });
 
     // 4. Get user email from User collection
@@ -244,13 +246,28 @@ export async function GET(request: NextRequest) {
       console.log(`✅ Order marked as paid`);
     }
 
-    // 9. Get ticket type info
+    // 9. Increment discount code usage if applicable
+    if (payment.metadata?.discountCode) {
+      const discount = await DiscountCode.findOne({
+        code: payment.metadata.discountCode.toUpperCase(),
+        eventId: payment.eventId,
+      });
+      if (discount) {
+        discount.usedCount += payment.quantity;
+        await discount.save();
+        console.log(`✅ Discount code ${discount.code} used count increased to ${discount.usedCount}/${discount.maxUses}`);
+      } else {
+        console.warn(`⚠️ Discount code ${payment.metadata.discountCode} not found in database, cannot increment.`);
+      }
+    }
+
+    // 10. Get ticket type info
     let ticketType = null;
     if (payment.ticketTypeId && !payment.metadata?.isVirtual) {
       ticketType = await TicketType.findById(payment.ticketTypeId);
     }
 
-    // 10. Update ticketsSold
+    // 11. Update ticketsSold
     console.log(`\n📊 Updating ticketsSold...`);
     await Event.updateOne(
       { _id: payment.eventId },
@@ -260,7 +277,7 @@ export async function GET(request: NextRequest) {
     const updatedEvent = await Event.findById(payment.eventId);
     console.log(`✅ ticketsSold updated to: ${updatedEvent?.ticketsSold}`);
 
-    // 11. Create tickets
+    // 12. Create tickets
     let tickets = [];
     const existingTickets = await MyTicket.find({ orderId: order?._id });
     
@@ -285,7 +302,7 @@ export async function GET(request: NextRequest) {
       console.log(`✅ Using ${existingTickets.length} existing tickets`);
     }
 
-    // 12. SEND EMAIL - NOW BEFORE RESPONSE, and wait for it
+    // 13. SEND EMAIL - NOW BEFORE RESPONSE, and wait for it
     let emailSent = false;
     
     if (userEmail && !payment.metadata?.emailSent) {
