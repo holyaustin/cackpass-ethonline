@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { usePrivy } from '@privy-io/react-auth';
-import { toast } from 'sonner';
 import {
   Loader2,
   CheckCircle,
@@ -50,25 +49,22 @@ export default function ScanPage() {
   const [modalResult, setModalResult] = useState<VerificationResult | null>(null);
   const [cameraPermission, setCameraPermission] = useState<'prompt' | 'granted' | 'denied'>('prompt');
   const [showPermissionRequest, setShowPermissionRequest] = useState(false);
-  const [debugInfo, setDebugInfo] = useState<string[]>([]);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationId = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const isProcessingRef = useRef(false);
 
-  const addDebug = (msg: string) => {
+  const logDebug = (msg: string) => {
     const timestamp = new Date().toLocaleTimeString();
-    const log = `${timestamp}: ${msg}`;
-    console.log('[SCAN DEBUG]', log);
-    setDebugInfo(prev => [...prev.slice(-19), log]);
+    console.log(`[SCAN] ${timestamp}: ${msg}`);
   };
 
-  // Authorization check (unchanged)
+  // Authorization check
   useEffect(() => {
     const checkAuth = async () => {
       if (!ready || !authenticated) {
-        toast.error('Please login to scan tickets');
         router.push('/');
         return;
       }
@@ -82,7 +78,6 @@ export default function ScanPage() {
           },
         });
         if (!res.ok) {
-          toast.error('You are not authorized to scan this event');
           router.push('/dashboard');
           return;
         }
@@ -90,38 +85,53 @@ export default function ScanPage() {
         const eventRes = await fetch(`/api/events/${eventId}`);
         const eventData = await eventRes.json();
         if (eventData.success) setEventTitle(eventData.event.title);
-        addDebug(`Authorized for event: ${eventData.event.title}`);
+        logDebug(`Authorized for event: ${eventData.event.title}`);
       } catch (error) {
         console.error(error);
-        toast.error('Authorization check failed');
         router.push('/dashboard');
       }
     };
     if (eventId) checkAuth();
   }, [eventId, authenticated, ready, user, router]);
 
-  // Helper to map API errors to our statuses
-  const mapErrorToStatus = (errorMessage: string, statusCode?: number): VerificationStatus => {
-    if (errorMessage.includes('already been used') || errorMessage.includes('already used')) {
-      return 'already_used';
-    }
-    if (errorMessage.includes('does not belong to this event')) {
-      return 'wrong_event';
-    }
-    if (errorMessage.includes('Invalid signature') || errorMessage.includes('fake')) {
-      return 'invalid_signature';
-    }
-    if (errorMessage.includes('event has ended') || errorMessage.includes('expired')) {
-      return 'expired';
-    }
-    if (errorMessage.includes('not found')) {
-      return 'not_found';
-    }
+  const mapErrorToStatus = (errorMessage: string): VerificationStatus => {
+    const msg = errorMessage.toLowerCase();
+    if (msg.includes('already been used') || msg.includes('already used')) return 'already_used';
+    if (msg.includes('does not belong to this event')) return 'wrong_event';
+    if (msg.includes('invalid signature') || msg.includes('fake')) return 'invalid_signature';
+    if (msg.includes('event has ended') || msg.includes('expired')) return 'expired';
+    if (msg.includes('not found')) return 'not_found';
     return 'error';
   };
 
-  // Core scanning logic – handles both QR formats and shows modal
-  const startScanning = useCallback(() => {
+  // Stop the scanning loop and camera
+  const stopCameraAndScanning = useCallback(() => {
+    // Cancel animation frame
+    if (animationId.current) {
+      cancelAnimationFrame(animationId.current);
+      animationId.current = null;
+    }
+    
+    // Stop all camera tracks
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => {
+        track.stop();
+      });
+      streamRef.current = null;
+    }
+    
+    // Clear video source
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    
+    setScanning(false);
+    setProcessing(false);
+    isProcessingRef.current = false;
+  }, []);
+
+  // Start scanning loop (only called after camera is ready)
+  const startScanningLoop = useCallback(() => {
     if (!videoRef.current || !canvasRef.current) return;
 
     const video = videoRef.current;
@@ -129,12 +139,29 @@ export default function ScanPage() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    // Cancel any existing animation frame
+    if (animationId.current) {
+      cancelAnimationFrame(animationId.current);
+      animationId.current = null;
+    }
+
+    let active = true;
+
     const scan = () => {
-      if (!scanning || processing || !video || video.readyState !== video.HAVE_ENOUGH_DATA) {
+      // Stop scanning if we're no longer in scanning state or processing
+      if (!active || !scanning || processing || isProcessingRef.current) {
+        if (active && scanning) {
+          animationId.current = requestAnimationFrame(scan);
+        }
+        return;
+      }
+
+      if (video.readyState !== video.HAVE_ENOUGH_DATA) {
         animationId.current = requestAnimationFrame(scan);
         return;
       }
 
+      // Set canvas size to match video dimensions
       if (canvas.width !== video.videoWidth) canvas.width = video.videoWidth;
       if (canvas.height !== video.videoHeight) canvas.height = video.videoHeight;
 
@@ -144,18 +171,28 @@ export default function ScanPage() {
         inversionAttempts: 'dontInvert',
       });
 
-      if (code) {
+      if (code && !isProcessingRef.current) {
         const scannedText = code.data;
-        addDebug(`✅ QR detected: ${scannedText.substring(0, 80)}...`);
+        logDebug(`✅ QR detected: ${scannedText.substring(0, 80)}...`);
+
+        // Stop scanning immediately
+        active = false;
         setScanning(false);
         setProcessing(true);
+        isProcessingRef.current = true;
+        
+        if (animationId.current) {
+          cancelAnimationFrame(animationId.current);
+          animationId.current = null;
+        }
 
+        // Process QR asynchronously
         (async () => {
           try {
             let qrData;
             try {
               qrData = JSON.parse(scannedText);
-              addDebug(`📦 Parsed JSON: ${JSON.stringify(qrData).substring(0, 150)}`);
+              logDebug(`📦 Parsed JSON: ${JSON.stringify(qrData).substring(0, 150)}`);
             } catch {
               throw new Error('Invalid QR code format (not JSON)');
             }
@@ -164,16 +201,16 @@ export default function ScanPage() {
             let qrEventId: string | null = null;
             let signature: string | null = null;
 
-            // ----- NEW SECURE FORMAT -----
+            // Secure format
             if (qrData.ticketNumber && qrData.eventId) {
               ticketNumber = qrData.ticketNumber;
               qrEventId = qrData.eventId;
               signature = qrData.sig || null;
-              addDebug(`🎫 Secure QR format: ticketNumber=${ticketNumber}, eventId=${qrEventId}`);
+              logDebug(`🎫 Secure QR: ticketNumber=${ticketNumber}`);
             }
-            // ----- LEGACY FORMAT (reference + eventTitle) -----
+            // Legacy format (reference + eventTitle)
             else if (qrData.reference) {
-              addDebug(`📧 Legacy QR format: reference=${qrData.reference}`);
+              logDebug(`📧 Legacy QR: reference=${qrData.reference}`);
               const resolveRes = await fetch(
                 `/api/tickets/find-by-reference?reference=${encodeURIComponent(qrData.reference)}&eventId=${eventId}`
               );
@@ -185,7 +222,7 @@ export default function ScanPage() {
               ticketNumber = resolveData.ticketNumber;
               qrEventId = eventId as string;
               signature = null;
-              addDebug(`🔍 Resolved reference → ticketNumber=${ticketNumber}`);
+              logDebug(`🔍 Resolved → ticketNumber=${ticketNumber}`);
             } else {
               throw new Error('QR code missing both ticketNumber and reference');
             }
@@ -195,31 +232,34 @@ export default function ScanPage() {
               throw new Error('Ticket does not belong to this event');
             }
 
-            // Call verification endpoint
+            logDebug('📡 Sending verification request...');
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000);
             const verifyRes = await fetch('/api/tickets/verify', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 ticketNumber,
                 eventId: qrEventId,
-                signature: signature,
+                signature,
                 scannerUserId: user?.id,
               }),
+              signal: controller.signal,
             });
+            clearTimeout(timeoutId);
+
             const data = await verifyRes.json();
+            logDebug(`📡 Response: ${verifyRes.status} - ${JSON.stringify(data)}`);
 
             if (verifyRes.ok) {
-              // Success – ticket valid and not used
               setModalResult({
                 status: 'success',
                 message: data.message || 'Ticket verified! Entry granted.',
                 ticketNumber: ticketNumber || undefined,
-                eventTitle: eventTitle,
+                eventTitle,
               });
-              toast.success('✅ Ticket checked in');
             } else {
-              // Handle different error types
-              const status = mapErrorToStatus(data.error || '', verifyRes.status);
+              const status = mapErrorToStatus(data.error || '');
               let customMessage = data.error || 'Verification failed';
               let usedAt: string | undefined;
               if (status === 'already_used' && data.usedAt) {
@@ -231,22 +271,23 @@ export default function ScanPage() {
                 message: customMessage,
                 usedAt,
                 ticketNumber: ticketNumber || undefined,
-                eventTitle: eventTitle,
+                eventTitle,
               });
-              toast.error(data.error);
             }
           } catch (err: any) {
-            addDebug(`❌ Error: ${err.message}`);
+            logDebug(`❌ Error: ${err.message}`);
             setModalResult({
               status: 'error',
               message: err.message || 'Invalid QR code',
             });
-            toast.error(err.message || 'Invalid QR code');
           } finally {
             setProcessing(false);
-            // Stop scanning – modal will be shown
+            isProcessingRef.current = false;
+            // Scanner remains stopped until user clicks "Scan Again"
           }
         })();
+
+        return;
       }
 
       animationId.current = requestAnimationFrame(scan);
@@ -255,9 +296,23 @@ export default function ScanPage() {
     animationId.current = requestAnimationFrame(scan);
   }, [scanning, processing, eventId, user?.id, eventTitle]);
 
-  // Camera init (unchanged)
-  const initCamera = async () => {
-    addDebug('Initializing camera...');
+  // Initialize camera (always creates a fresh stream)
+  const initCamera = useCallback(async () => {
+    logDebug('Initializing camera...');
+    
+    // Clean up any existing camera stream first
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    if (animationId.current) {
+      cancelAnimationFrame(animationId.current);
+      animationId.current = null;
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
       streamRef.current = stream;
@@ -265,33 +320,30 @@ export default function ScanPage() {
         videoRef.current.srcObject = stream;
         videoRef.current.onloadedmetadata = () => {
           videoRef.current?.play();
-          addDebug('Camera stream started');
-          startScanning();
+          logDebug('Camera stream started');
+          setScanning(true);
+          startScanningLoop();
         };
       }
       setCameraPermission('granted');
       setShowPermissionRequest(false);
     } catch (err) {
       const error = err as { name?: string; message?: string };
-      addDebug(`Camera init error: ${error.name} - ${error.message}`);
-      if (error.name === 'NotAllowedError') {
-        setCameraPermission('denied');
-        setShowPermissionRequest(true);
-      } else {
-        setCameraPermission('denied');
-        setShowPermissionRequest(true);
-      }
+      logDebug(`Camera init error: ${error.name} - ${error.message}`);
+      setCameraPermission('denied');
+      setShowPermissionRequest(true);
     }
-  };
+  }, [startScanningLoop]);
 
   const requestCameraPermission = async () => {
     setShowPermissionRequest(false);
     await initCamera();
   };
 
+  // Initial permission check and camera setup
   useEffect(() => {
     const checkPermission = async () => {
-      addDebug('Checking permission status');
+      logDebug('Checking permission status');
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true });
         stream.getTracks().forEach(track => track.stop());
@@ -300,7 +352,7 @@ export default function ScanPage() {
         initCamera();
       } catch (err) {
         const error = err as { name?: string; message?: string };
-        addDebug(`Permission check: ${error.name}`);
+        logDebug(`Permission check: ${error.name}`);
         setCameraPermission('denied');
         setShowPermissionRequest(true);
       }
@@ -314,24 +366,32 @@ export default function ScanPage() {
         streamRef.current.getTracks().forEach(track => track.stop());
       }
     };
-  }, []);
+  }, [initCamera]);
 
-  // Reset scanner and close modal
+  // Handle "Scan Again" - completely reset and restart camera
   const handleScanAgain = () => {
+    logDebug('Restarting scanner...');
+    
+    // Reset all state
     setModalResult(null);
-    setScanning(true);
     setProcessing(false);
-    // Ensure video is still playing
-    if (videoRef.current && videoRef.current.paused) {
-      videoRef.current.play().catch(console.error);
+    setScanning(true);
+    isProcessingRef.current = false;
+    
+    // Cancel any existing animation frame
+    if (animationId.current) {
+      cancelAnimationFrame(animationId.current);
+      animationId.current = null;
     }
+    
+    // Re-initialize camera (which will restart the scanning loop)
+    initCamera();
   };
 
   const goToDashboard = () => {
     router.push('/dashboard');
   };
 
-  // Helper to render modal content based on status
   const renderModalContent = () => {
     if (!modalResult) return null;
 
@@ -385,7 +445,7 @@ export default function ScanPage() {
     const { icon, bgColor, titleColor, borderColor } = config[status];
 
     return (
-      <div className={`fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80`}>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80">
         <div className={`max-w-md w-full ${bgColor} rounded-2xl shadow-2xl border ${borderColor} p-8 text-center`}>
           <div className="mb-6">{icon}</div>
           <h2 className={`text-2xl font-bold mb-3 ${titleColor}`}>
@@ -470,13 +530,6 @@ export default function ScanPage() {
           </p>
         </div>
 
-        <details className="mb-4 text-xs bg-gray-200 dark:bg-gray-800 rounded p-2">
-          <summary className="cursor-pointer font-mono">Debug Log (click to expand)</summary>
-          <pre className="mt-2 whitespace-pre-wrap break-words max-h-40 overflow-auto">
-            {debugInfo.join('\n') || 'No debug info yet'}
-          </pre>
-        </details>
-
         {showPermissionRequest && cameraPermission !== 'granted' && (
           <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-xl p-6 mb-4 text-center">
             <Camera className="h-12 w-12 text-yellow-600 mx-auto mb-3" />
@@ -533,7 +586,6 @@ export default function ScanPage() {
         </p>
       </div>
 
-      {/* Full‑screen modal overlay */}
       {modalResult && renderModalContent()}
     </div>
   );

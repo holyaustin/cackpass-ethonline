@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
       console.error(`No tickets found for reference: ${reference}`);
     }
 
-    // Generate QR codes for each ticket (one per ticket) with enhanced settings
+    // Generate QR codes for each ticket AND save them to the database
     const qrCodes: { ticketNumber: string; qrDataUrl: string }[] = [];
     
     for (const ticket of tickets) {
@@ -108,16 +108,22 @@ export async function POST(request: NextRequest) {
           sig: hmac,
         });
         
-        // ENHANCED QR CODE OPTIONS – better scannability
+        // Generate QR code data URL
         const qrDataUrl = await QRCode.toDataURL(qrPayload, {
-          width: 300,                      // increased from 200
-          margin: 4,                       // increased from 2
-          errorCorrectionLevel: 'H',       // High error correction
+          width: 300,
+          margin: 4,
+          errorCorrectionLevel: 'H',
           color: {
             dark: '#000000',
             light: '#ffffff'
           }
         });
+        
+        // ✅ Save the QR code data URL to the ticket document
+        await MyTicket.updateOne(
+          { _id: ticket._id },
+          { $set: { qrCode: qrDataUrl } }
+        );
         
         qrCodes.push({ ticketNumber: ticket.ticketNumber, qrDataUrl });
       } catch (qrError) {
@@ -125,7 +131,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    console.log(`✅ Generated ${qrCodes.length} QR codes for ${tickets.length} tickets`);
+    console.log(`✅ Generated and saved ${qrCodes.length} QR codes for ${tickets.length} tickets`);
 
     // Build email HTML with multiple QR codes
     const ticketsHtml = qrCodes.map((qr, index) => `

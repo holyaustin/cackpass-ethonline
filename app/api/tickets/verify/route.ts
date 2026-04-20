@@ -1,8 +1,8 @@
 // app/api/tickets/verify/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/database/connection';
-import { MyTicket, Event, CheckIn } from '@/lib/database/models';
-import { verifyTicketHMAC } from '@/lib/qr-security'; // adjust import if needed
+import { MyTicket, Event, CheckIn, User } from '@/lib/database/models';
+import { verifyTicketHMAC } from '@/lib/qr-security';
 import mongoose from 'mongoose';
 
 export async function POST(request: NextRequest) {
@@ -19,81 +19,81 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 1. Validate event exists and is still active/not ended
+    // 1. Validate event
     const event = await Event.findById(eventId);
     if (!event) {
-      return NextResponse.json(
-        { error: 'Event not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Event not found' }, { status: 404 });
     }
 
     const now = new Date();
     const eventEnd = new Date(event.endDate);
     if (eventEnd < now) {
-      return NextResponse.json(
-        { error: 'This event has already ended' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'This event has already ended' }, { status: 400 });
     }
 
     // 2. Find the ticket
     const ticket = await MyTicket.findOne({ ticketNumber, eventId });
     if (!ticket) {
-      return NextResponse.json(
-        { error: 'Ticket not found for this event' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Ticket not found for this event' }, { status: 404 });
     }
 
-    // 3. Verify HMAC signature if provided (secure QR)
+    // 3. Verify HMAC (if provided)
     if (signature) {
       const isValid = verifyTicketHMAC(ticketNumber, eventId, signature);
       if (!isValid) {
-        return NextResponse.json(
-          { error: 'Invalid signature – fake ticket' },
-          { status: 401 }
-        );
+        return NextResponse.json({ error: 'Invalid signature – fake ticket' }, { status: 401 });
       }
     }
 
-    // 4. Check ticket status
+    // 4. Check current status
     if (ticket.status === 'used') {
       return NextResponse.json(
-        {
-          error: 'This ticket has already been used',
-          usedAt: ticket.usedAt,
-        },
+        { error: 'Ticket already used', usedAt: ticket.usedAt },
         { status: 409 }
       );
     }
-    if (ticket.status === 'cancelled' || ticket.status === 'refunded') {
+    if (ticket.status !== 'active') {
       return NextResponse.json(
         { error: `Ticket is ${ticket.status} and cannot be used` },
         { status: 400 }
       );
     }
-    if (ticket.status !== 'active') {
+
+    // 5. Atomic update (no transaction – simple and safe)
+    const updatedTicket = await MyTicket.findOneAndUpdate(
+      { _id: ticket._id, status: 'active' },
+      { $set: { status: 'used', usedAt: new Date() } },
+      { returnDocument: 'after' } // fixes deprecation warning
+    );
+
+    if (!updatedTicket) {
+      // Race condition – another scan already used it
       return NextResponse.json(
-        { error: `Ticket status is ${ticket.status}, cannot check in` },
-        { status: 400 }
+        { error: 'Ticket was already used by another scan' },
+        { status: 409 }
       );
     }
 
-    // 5. Mark ticket as used
-    ticket.status = 'used';
-    ticket.usedAt = new Date();
-    await ticket.save();
-
-    // 6. Increment event ticketsSold counter (if you want to track total check‑ins)
+    // 6. Increment event ticketsSold
     await Event.findByIdAndUpdate(eventId, { $inc: { ticketsSold: 1 } });
 
-    // 7. Create check‑in log
+    // 7. Create check‑in log – convert scannerUserId correctly
+    let scannerObjectId = null;
+    if (scannerUserId) {
+      if (mongoose.Types.ObjectId.isValid(scannerUserId)) {
+        scannerObjectId = new mongoose.Types.ObjectId(scannerUserId);
+      } else {
+        // Assume it's a Privy ID – find the corresponding User
+        const scannerUser = await User.findOne({ privyId: scannerUserId });
+        if (scannerUser) scannerObjectId = scannerUser._id;
+      }
+    }
+
     await CheckIn.create({
       eventId: new mongoose.Types.ObjectId(eventId),
-      ticketId: ticket._id,          // or ticket.ticketId if you store a numeric ID
-      userId: ticket.userId,
-      scannerId: scannerUserId ? new mongoose.Types.ObjectId(scannerUserId) : null,
+      ticketId: updatedTicket._id,
+      userId: updatedTicket.userId,
+      scannerId: scannerObjectId,
       checkedInAt: new Date(),
       isVerified: true,
     });
@@ -106,7 +106,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('Verification error:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Internal server error', details: error.message },
       { status: 500 }
     );
   }

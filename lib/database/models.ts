@@ -310,13 +310,13 @@ const PayoutSchema = new mongoose.Schema({
 
 const CheckInSchema = new mongoose.Schema({
   eventId: { type: mongoose.Schema.Types.ObjectId, ref: 'Event', required: true },
-  ticketId: { type: Number, required: true },
+  ticketId: { type: mongoose.Schema.Types.ObjectId, ref: 'MyTicket', required: true }, // ← changed to ObjectId
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   scannerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   checkedInAt: { type: Date, default: Date.now },
   location: { lat: Number, lng: Number, accuracy: Number },
   isVerified: { type: Boolean, default: false },
-}, { timestamps: true })
+}, { timestamps: true });
 
 const NotificationSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
