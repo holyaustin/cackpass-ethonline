@@ -44,24 +44,25 @@ export default function ScanPage() {
 
   const [authorized, setAuthorized] = useState<boolean | null>(null);
   const [eventTitle, setEventTitle] = useState('');
-  const [scanning, setScanning] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [modalResult, setModalResult] = useState<VerificationResult | null>(null);
-  const [cameraPermission, setCameraPermission] = useState<'prompt' | 'granted' | 'denied'>('prompt');
-  const [showPermissionRequest, setShowPermissionRequest] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [cameraReady, setCameraReady] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationId = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const isProcessingRef = useRef(false);
+  const isScanningRef = useRef(false);
+  const isInitialisingRef = useRef(false);
 
   const logDebug = (msg: string) => {
     const timestamp = new Date().toLocaleTimeString();
     console.log(`[SCAN] ${timestamp}: ${msg}`);
   };
 
-  // Authorization check
+  // Authorization check (unchanged)
   useEffect(() => {
     const checkAuth = async () => {
       if (!ready || !authenticated) {
@@ -104,287 +105,334 @@ export default function ScanPage() {
     return 'error';
   };
 
-  // Stop the scanning loop and camera
-  const stopCameraAndScanning = useCallback(() => {
-    // Cancel animation frame
+  // Stop camera and scanning
+  const stopCamera = useCallback(() => {
+    logDebug('Stopping camera');
+    isScanningRef.current = false;
+    isInitialisingRef.current = false;
     if (animationId.current) {
       cancelAnimationFrame(animationId.current);
       animationId.current = null;
     }
-    
-    // Stop all camera tracks
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => {
-        track.stop();
-      });
+      streamRef.current.getTracks().forEach(t => t.stop());
       streamRef.current = null;
     }
-    
-    // Clear video source
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
-    
-    setScanning(false);
-    setProcessing(false);
-    isProcessingRef.current = false;
+    setCameraReady(false);
   }, []);
 
-  // Start scanning loop (only called after camera is ready)
-  const startScanningLoop = useCallback(() => {
-    if (!videoRef.current || !canvasRef.current) return;
+  // QR processing (mostly unchanged, but uses updated refs)
+  const processQrCode = useCallback(
+    async (scannedText: string) => {
+      logDebug(`✅ QR detected: ${scannedText.substring(0, 80)}...`);
+      isProcessingRef.current = true;
+      isScanningRef.current = false;
+      setProcessing(true);
 
+      try {
+        let qrData;
+        try {
+          qrData = JSON.parse(scannedText);
+          logDebug(`📦 Parsed JSON: ${JSON.stringify(qrData).substring(0, 150)}`);
+        } catch {
+          throw new Error('Invalid QR code format (not JSON)');
+        }
+
+        let ticketNumber: string | null = null;
+        let qrEventId: string | null = null;
+        let signature: string | null = null;
+
+        // Secure format
+        if (qrData.ticketNumber && qrData.eventId) {
+          ticketNumber = qrData.ticketNumber;
+          qrEventId = qrData.eventId;
+          signature = qrData.sig || null;
+          logDebug(`🎫 Secure QR: ticketNumber=${ticketNumber}`);
+        }
+        // Legacy format (reference + eventTitle)
+        else if (qrData.reference) {
+          logDebug(`📧 Legacy QR: reference=${qrData.reference}`);
+          const resolveRes = await fetch(
+            `/api/tickets/find-by-reference?reference=${encodeURIComponent(qrData.reference)}&eventId=${eventId}`
+          );
+          if (!resolveRes.ok) {
+            const errData = await resolveRes.json();
+            throw new Error(errData.error || 'Ticket not found for this reference');
+          }
+          const resolveData = await resolveRes.json();
+          ticketNumber = resolveData.ticketNumber;
+          qrEventId = eventId as string;
+          signature = null;
+          logDebug(`🔍 Resolved → ticketNumber=${ticketNumber}`);
+        } else {
+          throw new Error('QR code missing both ticketNumber and reference');
+        }
+
+        // Validate event
+        if (qrEventId && qrEventId !== eventId) {
+          throw new Error('Ticket does not belong to this event');
+        }
+
+        logDebug('📡 Sending verification request...');
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        const verifyRes = await fetch('/api/tickets/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ticketNumber,
+            eventId: qrEventId,
+            signature,
+            scannerUserId: user?.id,
+          }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+
+        const data = await verifyRes.json();
+        logDebug(`📡 Response: ${verifyRes.status} - ${JSON.stringify(data)}`);
+
+        if (verifyRes.ok) {
+          setModalResult({
+            status: 'success',
+            message: data.message || 'Ticket verified! Entry granted.',
+            ticketNumber: ticketNumber || undefined,
+            eventTitle,
+          });
+        } else {
+          const status = mapErrorToStatus(data.error || '');
+          let customMessage = data.error || 'Verification failed';
+          let usedAt: string | undefined;
+          if (status === 'already_used' && data.usedAt) {
+            usedAt = new Date(data.usedAt).toLocaleString();
+            customMessage = `This ticket was already used on ${usedAt}.`;
+          }
+          setModalResult({
+            status,
+            message: customMessage,
+            usedAt,
+            ticketNumber: ticketNumber || undefined,
+            eventTitle,
+          });
+        }
+      } catch (err: any) {
+        logDebug(`❌ Error: ${err.message}`);
+        setModalResult({
+          status: 'error',
+          message: err.message || 'Invalid QR code',
+        });
+      } finally {
+        setProcessing(false);
+        isProcessingRef.current = false;
+      }
+    },
+    [eventId, user?.id, eventTitle, mapErrorToStatus]
+  );
+
+  // Start scanning loop (improved with isScanningRef)
+  const startScanLoop = useCallback(() => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    // Cancel any existing animation frame
-    if (animationId.current) {
-      cancelAnimationFrame(animationId.current);
-      animationId.current = null;
+    if (!video || !canvas) {
+      logDebug('startScanLoop: refs missing');
+      return;
     }
 
-    let active = true;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) {
+      logDebug('startScanLoop: no 2d context');
+      return;
+    }
 
-    const scan = () => {
-      // Stop scanning if we're no longer in scanning state or processing
-      if (!active || !scanning || processing || isProcessingRef.current) {
-        if (active && scanning) {
-          animationId.current = requestAnimationFrame(scan);
+    logDebug('Scan loop starting');
+    isScanningRef.current = true;
+
+    const tick = () => {
+      if (!isScanningRef.current || isProcessingRef.current) {
+        if (!isProcessingRef.current && isScanningRef.current) {
+          animationId.current = requestAnimationFrame(tick);
         }
         return;
       }
 
-      if (video.readyState !== video.HAVE_ENOUGH_DATA) {
-        animationId.current = requestAnimationFrame(scan);
+      if (video.readyState < video.HAVE_ENOUGH_DATA) {
+        animationId.current = requestAnimationFrame(tick);
         return;
       }
 
-      // Set canvas size to match video dimensions
-      if (canvas.width !== video.videoWidth) canvas.width = video.videoWidth;
-      if (canvas.height !== video.videoHeight) canvas.height = video.videoHeight;
+      // Ensure canvas dimensions match video
+      if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        logDebug(`Canvas sized: ${canvas.width}x${canvas.height}`);
+      }
 
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+      let imageData: ImageData;
+      try {
+        imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      } catch (e) {
+        logDebug(`getImageData failed: ${e}`);
+        animationId.current = requestAnimationFrame(tick);
+        return;
+      }
+
       const code = jsQR(imageData.data, imageData.width, imageData.height, {
-        inversionAttempts: 'dontInvert',
+        inversionAttempts: 'attemptBoth', // better mobile detection
       });
 
-      if (code && !isProcessingRef.current) {
-        const scannedText = code.data;
-        logDebug(`✅ QR detected: ${scannedText.substring(0, 80)}...`);
-
-        // Stop scanning immediately
-        active = false;
-        setScanning(false);
-        setProcessing(true);
-        isProcessingRef.current = true;
-        
+      if (code?.data) {
+        logDebug(`QR detected, stopping scan loop`);
+        isScanningRef.current = false;
         if (animationId.current) {
           cancelAnimationFrame(animationId.current);
           animationId.current = null;
         }
-
-        // Process QR asynchronously
-        (async () => {
-          try {
-            let qrData;
-            try {
-              qrData = JSON.parse(scannedText);
-              logDebug(`📦 Parsed JSON: ${JSON.stringify(qrData).substring(0, 150)}`);
-            } catch {
-              throw new Error('Invalid QR code format (not JSON)');
-            }
-
-            let ticketNumber: string | null = null;
-            let qrEventId: string | null = null;
-            let signature: string | null = null;
-
-            // Secure format
-            if (qrData.ticketNumber && qrData.eventId) {
-              ticketNumber = qrData.ticketNumber;
-              qrEventId = qrData.eventId;
-              signature = qrData.sig || null;
-              logDebug(`🎫 Secure QR: ticketNumber=${ticketNumber}`);
-            }
-            // Legacy format (reference + eventTitle)
-            else if (qrData.reference) {
-              logDebug(`📧 Legacy QR: reference=${qrData.reference}`);
-              const resolveRes = await fetch(
-                `/api/tickets/find-by-reference?reference=${encodeURIComponent(qrData.reference)}&eventId=${eventId}`
-              );
-              if (!resolveRes.ok) {
-                const errData = await resolveRes.json();
-                throw new Error(errData.error || 'Ticket not found for this reference');
-              }
-              const resolveData = await resolveRes.json();
-              ticketNumber = resolveData.ticketNumber;
-              qrEventId = eventId as string;
-              signature = null;
-              logDebug(`🔍 Resolved → ticketNumber=${ticketNumber}`);
-            } else {
-              throw new Error('QR code missing both ticketNumber and reference');
-            }
-
-            // Validate event
-            if (qrEventId && qrEventId !== eventId) {
-              throw new Error('Ticket does not belong to this event');
-            }
-
-            logDebug('📡 Sending verification request...');
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 10000);
-            const verifyRes = await fetch('/api/tickets/verify', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                ticketNumber,
-                eventId: qrEventId,
-                signature,
-                scannerUserId: user?.id,
-              }),
-              signal: controller.signal,
-            });
-            clearTimeout(timeoutId);
-
-            const data = await verifyRes.json();
-            logDebug(`📡 Response: ${verifyRes.status} - ${JSON.stringify(data)}`);
-
-            if (verifyRes.ok) {
-              setModalResult({
-                status: 'success',
-                message: data.message || 'Ticket verified! Entry granted.',
-                ticketNumber: ticketNumber || undefined,
-                eventTitle,
-              });
-            } else {
-              const status = mapErrorToStatus(data.error || '');
-              let customMessage = data.error || 'Verification failed';
-              let usedAt: string | undefined;
-              if (status === 'already_used' && data.usedAt) {
-                usedAt = new Date(data.usedAt).toLocaleString();
-                customMessage = `This ticket was already used on ${usedAt}.`;
-              }
-              setModalResult({
-                status,
-                message: customMessage,
-                usedAt,
-                ticketNumber: ticketNumber || undefined,
-                eventTitle,
-              });
-            }
-          } catch (err: any) {
-            logDebug(`❌ Error: ${err.message}`);
-            setModalResult({
-              status: 'error',
-              message: err.message || 'Invalid QR code',
-            });
-          } finally {
-            setProcessing(false);
-            isProcessingRef.current = false;
-            // Scanner remains stopped until user clicks "Scan Again"
-          }
-        })();
-
+        processQrCode(code.data);
         return;
       }
 
-      animationId.current = requestAnimationFrame(scan);
+      animationId.current = requestAnimationFrame(tick);
     };
 
-    animationId.current = requestAnimationFrame(scan);
-  }, [scanning, processing, eventId, user?.id, eventTitle]);
+    animationId.current = requestAnimationFrame(tick);
+  }, [processQrCode]);
 
-  // Initialize camera (always creates a fresh stream)
+  // Initialize camera with robust constraints and proper loading
   const initCamera = useCallback(async () => {
+    if (isInitialisingRef.current) {
+      logDebug('Camera already initialising, skipping');
+      return;
+    }
+    isInitialisingRef.current = true;
     logDebug('Initializing camera...');
-    
-    // Clean up any existing camera stream first
+
+    setCameraError(null);
+    setCameraReady(false);
+    isScanningRef.current = false;
+    isProcessingRef.current = false;
+
+    // Clean up existing resources
+    if (animationId.current) {
+      cancelAnimationFrame(animationId.current);
+      animationId.current = null;
+    }
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current.getTracks().forEach(t => t.stop());
       streamRef.current = null;
     }
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
-    if (animationId.current) {
-      cancelAnimationFrame(animationId.current);
-      animationId.current = null;
-    }
 
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.onloadedmetadata = () => {
-          videoRef.current?.play();
-          logDebug('Camera stream started');
-          setScanning(true);
-          startScanningLoop();
-        };
-      }
-      setCameraPermission('granted');
-      setShowPermissionRequest(false);
-    } catch (err) {
-      const error = err as { name?: string; message?: string };
-      logDebug(`Camera init error: ${error.name} - ${error.message}`);
-      setCameraPermission('denied');
-      setShowPermissionRequest(true);
-    }
-  }, [startScanningLoop]);
+    // Small delay to let browser settle
+    await new Promise(resolve => setTimeout(resolve, 80));
 
-  const requestCameraPermission = async () => {
-    setShowPermissionRequest(false);
-    await initCamera();
-  };
+    // Try constraints in order: exact environment, then environment, then any
+    let stream: MediaStream | null = null;
+    const constraintsList = [
+      { video: { facingMode: { exact: 'environment' } } },
+      { video: { facingMode: 'environment' } },
+      { video: true },
+    ];
 
-  // Initial permission check and camera setup
-  useEffect(() => {
-    const checkPermission = async () => {
-      logDebug('Checking permission status');
+    for (const constraint of constraintsList) {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        stream.getTracks().forEach(track => track.stop());
-        setCameraPermission('granted');
-        setShowPermissionRequest(false);
-        initCamera();
+        logDebug(`Trying constraint: ${JSON.stringify(constraint)}`);
+        stream = await navigator.mediaDevices.getUserMedia(constraint);
+        const track = stream.getVideoTracks()[0];
+        logDebug(`Stream obtained: label=${track?.label}, settings=${JSON.stringify(track?.getSettings())}`);
+        break;
       } catch (err) {
-        const error = err as { name?: string; message?: string };
-        logDebug(`Permission check: ${error.name}`);
-        setCameraPermission('denied');
-        setShowPermissionRequest(true);
+        logDebug(`Constraint failed: ${err}`);
       }
-    };
-    if (typeof window !== 'undefined') {
-      checkPermission();
     }
-    return () => {
-      if (animationId.current) cancelAnimationFrame(animationId.current);
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-      }
-    };
-  }, [initCamera]);
 
-  // Handle "Scan Again" - completely reset and restart camera
+    if (!stream) {
+      logDebug('All camera constraints failed');
+      setCameraError('Camera access denied or unavailable. Please allow camera access and try again.');
+      isInitialisingRef.current = false;
+      return;
+    }
+
+    streamRef.current = stream;
+    if (!videoRef.current) {
+      logDebug('videoRef is null after getUserMedia');
+      stream.getTracks().forEach(t => t.stop());
+      isInitialisingRef.current = false;
+      return;
+    }
+
+    videoRef.current.srcObject = stream;
+    logDebug('srcObject assigned, waiting for loadeddata');
+
+    // Wait for loadeddata (with timeout)
+    await new Promise<void>((resolve) => {
+      const vid = videoRef.current!;
+      const onLoaded = () => {
+        vid.removeEventListener('loadeddata', onLoaded);
+        logDebug(`loadeddata fired, dimensions: ${vid.videoWidth}x${vid.videoHeight}`);
+        resolve();
+      };
+      vid.addEventListener('loadeddata', onLoaded);
+      // Fallback timeout (5 seconds)
+      setTimeout(() => {
+        vid.removeEventListener('loadeddata', onLoaded);
+        logDebug('loadeddata timeout, proceeding anyway');
+        resolve();
+      }, 5000);
+    });
+
+    // Play video (only after loadeddata)
+    try {
+      await videoRef.current.play();
+      logDebug('play() succeeded');
+    } catch (playErr: any) {
+      logDebug(`play() error: ${playErr.name} - ${playErr.message}`);
+      // If video is not paused, it's probably fine (iOS autoplay restrictions)
+      if (videoRef.current?.paused) {
+        setCameraError('Could not start camera preview. Tap "Try Again" or interact with the page first.');
+        isInitialisingRef.current = false;
+        return;
+      }
+    }
+
+    if (!videoRef.current || videoRef.current.videoWidth === 0) {
+      logDebug('videoWidth still 0 after play');
+      setCameraError('Camera stream appears empty. Please try again.');
+      isInitialisingRef.current = false;
+      return;
+    }
+
+    logDebug('Camera fully ready, starting scan loop');
+    setCameraReady(true);
+    isInitialisingRef.current = false;
+    startScanLoop();
+  }, [startScanLoop]);
+
+  // Initial camera start when authorized
+  useEffect(() => {
+    if (!authorized) return;
+    logDebug('Authorized, initializing camera');
+    const timer = setTimeout(() => initCamera(), 100);
+    return () => {
+      clearTimeout(timer);
+      stopCamera();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authorized]);
+
+  // Handle "Scan Again"
   const handleScanAgain = () => {
-    logDebug('Restarting scanner...');
-    
-    // Reset all state
+    logDebug('Restarting scanner (Scan Again)');
     setModalResult(null);
     setProcessing(false);
-    setScanning(true);
     isProcessingRef.current = false;
-    
-    // Cancel any existing animation frame
-    if (animationId.current) {
-      cancelAnimationFrame(animationId.current);
-      animationId.current = null;
-    }
-    
-    // Re-initialize camera (which will restart the scanning loop)
+    isInitialisingRef.current = false;
     initCamera();
   };
 
@@ -530,50 +578,16 @@ export default function ScanPage() {
           </p>
         </div>
 
-        {showPermissionRequest && cameraPermission !== 'granted' && (
-          <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-xl p-6 mb-4 text-center">
-            <Camera className="h-12 w-12 text-yellow-600 mx-auto mb-3" />
-            <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Camera Access Required</h3>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-              This app needs access to your camera to scan QR codes.
-            </p>
-            <button
-              onClick={requestCameraPermission}
-              className="px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
-            >
-              Allow Camera Access
-            </button>
-          </div>
-        )}
-
-        {cameraPermission === 'granted' && (
-          <div className="bg-black rounded-xl overflow-hidden aspect-square relative">
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              muted
-              className="absolute inset-0 w-full h-full object-cover"
-              style={{ transform: 'scaleX(-1)' }}
-            />
-            <canvas ref={canvasRef} style={{ display: 'none' }} />
-            {processing && (
-              <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-                <Loader2 className="h-12 w-12 animate-spin text-white" />
-              </div>
-            )}
-          </div>
-        )}
-
-        {cameraPermission === 'denied' && !showPermissionRequest && (
-          <div className="bg-red-50 dark:bg-red-900/20 rounded-xl p-6 text-center">
+        {cameraError && (
+          <div className="bg-red-50 dark:bg-red-900/20 rounded-xl p-6 text-center mb-4">
             <AlertCircle className="h-12 w-12 text-red-600 mx-auto mb-3" />
-            <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Camera Access Denied</h3>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-              You have denied camera access. Please enable it in your browser settings.
-            </p>
+            <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Camera Unavailable</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">{cameraError}</p>
             <button
-              onClick={requestCameraPermission}
+              onClick={() => {
+                isInitialisingRef.current = false;
+                initCamera();
+              }}
               className="px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
             >
               Try Again
@@ -581,8 +595,48 @@ export default function ScanPage() {
           </div>
         )}
 
+        {/* Video container – hidden on error */}
+        <div
+          className="bg-black rounded-xl overflow-hidden aspect-square relative"
+          style={{ display: cameraError ? 'none' : 'block' }}
+        >
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            className="absolute inset-0 w-full h-full object-cover"
+          />
+          <canvas ref={canvasRef} className="hidden" />
+
+          {!cameraReady && !cameraError && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 gap-3">
+              <Loader2 className="h-10 w-10 animate-spin text-white" />
+              <p className="text-white text-sm">Starting camera…</p>
+            </div>
+          )}
+
+          {processing && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 gap-3">
+              <Loader2 className="h-12 w-12 animate-spin text-white" />
+              <p className="text-white text-sm font-medium">Verifying ticket…</p>
+            </div>
+          )}
+
+          {cameraReady && !processing && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="w-56 h-56 relative">
+                <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-white rounded-tl-lg" />
+                <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-white rounded-tr-lg" />
+                <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-white rounded-bl-lg" />
+                <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-white rounded-br-lg" />
+              </div>
+            </div>
+          )}
+        </div>
+
         <p className="text-center text-gray-600 dark:text-gray-400 text-sm mt-4">
-          Position the QR code inside the frame to scan
+          {cameraReady ? 'Position the QR code inside the frame to scan' : 'Waiting for camera…'}
         </p>
       </div>
 
