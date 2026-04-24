@@ -1,24 +1,7 @@
 /** @type {import('next').NextConfig} */
-
-// 1. Define the CSP Header specifically for Privy and General Security
-const cspHeader = `
-    default-src 'self';
-    script-src 'self' 'unsafe-eval' 'unsafe-inline' https://privy.io;
-    style-src 'self' 'unsafe-inline';
-    img-src 'self' blob: data: https://**;
-    font-src 'self' data:;
-    object-src 'none';
-    base-uri 'self';
-    form-action 'self';
-    frame-ancestors 'none';
-    frame-src 'self' https://privy.io https://walletconnect.com https://walletconnect.org;
-    connect-src 'self' https://privy.io https://*.privy.io wss://*.bridge.walletconnect.org https://alchemy.com;
-    upgrade-insecure-requests;
-`;
-
 const nextConfig = {
   reactStrictMode: true,
-  // Turbopack is handled via CLI, but keeping the key if you use specific settings
+  turbopack: {},
   images: {
     remotePatterns: [
       {
@@ -27,7 +10,6 @@ const nextConfig = {
       },
     ],
   },
-  // 2. Add the Security Headers (CSP & X-Frame-Options)
   async headers() {
     return [
       {
@@ -35,7 +17,24 @@ const nextConfig = {
         headers: [
           {
             key: 'Content-Security-Policy',
-            value: cspHeader.replace(/\s{2,}/g, ' ').trim(),
+            value: [
+              "default-src 'self'",
+              // Allows Privy scripts and Next.js internal execution
+              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://privy.io",
+              // Allows your custom styles and Tailwind
+              "style-src 'self' 'unsafe-inline'",
+              // Allows images from any HTTPS source (matches your remotePatterns)
+              "img-src 'self' blob: data: https://**",
+              // Allows fonts
+              "font-src 'self' data:",
+              // Security: prevents your site from being embedded elsewhere
+              "frame-ancestors 'none'",
+              // CRITICAL: Allows Privy Wallet and WalletConnect iframes
+              "frame-src 'self' https://privy.io https://walletconnect.com https://walletconnect.org https://*.bridge.walletconnect.org",
+              // CRITICAL: Allows API calls to Privy, Alchemy, and RPC nodes
+              "connect-src 'self' https://privy.io https://*.privy.io wss://*.bridge.walletconnect.org https://*.alchemy.com https://*.infura.io https://ankr.com",
+              "upgrade-insecure-requests",
+            ].join('; '),
           },
           {
             key: 'X-Frame-Options',
@@ -57,13 +56,13 @@ const nextConfig = {
       },
     ];
   },
-};
+}
 
 const withPWA = require('next-pwa')({
   dest: 'public',
   disable: process.env.NODE_ENV === 'development',
   register: true,
   skipWaiting: true,
-});
+})
 
-module.exports = withPWA(nextConfig);
+module.exports = withPWA(nextConfig)
