@@ -19,20 +19,17 @@ const nextConfig = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              // Allows Privy scripts and Next.js internal execution
-              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://privy.io",
-              // Allows your custom styles and Tailwind
+              // Fixed: Added auth.privy.io explicitly
+              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://auth.privy.io",
               "style-src 'self' 'unsafe-inline'",
-              // Allows images from any HTTPS source (matches your remotePatterns)
-              "img-src 'self' blob: data: https://**",
-              // Allows fonts
+              // Fixed: Changed https://** to https: (valid CSP syntax)
+              "img-src 'self' blob: data: https:",
               "font-src 'self' data:",
-              // Security: prevents your site from being embedded elsewhere
               "frame-ancestors 'none'",
-              // CRITICAL: Allows Privy Wallet and WalletConnect iframes
-              "frame-src 'self' https://privy.io https://walletconnect.com https://walletconnect.org https://*.bridge.walletconnect.org",
-              // CRITICAL: Allows API calls to Privy, Alchemy, and RPC nodes
-              "connect-src 'self' https://privy.io https://*.privy.io wss://*.bridge.walletconnect.org https://*.alchemy.com https://*.infura.io https://ankr.com",
+              // Fixed: Added specific WalletConnect and Privy auth domains
+              "frame-src 'self' https://auth.privy.io https://verify.walletconnect.com https://verify.walletconnect.org",
+              // Fixed: Added Lisk RPC and WalletConnect Explorer API domains found in your logs
+              "connect-src 'self' https://auth.privy.io https://*.privy.io https://explorer-api.walletconnect.com wss://*.bridge.walletconnect.org https://rpc.api.lisk.com https://*.alchemy.com https://*.infura.io https://rpc.ankr.com",
               "upgrade-insecure-requests",
             ].join('; '),
           },
