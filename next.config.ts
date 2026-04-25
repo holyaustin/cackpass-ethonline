@@ -11,10 +11,15 @@ const nextConfig = {
     ],
   },
   async headers() {
-    console.log("Current Environment:", process.env.NODE_ENV);
-    // FIX: Prevents CSP from blocking WebSockets/Fast Refresh on Localhost
-    if (process.env.NODE_ENV === 'development') return [];
-      console.log("CSP headers disabled for local development.");
+    // In development, CSP often blocks hot reload and WebSockets.
+    // Disable entirely for development to avoid login issues.
+    if (process.env.NODE_ENV !== 'production') {
+      console.log("⚠️ CSP headers disabled for local development.");
+      return [];
+    }
+
+    console.log("🔒 Applying production CSP headers (Privy‑compliant).");
+
     return [
       {
         source: '/(.*)',
@@ -22,23 +27,39 @@ const nextConfig = {
           {
             key: 'Content-Security-Policy',
             value: [
+              // ─── Base Directives ─────────────────────────────────────
               "default-src 'self'",
-              // UPDATED: Added https://paystack.co
-              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://auth.privy.io https://paystack.co",
-              "style-src 'self' 'unsafe-inline'",
-              "img-src 'self' blob: data: https:",
-              "font-src 'self' data:",
+              "base-uri 'self'",
+              "form-action 'self'",
               "frame-ancestors 'none'",
-              // UPDATED: Added https://paystack.co for payment iframes
-              "frame-src 'self' https://auth.privy.io https://paystack.co https://verify.walletconnect.com https://verify.walletconnect.org",
-              // UPDATED: Added https://paystack.co for transaction checks
-              "connect-src 'self' https://auth.privy.io https://*.privy.io https://paystack.co https://explorer-api.walletconnect.com wss://*.bridge.walletconnect.org https://rpc.api.lisk.com https://*.alchemy.com https://*.infura.io https://rpc.ankr.com",
+              "manifest-src 'self'",
+              "object-src 'none'",
+              "worker-src 'self'",
+
+              // ─── Scripts & Styles ─────────────────────────────────────
+              // Privy requires 'unsafe-inline' for its styles.
+              "style-src 'self' 'unsafe-inline' https://hcaptcha.com https://*.hcaptcha.com",
+              "script-src 'self' https://auth.privy.io https://cdn.privy.io https://js.paystack.co https://paystack.co https://challenges.cloudflare.com https://telegram.org https://hcaptcha.com https://*.hcaptcha.com https://verify.walletconnect.com https://verify.walletconnect.org",
+
+              // ─── Images & Fonts ──────────────────────────────────────
+              "img-src 'self' data: blob: https: https://gateway.pinata.cloud https://ipfs.io",
+              "font-src 'self' data:",
+
+              // ─── Frames (iframes) ────────────────────────────────────
+              // Required for Privy, WalletConnect, Turnstile, hCaptcha.
+              "child-src https://auth.priviy.io https://verify.walletconnect.com https://verify.walletconnect.org hcaptcha.com https://*.hcaptcha.com",
+              "frame-src 'self' https://auth.priviy.io https://verify.walletconnect.com https://verify.walletconnect.org https://challenges.cloudflare.com https://oauth.telegram.org https://paystack.co https://checkout.paystack.com https://hcaptcha.com https://*.hcaptcha.com",
+
+              // ─── Connections (WebSockets, APIs) ──────────────────────
+              // Privy, WalletConnect, Coinbase, Lisk, Pinata
+              "connect-src 'self' https://auth.priviy.io https://api.priviy.io wss://relay.walletconnect.com wss://relay.walletconnect.org wss://www.walletlink.org https://*.rpc.privy.systems https://explorer-api.walletconnect.com https://paystack.co https://api.paystack.co https://rpc.api.lisk.com https://*.alchemy.com https://*.infura.io https://rpc.ankr.com https://api.pinata.cloud https://hcaptcha.com https://*.hcaptcha.com",
+
+              // ─── Upgrade (optional) ──────────────────────────────────
               "upgrade-insecure-requests",
             ].join('; '),
           },
           {
             key: 'X-Frame-Options',
-            // UPDATED: Changed to SAMEORIGIN so Paystack/Privy iframes can communicate with your app
             value: 'SAMEORIGIN',
           },
           {
@@ -55,19 +76,19 @@ const nextConfig = {
           },
           {
             key: 'Permissions-Policy',
-            value: 'camera=(self), microphone=(), geolocation=(), interest-cohort=()', 
+            value: 'camera=(self), microphone=(), geolocation=(), interest-cohort=()',
           },
         ],
       },
     ];
   },
-}
+};
 
 const withPWA = require('next-pwa')({
   dest: 'public',
   disable: process.env.NODE_ENV === 'development',
   register: true,
   skipWaiting: true,
-})
+});
 
-module.exports = withPWA(nextConfig)
+module.exports = withPWA(nextConfig);
