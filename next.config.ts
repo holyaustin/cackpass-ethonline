@@ -6,7 +6,7 @@ const nextConfig = {
     remotePatterns: [{ protocol: 'https', hostname: '**' }],
   },
   async headers() {
-    if (process.env.NODE_ENV === 'development') return [];
+    if (process.env.NODE_ENV !== 'production') return [];
 
     return [
       {
@@ -16,16 +16,15 @@ const nextConfig = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              // FIXED: Re-added 'unsafe-inline' and 'unsafe-eval' + added Privy/Cloudflare/hCaptcha/Paystack
-              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://auth.privy.io https://cdn.privy.io https://js.paystack.co https://paystack.co https://challenges.cloudflare.com https://hcaptcha.com https://*.hcaptcha.com https://telegram.org",
+              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://auth.privy.io https://cdn.privy.io https://js.paystack.co https://paystack.co https://checkout.paystack.com https://challenges.cloudflare.com https://hcaptcha.com https://*.hcaptcha.com https://verify.walletconnect.com https://verify.walletconnect.org",
               "style-src 'self' 'unsafe-inline' https://hcaptcha.com https://*.hcaptcha.com",
-              "img-src 'self' blob: data: https:",
-              "font-src 'self' data: https://auth.privy.io",
+              "img-src 'self' data: blob: https: https://pinata.cloud https://ipfs.io",
+              "font-src 'self' data:",
               "frame-ancestors 'none'",
-              // FIXED: Added hCaptcha and Cloudflare challenges for Privy auth security
-              "frame-src 'self' https://auth.privy.io https://js.paystack.co https://verify.walletconnect.com https://verify.walletconnect.org https://hcaptcha.com https://*.hcaptcha.com https://challenges.cloudflare.com",
-              // FIXED: Expanded connect-src for Lisk, WalletConnect, and Privy Analytics
-              "connect-src 'self' https://auth.privy.io https://*.privy.io https://api.paystack.co https://explorer-api.walletconnect.com wss://*.bridge.walletconnect.org https://lisk.com https://*.alchemy.com https://*.infura.io https://hcaptcha.com https://*.hcaptcha.com",
+              // FIXED: Added https://checkout.paystack.com to frame-src
+              "frame-src 'self' https://auth.privy.io https://js.paystack.co https://paystack.co https://checkout.paystack.com https://verify.walletconnect.com https://verify.walletconnect.org https://challenges.cloudflare.com https://hcaptcha.com https://*.hcaptcha.com",
+              // FIXED: Added paystack.com to connect-src
+              "connect-src 'self' https://auth.privy.io https://*.privy.io https://api.privy.io wss://*.bridge.walletconnect.org wss://relay.walletconnect.com wss://relay.walletconnect.org https://explorer-api.walletconnect.com https://api.paystack.co https://checkout.paystack.com https://*.lisk.com https://lisk.com https://*.alchemy.com https://*.infura.io https://ankr.com https://pinata.cloud https://hcaptcha.com https://*.hcaptcha.com",
               "upgrade-insecure-requests",
             ].join('; '),
           },
@@ -47,19 +46,19 @@ const nextConfig = {
           },
           {
             key: 'Permissions-Policy',
-            value: 'camera=(self), microphone=(), geolocation=(), interest-cohort=()', 
+            value: 'camera=(self), microphone=(), geolocation=()',
           },
         ],
       },
     ];
   },
-}
+};
 
 const withPWA = require('next-pwa')({
   dest: 'public',
   disable: process.env.NODE_ENV === 'development',
   register: true,
   skipWaiting: true,
-})
+});
 
-module.exports = withPWA(nextConfig)
+module.exports = withPWA(nextConfig);
