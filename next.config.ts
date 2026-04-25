@@ -6,7 +6,7 @@ const nextConfig = {
     remotePatterns: [{ protocol: 'https', hostname: '**' }],
   },
   async headers() {
-    // Only apply strict CSP in production to keep local dev (Fast Refresh/WebSockets) working
+    // Crucial: Keep local development smooth
     if (process.env.NODE_ENV !== 'production') return [];
 
     return [
@@ -22,15 +22,17 @@ const nextConfig = {
               "frame-ancestors 'none'",
               "manifest-src 'self'",
               "object-src 'none'",
-              "worker-src 'self'",
-              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://auth.privy.io https://cdn.privy.io https://js.paystack.co https://paystack.co https://checkout.paystack.com https://cloudflare.com https://hcaptcha.com https://*.hcaptcha.com https://verify.walletconnect.com https://walletconnect.org",
+              // FIXED: Added blob: for Privy's secure background workers
+              "worker-src 'self' blob:",
+              // FIXED: Added 'unsafe-eval' for Privy crypto + expanded domains
+              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://auth.privy.io https://cdn.privy.io https://paystack.co https://paystack.co https://paystack.com https://cloudflare.com https://hcaptcha.com https://*.hcaptcha.com https://walletconnect.com https://walletconnect.org",
               "style-src 'self' 'unsafe-inline' https://hcaptcha.com https://*.hcaptcha.com",
-              "img-src 'self' data: blob: https: https://gateway.pinata.cloud https://ipfs.io",
+              "img-src 'self' data: blob: https: https://pinata.cloud https://ipfs.io",
               "font-src 'self' data:",
-              "child-src https://auth.privy.io https://verify.walletconnect.com https://walletconnect.org https://hcaptcha.com https://*.hcaptcha.com",
-              "frame-src 'self' https://auth.privy.io https://verify.walletconnect.com https://walletconnect.org https://cloudflare.com https://paystack.co https://checkout.paystack.com https://hcaptcha.com https://*.hcaptcha.com",
-              // FIXED: Removed the malformed 'wss://://' and replaced with correct WalletConnect/Privy endpoints
-              "connect-src 'self' https://auth.privy.io https://*.privy.io https://api.privy.io https://*.privy.systems https://*.rpc.privy.systems wss://relay.walletconnect.com wss://relay.walletconnect.org wss://*.bridge.walletconnect.org https://explorer-api.walletconnect.com https://api.paystack.co https://checkout.paystack.com https://*.lisk.com https://rpc.api.lisk.com https://*.alchemy.com https://*.infura.io https://rpc.ankr.com https://api.pinata.cloud https://hcaptcha.com https://*.hcaptcha.com",
+              "child-src https://auth.privy.io https://walletconnect.com https://walletconnect.org https://hcaptcha.com https://*.hcaptcha.com",
+              "frame-src 'self' https://auth.privy.io https://walletconnect.com https://walletconnect.org https://cloudflare.com https://paystack.co https://paystack.com https://hcaptcha.com https://*.hcaptcha.com",
+              // FIXED: Expanded connect-src with Privy infrastructure and WalletConnect relays
+              "connect-src 'self' https://auth.privy.io https://*.privy.io https://api.privy.io https://*.privy.systems https://*.rpc.privy.systems wss://://walletconnect.com wss://relay.walletconnect.org wss://*.bridge.walletconnect.org https://walletconnect.com https://paystack.co https://paystack.com https://*.lisk.com https://lisk.com https://*.alchemy.com https://*.infura.io https://ankr.com https://pinata.cloud https://hcaptcha.com https://*.hcaptcha.com",
               "upgrade-insecure-requests",
             ].join('; '),
           },
