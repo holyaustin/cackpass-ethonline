@@ -6,6 +6,7 @@ const nextConfig = {
     remotePatterns: [{ protocol: 'https', hostname: '**' }],
   },
   async headers() {
+    // Only apply strict CSP in production to keep local dev (Fast Refresh/WebSockets) working
     if (process.env.NODE_ENV !== 'production') return [];
 
     return [
@@ -22,15 +23,14 @@ const nextConfig = {
               "manifest-src 'self'",
               "object-src 'none'",
               "worker-src 'self'",
-              // FIXED: Added 'unsafe-eval' and 'unsafe-inline' which are mandatory for Privy/Next.js
-              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://privy.io https://privy.io https://paystack.co https://paystack.co https://paystack.com https://cloudflare.com https://hcaptcha.com https://*.hcaptcha.com https://walletconnect.com https://walletconnect.org",
+              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://auth.privy.io https://cdn.privy.io https://js.paystack.co https://paystack.co https://checkout.paystack.com https://cloudflare.com https://hcaptcha.com https://*.hcaptcha.com https://verify.walletconnect.com https://walletconnect.org",
               "style-src 'self' 'unsafe-inline' https://hcaptcha.com https://*.hcaptcha.com",
-              "img-src 'self' data: blob: https: https://pinata.cloud https://ipfs.io",
+              "img-src 'self' data: blob: https: https://gateway.pinata.cloud https://ipfs.io",
               "font-src 'self' data:",
-              "child-src https://privy.io https://walletconnect.com https://walletconnect.org hcaptcha.com https://*.hcaptcha.com",
-              "frame-src 'self' https://privy.io https://walletconnect.com https://walletconnect.org https://cloudflare.com https://paystack.co https://paystack.com https://hcaptcha.com https://*.hcaptcha.com",
-              // FIXED: Added *.privy.systems (Privy Config) and *.rpc.privy.systems
-              "connect-src 'self' https://privy.io https://*.privy.io https://privy.io https://*.privy.systems https://*.rpc.privy.systems wss://*.bridge.walletconnect.org wss://://walletconnect.com wss://relay.walletconnect.org https://walletconnect.com https://paystack.co https://paystack.com https://*.lisk.com https://lisk.com https://*.alchemy.com https://*.infura.io https://ankr.com https://pinata.cloud https://hcaptcha.com https://*.hcaptcha.com",
+              "child-src https://auth.privy.io https://verify.walletconnect.com https://walletconnect.org https://hcaptcha.com https://*.hcaptcha.com",
+              "frame-src 'self' https://auth.privy.io https://verify.walletconnect.com https://walletconnect.org https://cloudflare.com https://paystack.co https://checkout.paystack.com https://hcaptcha.com https://*.hcaptcha.com",
+              // FIXED: Removed the malformed 'wss://://' and replaced with correct WalletConnect/Privy endpoints
+              "connect-src 'self' https://auth.privy.io https://*.privy.io https://api.privy.io https://*.privy.systems https://*.rpc.privy.systems wss://relay.walletconnect.com wss://relay.walletconnect.org wss://*.bridge.walletconnect.org https://explorer-api.walletconnect.com https://api.paystack.co https://checkout.paystack.com https://*.lisk.com https://rpc.api.lisk.com https://*.alchemy.com https://*.infura.io https://rpc.ankr.com https://api.pinata.cloud https://hcaptcha.com https://*.hcaptcha.com",
               "upgrade-insecure-requests",
             ].join('; '),
           },
