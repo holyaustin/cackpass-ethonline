@@ -1,4 +1,4 @@
-// app/api/events/route.ts - COMPLETE FIXED VERSION
+// app/api/events/route.ts - COMPLETE WORKING VERSION
 import { NextRequest, NextResponse } from 'next/server'
 import { connectDB } from '@/lib/database/connection'
 import { Event, User } from '@/lib/database/models'
@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
     
     const skip = (page - 1) * limit
     
-    // Build query
+    // Build base query
     let query: any = { 
       status: 'published',
       isActive: true 
@@ -40,48 +40,76 @@ export async function GET(request: NextRequest) {
       query.price = { $gt: 0 }
     }
     
-    // ========== FIXED DATE FILTER ==========
-    // Use startDateTime (actual event time) instead of startDate
+    // ========== DATE FILTER USING END DATE/TIME ==========
+    // Tickets can be sold until the event ENDS, not just until it starts
     const now = new Date()
+    
     if (dateType === 'upcoming') {
-      // Event is upcoming if startDateTime is in the future
-      // OR if no startDateTime, use startDate
+      // Events that HAVEN'T ENDED yet (tickets still available)
       query.$or = [
-        { startDateTime: { $gte: now } },
-        { startDateTime: { $exists: false }, startDate: { $gte: now } }
+        { endDateTime: { $gt: now } },
+        { endDateTime: { $exists: false }, endDate: { $gt: now } }
       ]
     } else if (dateType === 'past') {
-      // Event is past if startDateTime is in the past
-      // OR if no startDateTime, use startDate
+      // Events that HAVE ENDED (no tickets available)
       query.$or = [
-        { startDateTime: { $lt: now } },
-        { startDateTime: { $exists: false }, startDate: { $lt: now } }
+        { endDateTime: { $lt: now } },
+        { endDateTime: { $exists: false }, endDate: { $lt: now } }
       ]
     }
-    // If dateType === 'all', no date filter
+    // If dateType === 'all' or undefined, show all events
     
     // Search filter
     if (search) {
-      query.$or = [
-        { title: { $regex: search, $options: 'i' } },
-        { description: { $regex: search, $options: 'i' } },
-        { venue: { $regex: search, $options: 'i' } },
-        { 'location.address': { $regex: search, $options: 'i' } }
+      const searchRegex = { $regex: search, $options: 'i' }
+      query.$and = [
+        query.$or ? { $or: query.$or } : {},
+        {
+          $or: [
+            { title: searchRegex },
+            { description: searchRegex },
+            { venue: searchRegex },
+            { 'location.address': searchRegex }
+          ]
+        }
       ]
+      // Clean up if $or was at root
+      if (query.$or && query.$and[0].$or) {
+        delete query.$or
+      }
     }
     
-    console.log('📅 Date filter:', dateType, 'Current time:', now.toISOString())
-    console.log('Query:', JSON.stringify(query, null, 2))
+    console.log('📅 Date filter:', dateType)
+    console.log('⏰ Current time:', now.toISOString())
+    console.log('🔍 Query:', JSON.stringify(query, (key, value) => {
+      if (value instanceof Date) return value.toISOString()
+      return value
+    }, 2))
     
-    // Execute query with pagination - sort by startDateTime
+    // Execute query with pagination - sort by endDateTime (events ending soon first for upcoming)
+    let eventsQuery = Event.find(query)
+    
+    if (dateType === 'upcoming') {
+      eventsQuery = eventsQuery.sort({ endDateTime: 1, endDate: 1 }) // Ending soon first
+    } else if (dateType === 'past') {
+      eventsQuery = eventsQuery.sort({ endDateTime: -1, endDate: -1 }) // Most recent first
+    } else {
+      eventsQuery = eventsQuery.sort({ endDateTime: 1, endDate: 1, createdAt: -1 })
+    }
+    
     const [events, total] = await Promise.all([
-      Event.find(query)
-        .sort({ startDateTime: 1, startDate: 1, createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .lean(),
+      eventsQuery.skip(skip).limit(limit).lean(),
       Event.countDocuments(query)
     ])
+    
+    // Log each event's datetime for debugging
+    console.log(`📊 Found ${events.length} events:`)
+    events.forEach(event => {
+      const eventEnd = event.endDateTime || event.endDate
+      const timeSource = event.endDateTime ? 'endDateTime' : 'endDate'
+      const isActive = new Date(eventEnd) > now
+      console.log(`   - ${event.title}: Ends at ${eventEnd} (using ${timeSource}) - Tickets ${isActive ? 'AVAILABLE' : 'SOLD OUT'}`)
+    })
     
     const totalPages = Math.ceil(total / limit)
     
@@ -95,6 +123,7 @@ export async function GET(request: NextRequest) {
       endDateTime: event.endDateTime?.toISOString(),
       createdAt: event.createdAt?.toISOString(),
       updatedAt: event.updatedAt?.toISOString(),
+      ticketsAvailable: new Date(event.endDateTime || event.endDate) > now
     }))
     
     return NextResponse.json({

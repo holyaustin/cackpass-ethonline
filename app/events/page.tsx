@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Search, Filter, Calendar, MapPin, Ticket, Globe, Users, Clock, ChevronRight, Loader2, Sparkles, ArrowRight, TrendingDown, TrendingUp } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Search, Filter, Calendar, MapPin, Ticket, Globe, Users, Clock, ChevronRight, Loader2, Sparkles, TrendingDown, TrendingUp } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
+import { useSearchParams, useRouter } from 'next/navigation'
 
 // ==================== TYPE DEFINITIONS ====================
 interface Event {
@@ -30,7 +31,7 @@ interface Event {
   ticketType: string
   unlimitedCapacity: boolean
   capacity?: number
-  ticketsSold?: number  // ADD THIS FIELD
+  ticketsSold?: number
   organizerId?: any
   organizerWallet: string
   isOnChain: boolean
@@ -59,8 +60,19 @@ function getCategoryInfo(category: string) {
   return cat || CATEGORIES[0]
 }
 
-function isUpcoming(dateString: string | Date) {
-  return new Date(dateString) > new Date()
+function areTicketsAvailable(event: Event): boolean {
+  const eventEnd = event.endDateTime ? new Date(event.endDateTime) : new Date(event.endDate)
+  return eventEnd > new Date()
+}
+
+function getEventStatus(event: Event): 'upcoming' | 'ongoing' | 'past' {
+  const now = new Date()
+  const start = event.startDateTime ? new Date(event.startDateTime) : new Date(event.startDate)
+  const end = event.endDateTime ? new Date(event.endDateTime) : new Date(event.endDate)
+  
+  if (now > end) return 'past'
+  if (now >= start && now <= end) return 'ongoing'
+  return 'upcoming'
 }
 
 function formatDateHelper(dateString: string | Date) {
@@ -106,7 +118,8 @@ function getSoldPercentage(event: Event): number {
 // ==================== EVENT CARD COMPONENT ====================
 function EventCard({ event }: { event: Event }) {
   const categoryInfo = getCategoryInfo(event.category)
-  const isEventUpcoming = isUpcoming(event.startDate)
+  const ticketsAvailable = areTicketsAvailable(event)
+  const eventStatus = getEventStatus(event)
   const eventDate = new Date(event.startDate)
   const eventTime = new Date(event.startDateTime || event.startDate)
   const remainingTickets = getRemainingTickets(event)
@@ -120,7 +133,6 @@ function EventCard({ event }: { event: Event }) {
 
   return (
     <div className="card group hover:shadow-2xl transition-all duration-300 hover:-translate-y-1">
-      {/* Event Image */}
       <div className="relative h-48 overflow-hidden rounded-t-2xl">
         <img
           src={imageUrl}
@@ -133,14 +145,12 @@ function EventCard({ event }: { event: Event }) {
         
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent"></div>
         
-        {/* Category Badge */}
         <div className="absolute top-3 left-3">
           <span className={`px-3 py-1.5 text-white text-xs font-bold rounded-full backdrop-blur-md ${categoryInfo.color}`}>
             {categoryInfo.icon} {event.customCategory || categoryInfo.label}
           </span>
         </div>
         
-        {/* Virtual Badge */}
         {event.isVirtual && (
           <div className="absolute top-3 right-3">
             <span className="px-3 py-1.5 bg-gradient-to-r from-blue-500 to-cyan-500 text-white text-xs font-bold rounded-full backdrop-blur-md flex items-center gap-1">
@@ -150,7 +160,6 @@ function EventCard({ event }: { event: Event }) {
           </div>
         )}
         
-        {/* Sold Out Badge */}
         {isSoldOut && (
           <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
             <span className="px-6 py-3 bg-gradient-to-r from-red-600 to-red-700 text-white text-xl font-bold rounded-xl shadow-2xl rotate-12">
@@ -159,7 +168,6 @@ function EventCard({ event }: { event: Event }) {
           </div>
         )}
         
-        {/* Price Badge */}
         <div className="absolute bottom-3 left-3">
           <span className={`px-4 py-2 text-white text-sm font-bold rounded-xl shadow-xl flex items-center gap-2 backdrop-blur-md ${
             event.isFree 
@@ -180,8 +188,7 @@ function EventCard({ event }: { event: Event }) {
           </span>
         </div>
         
-        {/* Status Badge */}
-        {!isEventUpcoming && (
+        {eventStatus === 'past' && (
           <div className="absolute bottom-3 right-3">
             <span className="px-3 py-1.5 bg-gradient-to-r from-gray-600 to-gray-700 text-white text-xs font-bold rounded-full backdrop-blur-md flex items-center gap-1">
               <Clock className="h-3 w-3" />
@@ -189,9 +196,19 @@ function EventCard({ event }: { event: Event }) {
             </span>
           </div>
         )}
+        {eventStatus === 'ongoing' && (
+          <div className="absolute bottom-3 right-3">
+            <span className="px-3 py-1.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white text-xs font-bold rounded-full backdrop-blur-md flex items-center gap-1">
+              <span className="relative flex h-2 w-2 mr-1">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+              </span>
+              Live Now
+            </span>
+          </div>
+        )}
       </div>
 
-      {/* Event Content */}
       <div className="p-5">
         <h3 className="font-bold text-lg mb-2 line-clamp-1 group-hover:text-primary transition-colors">
           {event.title}
@@ -217,8 +234,7 @@ function EventCard({ event }: { event: Event }) {
             </span>
           </div>
           
-          {/* Ticket Availability - NEW SECTION */}
-          {isEventUpcoming && !isSoldOut && (
+          {ticketsAvailable && !isSoldOut && (
             <div className="space-y-2">
               <div className="flex items-center justify-between text-sm">
                 <div className="flex items-center text-text">
@@ -238,7 +254,6 @@ function EventCard({ event }: { event: Event }) {
                 )}
               </div>
               
-              {/* Progress Bar - Show only for limited capacity */}
               {!event.unlimitedCapacity && event.capacity && (
                 <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 overflow-hidden">
                   <div 
@@ -259,15 +274,14 @@ function EventCard({ event }: { event: Event }) {
           <Link
             href={`/events/${event._id}`}
             className={`flex-1 py-3 text-center text-sm rounded-xl font-medium transition-all ${
-              isSoldOut && isEventUpcoming
+              (!ticketsAvailable || isSoldOut) && eventStatus !== 'past'
                 ? 'bg-gray-400 cursor-not-allowed text-white'
                 : 'btn-primary'
             }`}
-            aria-disabled={isSoldOut && isEventUpcoming}
           >
-            {isSoldOut && isEventUpcoming ? 'Sold Out' : 'View Details'}
+            {(!ticketsAvailable || isSoldOut) && eventStatus !== 'past' ? 'Sold Out' : 'View Details'}
           </Link>
-          {isEventUpcoming && !isSoldOut && (
+          {ticketsAvailable && !isSoldOut && eventStatus !== 'past' && (
             <Link
               href={`/events/${event._id}`}
               className="btn-outline flex-1 py-3 text-center text-sm"
@@ -303,11 +317,18 @@ function EventCard({ event }: { event: Event }) {
 
 // ==================== MAIN PAGE COMPONENT ====================
 export default function EventsPage() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  
   const [events, setEvents] = useState<Event[]>([])
-  const [search, setSearch] = useState('')
-  const [selectedCategory, setSelectedCategory] = useState('all')
-  const [priceFilter, setPriceFilter] = useState<'all' | 'free' | 'paid'>('all')
-  const [dateFilter, setDateFilter] = useState<'all' | 'upcoming' | 'past'>('upcoming')
+  const [search, setSearch] = useState(searchParams.get('search') || '')
+  const [selectedCategory, setSelectedCategory] = useState(searchParams.get('category') || 'all')
+  const [priceFilter, setPriceFilter] = useState<'all' | 'free' | 'paid'>(
+    (searchParams.get('price') as 'all' | 'free' | 'paid') || 'all'
+  )
+  const [dateFilter, setDateFilter] = useState<'all' | 'upcoming' | 'past'>(
+    (searchParams.get('date') as 'all' | 'upcoming' | 'past') || 'upcoming'
+  )
   const [isLoading, setIsLoading] = useState(true)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
@@ -315,7 +336,7 @@ export default function EventsPage() {
   const [totalEvents, setTotalEvents] = useState(0)
   const itemsPerPage = 12
 
-  const fetchEvents = async (page = 1, refresh = false) => {
+  const fetchEvents = useCallback(async (page = 1, refresh = false) => {
     try {
       if (page === 1) {
         setIsLoading(true)
@@ -328,15 +349,14 @@ export default function EventsPage() {
         limit: itemsPerPage.toString(),
         category: selectedCategory !== 'all' ? selectedCategory : '',
         priceType: priceFilter !== 'all' ? priceFilter : '',
-        dateType: dateFilter !== 'all' ? dateFilter : '',
+        dateType: dateFilter !== 'all' ? dateFilter : '',  // ← This sends 'upcoming' correctly
         search: search || '',
       })
 
-      console.log('🔍 Fetching events with params:', params.toString())
+      console.log('🔍 Fetching events with dateType:', dateFilter)
+      console.log('🔍 Full params:', params.toString())
       
       const response = await fetch(`/api/events?${params}`)
-      
-      console.log('📡 API Response status:', response.status)
       
       if (!response.ok) {
         const errorData = await response.json()
@@ -344,35 +364,25 @@ export default function EventsPage() {
       }
 
       const data = await response.json()
-      console.log('📦 API Response data:', data)
       
       let fetchedEvents: Event[] = []
       let total = 0
       let pages = 1
       
-      if (data.success) {
-        if (data.events && Array.isArray(data.events)) {
-          fetchedEvents = data.events
-          total = data.total || data.events.length
-          pages = data.totalPages || Math.ceil(total / itemsPerPage)
-        } else if (data.data && Array.isArray(data.data)) {
-          fetchedEvents = data.data
-          total = data.total || data.data.length
-          pages = data.totalPages || Math.ceil(total / itemsPerPage)
-        } else if (Array.isArray(data)) {
-          fetchedEvents = data
-          total = data.length
-          pages = 1
-        } else {
-          console.warn('Unexpected API response structure:', data)
-          fetchedEvents = []
-        }
+      if (data.success && data.events && Array.isArray(data.events)) {
+        fetchedEvents = data.events
+        total = data.total || data.events.length
+        pages = data.totalPages || Math.ceil(total / itemsPerPage)
+        
+        // Log what the API returned
+        console.log(`📊 API returned ${fetchedEvents.length} events for dateType=${dateFilter}`)
+        fetchedEvents.forEach(event => {
+          const endTime = event.endDateTime || event.endDate
+          console.log(`   - ${event.title}: ends at ${endTime}`)
+        })
       } else {
-        console.error('API returned success: false', data.error)
         fetchedEvents = []
       }
-      
-      console.log(`✅ Fetched ${fetchedEvents.length} events, Total: ${total}, Pages: ${pages}`)
       
       if (refresh || page === 1) {
         setEvents(fetchedEvents)
@@ -392,32 +402,29 @@ export default function EventsPage() {
       setIsLoading(false)
       setIsLoadingMore(false)
     }
-  }
+  }, [selectedCategory, priceFilter, dateFilter, search])
 
-  // Initial load and filter changes
+  // Update URL when filters change
+  useEffect(() => {
+    const params = new URLSearchParams()
+    if (search) params.set('search', search)
+    if (selectedCategory !== 'all') params.set('category', selectedCategory)
+    if (priceFilter !== 'all') params.set('price', priceFilter)
+    if (dateFilter !== 'all') params.set('date', dateFilter)
+    
+    const newUrl = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}`
+    router.replace(newUrl, { scroll: false })
+  }, [search, selectedCategory, priceFilter, dateFilter, router])
+
+  // Fetch events when filters change - FIXED DEPENDENCIES
   useEffect(() => {
     setCurrentPage(1)
     fetchEvents(1, true)
-  }, [selectedCategory, priceFilter, dateFilter])
-
-  // Search debounce
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (currentPage === 1) {
-        fetchEvents(1, true)
-      } else {
-        setCurrentPage(1)
-        fetchEvents(1, true)
-      }
-    }, 500)
-
-    return () => clearTimeout(timer)
-  }, [search])
+  }, [selectedCategory, priceFilter, dateFilter, search, fetchEvents]) // ← fetchEvents is now stable
 
   const loadMore = () => {
     if (currentPage < totalPages && !isLoadingMore) {
-      const nextPage = currentPage + 1
-      fetchEvents(nextPage)
+      fetchEvents(currentPage + 1)
     }
   }
 
@@ -428,29 +435,12 @@ export default function EventsPage() {
     setSearch('')
   }
 
-  // Display events based on filters (client-side filtering as backup)
-  const displayEvents = events.filter(event => {
-    if (search && !event.title.toLowerCase().includes(search.toLowerCase()) &&
-        !(event.description || '').toLowerCase().includes(search.toLowerCase())) {
-      return false
-    }
-    
-    if (priceFilter === 'free' && !event.isFree) return false
-    if (priceFilter === 'paid' && event.isFree) return false
-    
-    const isEventUpcoming = new Date(event.startDate) > new Date()
-    if (dateFilter === 'upcoming' && !isEventUpcoming) return false
-    if (dateFilter === 'past' && isEventUpcoming) return false
-    
-    if (selectedCategory !== 'all' && event.category !== selectedCategory) return false
-    
-    return true
-  })
+  // Display events (API should already filter correctly)
+  const displayEvents = events
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-950">
       <div className="responsive-container py-8 md:py-12" id="events-grid">
-        {/* Header */}
         <div className="text-center mb-12">
           <h1 className="text-4xl md:text-5xl font-bold text-text mb-4 bg-gradient-to-r from-primary to-purple-600 bg-clip-text text-transparent">
             Discover Amazing Events
@@ -460,10 +450,8 @@ export default function EventsPage() {
           </p>
         </div>
 
-        {/* Filters Bar */}
         <div className="mb-12">
           <div className="flex flex-col lg:flex-row gap-6 mb-8">
-            {/* Search Bar */}
             <div className="flex-1">
               <div className="relative">
                 <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-text-light h-5 w-5" />
@@ -477,7 +465,6 @@ export default function EventsPage() {
               </div>
             </div>
 
-            {/* Action Buttons */}
             <div className="flex gap-3">
               <button
                 onClick={resetFilters}
@@ -496,9 +483,7 @@ export default function EventsPage() {
             </div>
           </div>
 
-          {/* Filter Chips */}
           <div className="space-y-6">
-            {/* Category Filters */}
             <div>
               <h3 className="text-sm font-semibold text-text-light mb-4">Categories</h3>
               <div className="flex flex-wrap gap-2">
@@ -519,7 +504,6 @@ export default function EventsPage() {
               </div>
             </div>
 
-            {/* Price & Date Filters */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm">
               <div>
                 <h3 className="text-sm font-semibold text-text-light mb-3">Price Type</h3>
@@ -596,7 +580,6 @@ export default function EventsPage() {
           </div>
         </div>
 
-        {/* Events Grid */}
         {isLoading ? (
           <div className="text-center py-20">
             <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-gradient-primary animate-spin-slow flex items-center justify-center">
@@ -674,7 +657,6 @@ export default function EventsPage() {
           </div>
         )}
 
-        {/* CTA Section */}
         <div className="mt-16 bg-gradient-to-r from-primary/10 to-purple-600/10 rounded-2xl p-8 md:p-12 relative overflow-hidden">
           <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-primary"></div>
           <div className="max-w-3xl mx-auto text-center relative z-10">
