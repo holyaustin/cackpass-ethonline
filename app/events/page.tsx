@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Search, Filter, Calendar, MapPin, Ticket, Globe, Users, Clock, ChevronRight, Loader2, Sparkles, TrendingDown, TrendingUp } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
@@ -319,6 +319,7 @@ function EventCard({ event }: { event: Event }) {
 export default function EventsPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const isInitialMount = useRef(true)
   
   const [events, setEvents] = useState<Event[]>([])
   const [search, setSearch] = useState(searchParams.get('search') || '')
@@ -349,12 +350,11 @@ export default function EventsPage() {
         limit: itemsPerPage.toString(),
         category: selectedCategory !== 'all' ? selectedCategory : '',
         priceType: priceFilter !== 'all' ? priceFilter : '',
-        dateType: dateFilter !== 'all' ? dateFilter : '',  // ← This sends 'upcoming' correctly
+        dateType: dateFilter !== 'all' ? dateFilter : '',
         search: search || '',
       })
 
       console.log('🔍 Fetching events with dateType:', dateFilter)
-      console.log('🔍 Full params:', params.toString())
       
       const response = await fetch(`/api/events?${params}`)
       
@@ -374,14 +374,7 @@ export default function EventsPage() {
         total = data.total || data.events.length
         pages = data.totalPages || Math.ceil(total / itemsPerPage)
         
-        // Log what the API returned
         console.log(`📊 API returned ${fetchedEvents.length} events for dateType=${dateFilter}`)
-        fetchedEvents.forEach(event => {
-          const endTime = event.endDateTime || event.endDate
-          console.log(`   - ${event.title}: ends at ${endTime}`)
-        })
-      } else {
-        fetchedEvents = []
       }
       
       if (refresh || page === 1) {
@@ -404,8 +397,13 @@ export default function EventsPage() {
     }
   }, [selectedCategory, priceFilter, dateFilter, search])
 
-  // Update URL when filters change
+  // Update URL when filters change (but don't trigger fetch on initial mount)
   useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false
+      return
+    }
+    
     const params = new URLSearchParams()
     if (search) params.set('search', search)
     if (selectedCategory !== 'all') params.set('category', selectedCategory)
@@ -416,11 +414,18 @@ export default function EventsPage() {
     router.replace(newUrl, { scroll: false })
   }, [search, selectedCategory, priceFilter, dateFilter, router])
 
-  // Fetch events when filters change - FIXED DEPENDENCIES
+  // Fetch events when filters change - ONLY when not initial mount
   useEffect(() => {
-    setCurrentPage(1)
+    if (!isInitialMount.current) {
+      setCurrentPage(1)
+      fetchEvents(1, true)
+    }
+  }, [selectedCategory, priceFilter, dateFilter, search, fetchEvents])
+
+  // Initial fetch on mount
+  useEffect(() => {
     fetchEvents(1, true)
-  }, [selectedCategory, priceFilter, dateFilter, search, fetchEvents]) // ← fetchEvents is now stable
+  }, []) // Empty dependency array - runs once on mount
 
   const loadMore = () => {
     if (currentPage < totalPages && !isLoadingMore) {
@@ -434,9 +439,6 @@ export default function EventsPage() {
     setDateFilter('upcoming')
     setSearch('')
   }
-
-  // Display events (API should already filter correctly)
-  const displayEvents = events
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-950">
@@ -587,7 +589,7 @@ export default function EventsPage() {
             </div>
             <p className="text-text-light text-lg">Loading amazing events...</p>
           </div>
-        ) : displayEvents.length > 0 ? (
+        ) : events.length > 0 ? (
           <>
             <div className="mb-8">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -609,7 +611,7 @@ export default function EventsPage() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-12">
-              {displayEvents.map((event) => (
+              {events.map((event) => (
                 <EventCard key={event._id} event={event} />
               ))}
             </div>
