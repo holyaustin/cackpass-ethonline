@@ -1,62 +1,17 @@
-/** @type {import('next').NextConfig} */
-const nextConfig = {
+import type { NextConfig } from 'next';
+
+const nextConfig: NextConfig = {
   reactStrictMode: true,
   turbopack: {},
   images: {
-    remotePatterns: [{ protocol: 'https', hostname: '**' }],
-  },
-  async headers() {
-    if (process.env.NODE_ENV !== 'production') return [];
-
-    return [
+    remotePatterns: [
       {
-        source: '/(.*)',
-        headers: [
-          {
-            key: 'Content-Security-Policy',
-            value: [
-              "default-src 'self'",
-              "base-uri 'self'",
-              "form-action 'self'",
-              "frame-ancestors 'none'",
-              "manifest-src 'self'",
-              "object-src 'none'",
-              "worker-src 'self' blob:",
-              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://auth.privy.io https://cdn.privy.io https://js.paystack.co https://paystack.co https://checkout.paystack.com https://challenges.cloudflare.com https://hcaptcha.com https://*.hcaptcha.com https://verify.walletconnect.com https://verify.walletconnect.org",
-              "style-src 'self' 'unsafe-inline' https://hcaptcha.com https://*.hcaptcha.com",
-              "img-src 'self' data: blob: https: https://pinata.cloud https://ipfs.io",
-              "font-src 'self' data:",
-              "child-src https://auth.privy.io https://verify.walletconnect.com https://verify.walletconnect.org https://hcaptcha.com https://*.hcaptcha.com",
-              // FIXED: Added https://auth.privy.io and updated wildcard patterns for WalletConnect/Cloudflare
-              "frame-src 'self' https://auth.privy.io https://*.privy.io https://verify.walletconnect.com https://verify.walletconnect.org https://challenges.cloudflare.com https://paystack.co https://checkout.paystack.com https://hcaptcha.com https://*.hcaptcha.com",
-              "connect-src 'self' https://auth.privy.io https://*.privy.io https://api.privy.io https://*.privy.systems https://*.rpc.privy.systems wss://*.walletconnect.com wss://*.walletconnect.org wss://*.bridge.walletconnect.org https://*.walletconnect.com https://api.paystack.co https://checkout.paystack.com https://*.lisk.com https://lisk.com https://*.alchemy.com https://*.infura.io https://ankr.com https://pinata.cloud https://hcaptcha.com https://*.hcaptcha.com",
-              "upgrade-insecure-requests",
-            ].join('; '),
-          },
-          {
-            key: 'X-Frame-Options',
-            value: 'SAMEORIGIN',
-          },
-          {
-            key: 'X-Content-Type-Options',
-            value: 'nosniff',
-          },
-          {
-            key: 'Referrer-Policy',
-            value: 'strict-origin-when-cross-origin',
-          },
-          {
-            key: 'Strict-Transport-Security',
-            value: 'max-age=31536000; includeSubDomains; preload',
-          },
-          {
-            key: 'Permissions-Policy',
-            value: 'camera=(self), microphone=(), geolocation=()',
-          },
-        ],
+        protocol: 'https',
+        hostname: '**',
       },
-    ];
+    ],
   },
+  // No CSP headers
 };
 
 const withPWA = require('next-pwa')({
