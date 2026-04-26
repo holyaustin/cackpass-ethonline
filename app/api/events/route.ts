@@ -1,4 +1,4 @@
-// app/api/events/route.ts - COMPLETE PRODUCTION FIX
+// app/api/events/route.ts - COMPLETE FIXED VERSION
 import { NextRequest, NextResponse } from 'next/server'
 import { connectDB } from '@/lib/database/connection'
 import { Event, User } from '@/lib/database/models'
@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
     }
     
     // Category filter
-    if (category) {
+    if (category && category !== 'all') {
       query.category = category
     }
     
@@ -40,13 +40,25 @@ export async function GET(request: NextRequest) {
       query.price = { $gt: 0 }
     }
     
-    // Date filter
+    // ========== FIXED DATE FILTER ==========
+    // Use startDateTime (actual event time) instead of startDate
     const now = new Date()
     if (dateType === 'upcoming') {
-      query.startDate = { $gte: now }
+      // Event is upcoming if startDateTime is in the future
+      // OR if no startDateTime, use startDate
+      query.$or = [
+        { startDateTime: { $gte: now } },
+        { startDateTime: { $exists: false }, startDate: { $gte: now } }
+      ]
     } else if (dateType === 'past') {
-      query.startDate = { $lt: now }
+      // Event is past if startDateTime is in the past
+      // OR if no startDateTime, use startDate
+      query.$or = [
+        { startDateTime: { $lt: now } },
+        { startDateTime: { $exists: false }, startDate: { $lt: now } }
+      ]
     }
+    // If dateType === 'all', no date filter
     
     // Search filter
     if (search) {
@@ -58,10 +70,13 @@ export async function GET(request: NextRequest) {
       ]
     }
     
-    // Execute query with pagination
+    console.log('📅 Date filter:', dateType, 'Current time:', now.toISOString())
+    console.log('Query:', JSON.stringify(query, null, 2))
+    
+    // Execute query with pagination - sort by startDateTime
     const [events, total] = await Promise.all([
       Event.find(query)
-        .sort({ startDate: 1, createdAt: -1 })
+        .sort({ startDateTime: 1, startDate: 1, createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean(),
