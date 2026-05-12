@@ -1,30 +1,20 @@
-// app/api/auth/user/route.ts - UPDATED (remove problematic import)
+// app/api/auth/user/route.ts
+
 import { NextRequest, NextResponse } from 'next/server'
-import { connectDB } from '@/lib/database/connection'
-import { User } from '@/lib/database/models'
-import { PrivyClient } from '@privy-io/server-auth'
 
-const privy = new PrivyClient(
-  process.env.NEXT_PUBLIC_PRIVY_APP_ID!,
-  process.env.PRIVY_APP_SECRET!
-)
-
-// Type guard for wallet accounts
+// ========== ALL HELPER FUNCTIONS - COMPLETELY UNCHANGED ==========
 function isWalletAccount(account: any): account is { type: 'wallet'; address: string } {
   return account.type === 'wallet' && 'address' in account && typeof account.address === 'string'
 }
 
-// Type guard for OAuth accounts
 function isOAuthAccount(account: any): account is { type: 'oauth'; provider: string; email?: string; name?: string; username?: string } {
   return account.type === 'oauth' && 'provider' in account
 }
 
-// Type guard for email accounts
 function isEmailAccount(account: any): account is { type: 'email'; address: string } {
   return account.type === 'email' && 'address' in account
 }
 
-// Helper function to extract email from Privy user
 function extractEmailFromPrivyUser(privyUser: any): string {
   const linkedAccounts = privyUser.linkedAccounts || []
   let email = ''
@@ -34,7 +24,6 @@ function extractEmailFromPrivyUser(privyUser: any): string {
     linkedAccountsCount: linkedAccounts.length
   })
   
-  // 1. Check email linked accounts first
   for (const account of linkedAccounts) {
     if (isEmailAccount(account)) {
       email = account.address
@@ -49,7 +38,6 @@ function extractEmailFromPrivyUser(privyUser: any): string {
     }
   }
   
-  // 2. Check for verified emails
   if (!email && privyUser.email) {
     if (typeof privyUser.email === 'object' && privyUser.email.address) {
       email = privyUser.email.address
@@ -60,7 +48,6 @@ function extractEmailFromPrivyUser(privyUser: any): string {
     }
   }
   
-  // 3. Check for any email in the user object
   if (!email && privyUser.emailAddresses && Array.isArray(privyUser.emailAddresses)) {
     const emailObj = privyUser.emailAddresses.find((e: any) => e && e.address)
     if (emailObj) {
@@ -73,7 +60,6 @@ function extractEmailFromPrivyUser(privyUser: any): string {
   return email || ''
 }
 
-// Helper function to detect login method
 function detectLoginMethod(privyUser: any): 'email' | 'google' | 'twitter' {
   const linkedAccounts = privyUser.linkedAccounts || []
   
@@ -82,7 +68,6 @@ function detectLoginMethod(privyUser: any): 'email' | 'google' | 'twitter' {
     totalAccounts: linkedAccounts.length
   })
   
-  // Check for Google OAuth
   const googleAccount = linkedAccounts.find(
     (account: any) => isOAuthAccount(account) && account.provider === 'google'
   )
@@ -91,7 +76,6 @@ function detectLoginMethod(privyUser: any): 'email' | 'google' | 'twitter' {
     return 'google'
   }
   
-  // Check for Twitter OAuth
   const twitterAccount = linkedAccounts.find(
     (account: any) => isOAuthAccount(account) && account.provider === 'twitter'
   )
@@ -100,7 +84,6 @@ function detectLoginMethod(privyUser: any): 'email' | 'google' | 'twitter' {
     return 'twitter'
   }
   
-  // Check for Email
   const emailAccount = linkedAccounts.find(isEmailAccount)
   if (emailAccount) {
     console.log('✅ Login method detected: email')
@@ -111,14 +94,33 @@ function detectLoginMethod(privyUser: any): 'email' | 'google' | 'twitter' {
   return 'email'
 }
 
-// Helper to get wallet address
 function getWalletAddressFromPrivyUser(privyUser: any): string | null {
   const linkedAccounts = privyUser.linkedAccounts || []
   const walletAccount = linkedAccounts.find(isWalletAccount)
   return walletAccount?.address || null
 }
 
-// GET endpoint - Get user by wallet address
+function formatUserResponse(user: any) {
+  return {
+    id: user._id,
+    privyId: user.privyId,
+    walletAddress: user.walletAddress,
+    email: user.email,
+    firstName: user.firstName,
+    lastName: user.lastName,
+    loginMethod: user.loginMethod,
+    username: user.username,
+    isOrganizer: user.isOrganizer,
+    country: user.country,
+    phoneNumber: user.phoneNumber,
+    isProfileComplete: user.isProfileComplete,
+    admin: user.admin,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
+  }
+}
+
+// ========== GET ENDPOINT - FULLY PRESERVED ==========
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
@@ -127,10 +129,7 @@ export async function GET(request: NextRequest) {
 
     if (!walletAddress && !authHeader) {
       return NextResponse.json(
-        {
-          success: false,
-          error: 'Provide walletAddress query param or authorization header',
-        },
+        { success: false, error: 'Provide walletAddress query param or authorization header' },
         { status: 400 }
       )
     }
@@ -140,7 +139,13 @@ export async function GET(request: NextRequest) {
       token = authHeader.split(' ')[1]
     }
 
-    // Try to get wallet from token if not provided
+    // Dynamic import for PrivyClient (loads only when needed)
+    const { PrivyClient } = await import('@privy-io/server-auth')
+    const privy = new PrivyClient(
+      process.env.NEXT_PUBLIC_PRIVY_APP_ID!,
+      process.env.PRIVY_APP_SECRET!
+    )
+
     let finalWalletAddress = walletAddress
     if (!finalWalletAddress && token) {
       try {
@@ -159,20 +164,19 @@ export async function GET(request: NextRequest) {
 
     if (!finalWalletAddress) {
       return NextResponse.json(
-        {
-          success: false,
-          error: 'Could not determine wallet address',
-        },
+        { success: false, error: 'Could not determine wallet address' },
         { status: 400 }
       )
     }
 
+    // Dynamic imports for database (load only when needed)
+    const { connectDB } = await import('@/lib/database/connection')
+    const { User } = await import('@/lib/database/models')
+    
     await connectDB()
     
-    // First, try to find user by wallet address
     let user = await User.findOne({ walletAddress: finalWalletAddress })
     
-    // If user exists and has email, return it
     if (user && user.email) {
       console.log('✅ Found existing user with email:', user.email)
       return NextResponse.json({
@@ -182,7 +186,6 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // If we have a token, try to get more info from Privy
     if (token) {
       try {
         const verifiedClaims = await privy.verifyAuthToken(token)
@@ -198,10 +201,8 @@ export async function GET(request: NextRequest) {
           email
         })
 
-        // Try to find by privyId first
         let userByPrivyId = await User.findOne({ privyId: verifiedClaims.userId })
         if (userByPrivyId) {
-          // Update wallet address if needed
           if (!userByPrivyId.walletAddress) {
             userByPrivyId.walletAddress = finalWalletAddress
             await userByPrivyId.save()
@@ -213,7 +214,6 @@ export async function GET(request: NextRequest) {
           })
         }
 
-        // If user exists by wallet but no email, update with Privy info
         if (user && !user.email && email) {
           console.log('🔄 Updating existing user with email from Privy:', email)
           user.email = email
@@ -228,7 +228,6 @@ export async function GET(request: NextRequest) {
           })
         }
 
-        // Create new user if none exists
         if (!user) {
           console.log('🆕 Creating new user with Privy info:', {
             hasEmail: !!email,
@@ -259,11 +258,9 @@ export async function GET(request: NextRequest) {
         
       } catch (error) {
         console.log('❌ Error getting Privy user data:', error)
-        // Continue with existing user or create basic one
       }
     }
 
-    // If still no user, create a basic one
     if (!user) {
       console.log('🆕 Creating basic user without Privy data')
       user = new User({
@@ -304,7 +301,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST endpoint - Update profile by wallet address (FIXED - handles missing email from frontend)
+// ========== POST ENDPOINT - FULLY PRESERVED ==========
 export async function POST(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
@@ -319,9 +316,12 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
     
+    // Dynamic imports for database (load only when needed)
+    const { connectDB } = await import('@/lib/database/connection')
+    const { User } = await import('@/lib/database/models')
+    
     await connectDB()
     
-    // Find user by wallet address
     const user = await User.findOne({ walletAddress })
     if (!user) {
       return NextResponse.json({ 
@@ -330,7 +330,6 @@ export async function POST(request: NextRequest) {
       }, { status: 404 })
     }
     
-    // Parse request body
     const body = await request.json()
     console.log('📦 Request body:', body)
     
@@ -338,13 +337,12 @@ export async function POST(request: NextRequest) {
       isOrganizer, 
       country, 
       phoneNumber, 
-      email, // This might not be sent from the frontend
+      email,
       firstName, 
       lastName,
       username 
     } = body
     
-    // Validate required fields
     const errors: string[] = []
     
     if (typeof isOrganizer !== 'boolean') {
@@ -359,7 +357,6 @@ export async function POST(request: NextRequest) {
       errors.push('phoneNumber is required')
     }
     
-    // Check if email is required but not provided
     let finalEmail = email || user.email
     if (!finalEmail || finalEmail.trim() === '') {
       errors.push('email is required. Please add email field to your request')
@@ -372,7 +369,6 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
     
-    // Validate email format if provided
     if (finalEmail && finalEmail.trim() !== '') {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
       if (!emailRegex.test(finalEmail)) {
@@ -383,7 +379,6 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    // Validate phone number (basic validation)
     const cleanedPhone = phoneNumber.replace(/\D/g, '')
     if (cleanedPhone.length < 8) {
       return NextResponse.json({ 
@@ -392,7 +387,6 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
     
-    // Check if email is already used by another user (if it's being changed)
     if (finalEmail && finalEmail !== user.email) {
       const existingUser = await User.findOne({ 
         email: finalEmail, 
@@ -407,18 +401,15 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    // Update user fields
     user.isOrganizer = isOrganizer
     user.country = country.trim()
     user.phoneNumber = phoneNumber.trim()
     user.isProfileComplete = true
     
-    // Update email if provided, otherwise keep existing
     if (finalEmail && finalEmail.trim() !== '') {
       user.email = finalEmail.trim()
     }
     
-    // Optional fields
     if (firstName && firstName.trim() !== '') {
       user.firstName = firstName.trim()
     }
@@ -469,26 +460,5 @@ export async function POST(request: NextRequest) {
       },
       { status: 500 }
     )
-  }
-}
-
-// Helper function to format user response
-function formatUserResponse(user: any) {
-  return {
-    id: user._id,
-    privyId: user.privyId,
-    walletAddress: user.walletAddress,
-    email: user.email,
-    firstName: user.firstName,
-    lastName: user.lastName,
-    loginMethod: user.loginMethod,
-    username: user.username,
-    isOrganizer: user.isOrganizer,
-    country: user.country,
-    phoneNumber: user.phoneNumber,
-    isProfileComplete: user.isProfileComplete,
-    admin: user.admin,
-    createdAt: user.createdAt,
-    updatedAt: user.updatedAt,
   }
 }

@@ -1,7 +1,7 @@
-// /lib/blockchain/client-helpers.ts - ADD PAYMENT FUNCTIONS TO EXISTING FILE
 'use client'
 
-import { ethers } from 'ethers'
+// ✅ ADDED: Remove static import, will use dynamic import
+// ❌ REMOVED: import { ethers } from 'ethers'
 import { CackPassCoreABI } from '@/lib/contracts/abis/CackPassCore'
 
 // ============ TYPES ============
@@ -73,6 +73,17 @@ const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CACKPASS_CORE_ADDRESS!
 const RPC_URL = process.env.NEXT_PUBLIC_LISK_RPC_URL || 'https://rpc.sepolia-api.lisk.com'
 // Add payment receiver address
 const PAYMENT_RECEIVER_ADDRESS = process.env.NEXT_PUBLIC_PAYMENT_RECEIVER_ADDRESS || '0x2c3b2b2325610a6814f2f822d0bf4dab8cf16e16'
+
+// ✅ ADDED: Module cache for ethers to avoid multiple dynamic imports
+let ethersModuleCache: any = null;
+
+// ✅ ADDED: Helper function to dynamically load ethers
+async function loadEthers() {
+  if (!ethersModuleCache) {
+    ethersModuleCache = await import('ethers');
+  }
+  return ethersModuleCache;
+}
 
 // ============ UTILITY FUNCTIONS ============
 
@@ -218,10 +229,11 @@ export function mapCategoryToTicketType(category: TicketCategory): string {
 }
 
 /**
- * Validate wallet address
+ * Validate wallet address - UPDATED to use dynamic ethers
  */
-export function isValidWalletAddress(address: string): boolean {
+export async function isValidWalletAddress(address: string): Promise<boolean> {
   try {
+    const { ethers } = await loadEthers();
     return ethers.isAddress(address)
   } catch {
     return false
@@ -229,20 +241,22 @@ export function isValidWalletAddress(address: string): boolean {
 }
 
 /**
- * Shorten wallet address for display
+ * Shorten wallet address for display - UPDATED to use async
  */
-export function shortenAddress(address: string, chars = 4): string {
-  if (!address || !isValidWalletAddress(address)) {
+export async function shortenAddress(address: string, chars = 4): Promise<string> {
+  const isValid = await isValidWalletAddress(address);
+  if (!address || !isValid) {
     return 'Invalid Address'
   }
   return `${address.slice(0, chars + 2)}...${address.slice(-chars)}`
 }
 
 /**
- * Convert wei to ether
+ * Convert wei to ether - UPDATED to use dynamic ethers
  */
-export function weiToEther(wei: bigint | string): string {
+export async function weiToEther(wei: bigint | string): Promise<string> {
   try {
+    const { ethers } = await loadEthers();
     const weiBigInt = typeof wei === 'string' ? BigInt(wei) : wei
     return ethers.formatEther(weiBigInt)
   } catch (error) {
@@ -252,10 +266,11 @@ export function weiToEther(wei: bigint | string): string {
 }
 
 /**
- * Convert ether to wei
+ * Convert ether to wei - UPDATED to use dynamic ethers
  */
-export function etherToWei(ether: string): bigint {
+export async function etherToWei(ether: string): Promise<bigint> {
   try {
+    const { ethers } = await loadEthers();
     return ethers.parseEther(ether)
   } catch (error) {
     console.error('Error converting ether to wei:', error)
@@ -301,15 +316,16 @@ export function calculateTotalPriceWithQuantity(price: number, quantity: number,
 }
 
 /**
- * Validate payment parameters before processing
+ * Validate payment parameters before processing - UPDATED to use async
  */
-export function validatePaymentParameters(
+export async function validatePaymentParameters(
   walletAddress: string,
   eventId: string | number,
   amount: number,
   quantity: number
-): { valid: boolean; error?: string } {
-  if (!isValidWalletAddress(walletAddress)) {
+): Promise<{ valid: boolean; error?: string }> {
+  const isValid = await isValidWalletAddress(walletAddress);
+  if (!isValid) {
     return { valid: false, error: 'Invalid wallet address' }
   }
   
@@ -340,27 +356,27 @@ export function createMockSignature(): string {
 }
 
 /**
- * Calculate transaction value to send to payment receiver
+ * Calculate transaction value to send to payment receiver - UPDATED to use dynamic ethers
  */
-export function calculateTransactionValue(price: number, quantity: number): bigint {
+export async function calculateTransactionValue(price: number, quantity: number): Promise<bigint> {
   const total = price * quantity
-  return etherToWei(total.toString())
+  return await etherToWei(total.toString())
 }
 
 /**
- * Generate payment approval data for wallet payments
+ * Generate payment approval data for wallet payments - UPDATED to use dynamic ethers
  */
-export function generatePaymentApproval(
+export async function generatePaymentApproval(
   recipient: string,
   eventId: number,
   amount: number = 1,
   price: number = 0
-): {
+): Promise<{
   approvalId: string
   signature: string
   signatureData: any
   validUntil: number
-} {
+}> {
   const approvalId = generateApprovalId()
   const validUntil = Math.floor(Date.now() / 1000) + 3600 // 1 hour
   
@@ -372,7 +388,7 @@ export function generatePaymentApproval(
     recipient,
     eventId,
     amount,
-    price: etherToWei(price.toString()),
+    price: await etherToWei(price.toString()),
     validUntil,
     id: approvalId
   }
@@ -388,9 +404,10 @@ export function generatePaymentApproval(
 // ============ CONTRACT INTERACTION HELPERS ============
 
 /**
- * Get provider instance (read-only)
+ * Get provider instance (read-only) - UPDATED to use dynamic ethers
  */
-export function getProvider(): ethers.JsonRpcProvider {
+export async function getProvider(): Promise<any> {
+  const { ethers } = await loadEthers();
   return new ethers.JsonRpcProvider(RPC_URL, undefined, {
     batchMaxCount: 1,
     staticNetwork: null,
@@ -400,40 +417,42 @@ export function getProvider(): ethers.JsonRpcProvider {
 }
 
 /**
- * Get contract instance (read-only)
+ * Get contract instance (read-only) - UPDATED to use dynamic ethers
  */
-export function getContract(): ethers.Contract {
+export async function getContract(): Promise<any> {
   if (!CONTRACT_ADDRESS) {
     throw new Error('Contract address not configured')
   }
   
-  const provider = getProvider()
+  const provider = await getProvider()
+  const { ethers } = await loadEthers();
   return new ethers.Contract(CONTRACT_ADDRESS, CackPassCoreABI, provider)
 }
 
 /**
  * Get contract with signer (for write operations)
- * Note: This should only be used on the backend
+ * Note: This should only be used on the backend - UPDATED to use dynamic ethers
  */
-export function getContractWithSigner(privateKey: string): ethers.Contract {
+export async function getContractWithSigner(privateKey: string): Promise<any> {
   if (!CONTRACT_ADDRESS) {
     throw new Error('Contract address not configured')
   }
   
-  const provider = getProvider()
+  const provider = await getProvider()
+  const { ethers } = await loadEthers();
   const wallet = new ethers.Wallet(privateKey, provider)
   return new ethers.Contract(CONTRACT_ADDRESS, CackPassCoreABI, wallet)
 }
 
 /**
- * Check available tickets for an event
+ * Check available tickets for an event - UPDATED to use dynamic contract
  */
 export async function getAvailableTickets(
   eventId: number,
   ticketCategory: TicketCategory
 ): Promise<{ available: number; maxTickets: number; ticketsSold: number }> {
   try {
-    const contract = getContract()
+    const contract = await getContract()
     const ticketType = await contract.ticketTypes(eventId, ticketCategory)
     
     const maxTickets = Number(ticketType.maxTickets)
@@ -448,7 +467,7 @@ export async function getAvailableTickets(
 }
 
 /**
- * Get event information from blockchain
+ * Get event information from blockchain - UPDATED to use dynamic contract
  */
 export async function getEventInfo(eventId: number): Promise<{
   organizer: string
@@ -459,7 +478,7 @@ export async function getEventInfo(eventId: number): Promise<{
   isActive: boolean
 } | null> {
   try {
-    const contract = getContract()
+    const contract = await getContract()
     const eventInfo = await contract.events(eventId)
     
     return {
@@ -477,18 +496,19 @@ export async function getEventInfo(eventId: number): Promise<{
 }
 
 /**
- * Verify ticket ownership
+ * Verify ticket ownership - UPDATED to use dynamic contract
  */
 export async function verifyTicketOwnership(
   walletAddress: string,
   ticketId: number
 ): Promise<boolean> {
   try {
-    if (!isValidWalletAddress(walletAddress)) {
+    const isValid = await isValidWalletAddress(walletAddress);
+    if (!isValid) {
       return false
     }
     
-    const contract = getContract()
+    const contract = await getContract()
     const balance = await contract.balanceOf(walletAddress, ticketId)
     
     return Number(balance) > 0
@@ -499,11 +519,11 @@ export async function verifyTicketOwnership(
 }
 
 /**
- * Get ticket metadata URI
+ * Get ticket metadata URI - UPDATED to use dynamic contract
  */
 export async function getTicketURI(ticketId: number): Promise<string> {
   try {
-    const contract = getContract()
+    const contract = await getContract()
     return await contract.uri(ticketId)
   } catch (error) {
     console.error('Error fetching ticket URI:', error)
@@ -512,11 +532,11 @@ export async function getTicketURI(ticketId: number): Promise<string> {
 }
 
 /**
- * Check if payment is settled for an event
+ * Check if payment is settled for an event - UPDATED to use dynamic contract
  */
 export async function isPaymentSettled(eventId: number): Promise<boolean> {
   try {
-    const contract = getContract()
+    const contract = await getContract()
     return await contract.isPaymentSettled(eventId)
   } catch (error) {
     console.error('Error checking payment settlement:', error)
@@ -525,7 +545,7 @@ export async function isPaymentSettled(eventId: number): Promise<boolean> {
 }
 
 /**
- * Get payment settlement info
+ * Get payment settlement info - UPDATED to use dynamic contract
  */
 export async function getPaymentSettlement(eventId: number): Promise<{
   totalRevenue: bigint
@@ -536,7 +556,7 @@ export async function getPaymentSettlement(eventId: number): Promise<{
   isSettled: boolean
 } | null> {
   try {
-    const contract = getContract()
+    const contract = await getContract()
     const settlement = await contract.getPaymentSettlement(eventId)
     
     return {
@@ -554,11 +574,11 @@ export async function getPaymentSettlement(eventId: number): Promise<{
 }
 
 /**
- * Get backend signer address
+ * Get backend signer address - UPDATED to use dynamic contract
  */
 export async function getBackendSigner(): Promise<string> {
   try {
-    const contract = getContract()
+    const contract = await getContract()
     return await contract.getBackendSigner()
   } catch (error) {
     console.error('Error getting backend signer:', error)
@@ -567,11 +587,11 @@ export async function getBackendSigner(): Promise<string> {
 }
 
 /**
- * Get ticket category from ticket ID
+ * Get ticket category from ticket ID - UPDATED to use dynamic contract
  */
 export async function getTicketCategoryFromId(ticketId: number): Promise<number> {
   try {
-    const contract = getContract()
+    const contract = await getContract()
     return await contract.getTicketCategory(ticketId)
   } catch (error) {
     console.error('Error getting ticket category:', error)
@@ -580,11 +600,11 @@ export async function getTicketCategoryFromId(ticketId: number): Promise<number>
 }
 
 /**
- * Get event ID from ticket ID
+ * Get event ID from ticket ID - UPDATED to use dynamic contract
  */
 export async function getEventIdFromTicket(ticketId: number): Promise<number> {
   try {
-    const contract = getContract()
+    const contract = await getContract()
     return await contract.getEventId(ticketId)
   } catch (error) {
     console.error('Error getting event ID from ticket:', error)
@@ -593,11 +613,11 @@ export async function getEventIdFromTicket(ticketId: number): Promise<number> {
 }
 
 /**
- * Check if ticket has been used
+ * Check if ticket has been used - UPDATED to use dynamic contract
  */
 export async function isTicketUsed(ticketId: number): Promise<boolean> {
   try {
-    const contract = getContract()
+    const contract = await getContract()
     return await contract.isTicketUsed(ticketId)
   } catch (error) {
     console.error('Error checking ticket usage:', error)
@@ -606,16 +626,18 @@ export async function isTicketUsed(ticketId: number): Promise<boolean> {
 }
 
 /**
- * Generate payment approval data structure
+ * Generate payment approval data structure - UPDATED to use dynamic ethers
  * Note: Actual signing should be done on backend
  */
-export function generatePaymentApprovalData(
+export async function generatePaymentApprovalData(
   walletAddress: string,
   eventId: number,
   ticketCategory: TicketCategory,
   amount: number,
   price: bigint
-): MintApproval {
+): Promise<MintApproval> {
+  const { ethers } = await loadEthers();
+  
   // Generate unique approval ID
   const approvalId = ethers.keccak256(
     ethers.toUtf8Bytes(
@@ -665,15 +687,16 @@ export function calculateTotalPrice(price: number, quantity: number, currency: s
 }
 
 /**
- * Validate ticket purchase parameters
+ * Validate ticket purchase parameters - UPDATED to use async
  */
-export function validatePurchaseParams(
+export async function validatePurchaseParams(
   walletAddress: string,
   eventId: number,
   quantity: number,
   price: number
-): { valid: boolean; error?: string } {
-  if (!isValidWalletAddress(walletAddress)) {
+): Promise<{ valid: boolean; error?: string }> {
+  const isValid = await isValidWalletAddress(walletAddress);
+  if (!isValid) {
     return { valid: false, error: 'Invalid wallet address' }
   }
   

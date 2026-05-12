@@ -1,16 +1,34 @@
-// app/api/email/ticket-confirmation/route.ts
+// app/api/email/ticket-confirmation/route.ts 
+
+// ✅ REMOVED: export const runtime = 'edge';
+// ✅ REMOVED: export const preferredRegion = 'auto';
+
 import { NextRequest, NextResponse } from 'next/server';
-import nodemailer from 'nodemailer';
-import QRCode from 'qrcode';
-import { connectDB } from '@/lib/database/connection';
-import { MyTicket, Event } from '@/lib/database/models';
-import { generateTicketHMAC } from '@/lib/qr-security';
+
+// Lazy load heavy dependencies (only load when API is called)
+let nodemailer: any = null;
+let QRCode: any = null;
+
+async function getNodemailer() {
+  if (!nodemailer) {
+    nodemailer = await import('nodemailer');
+  }
+  return nodemailer;
+}
+
+async function getQRCode() {
+  if (!QRCode) {
+    QRCode = await import('qrcode');
+  }
+  return QRCode;
+}
 
 // Create transporter outside the handler for reuse
-let transporter: nodemailer.Transporter | null = null;
+let transporter: any = null;
 
-function getTransporter() {
+async function getTransporter() {
   if (!transporter) {
+    const { createTransport } = await getNodemailer();
     const user = process.env.GMAIL_USER;
     const pass = process.env.GMAIL_APP_PASSWORD;
 
@@ -18,7 +36,7 @@ function getTransporter() {
       throw new Error('Missing Gmail credentials');
     }
 
-    transporter = nodemailer.createTransport({
+    transporter = createTransport({
       service: 'gmail',
       auth: { user, pass },
       connectionTimeout: 10000,
@@ -68,6 +86,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Email service not configured' }, { status: 500 });
     }
 
+    // Dynamic import for database (loads only when needed)
+    const { connectDB } = await import('@/lib/database/connection');
+    const { MyTicket, Event } = await import('@/lib/database/models');
+    const { generateTicketHMAC } = await import('@/lib/qr-security');
+
     await connectDB();
 
     // Find event by title
@@ -96,40 +119,43 @@ export async function POST(request: NextRequest) {
       console.error(`No tickets found for reference: ${reference}`);
     }
 
-    // Generate QR codes for each ticket AND save them to the database
-    const qrCodes: { ticketNumber: string; qrDataUrl: string }[] = [];
+    // Generate QR codes in parallel (faster than sequential for loop)
+    const QRCodeLib = await getQRCode();
     
-    for (const ticket of tickets) {
-      try {
-        const hmac = event ? generateTicketHMAC(ticket.ticketNumber, event._id.toString()) : '';
-        const qrPayload = JSON.stringify({
-          ticketNumber: ticket.ticketNumber,
-          eventId: event ? event._id.toString() : '',
-          sig: hmac,
-        });
-        
-        // Generate QR code data URL
-        const qrDataUrl = await QRCode.toDataURL(qrPayload, {
-          width: 300,
-          margin: 4,
-          errorCorrectionLevel: 'H',
-          color: {
-            dark: '#000000',
-            light: '#ffffff'
-          }
-        });
-        
-        // ✅ Save the QR code data URL to the ticket document
-        await MyTicket.updateOne(
-          { _id: ticket._id },
-          { $set: { qrCode: qrDataUrl } }
-        );
-        
-        qrCodes.push({ ticketNumber: ticket.ticketNumber, qrDataUrl });
-      } catch (qrError) {
-        console.error(`❌ QR code generation failed for ticket ${ticket.ticketNumber}:`, qrError);
-      }
-    }
+    const qrResults = await Promise.all(
+      tickets.map(async (ticket: any) => {
+        try {
+          const hmac = event ? generateTicketHMAC(ticket.ticketNumber, event._id.toString()) : '';
+          const qrPayload = JSON.stringify({
+            ticketNumber: ticket.ticketNumber,
+            eventId: event ? event._id.toString() : '',
+            sig: hmac,
+          });
+          
+          const qrDataUrl = await QRCodeLib.toDataURL(qrPayload, {
+            width: 300,
+            margin: 4,
+            errorCorrectionLevel: 'H',
+            color: {
+              dark: '#000000',
+              light: '#ffffff'
+            }
+          });
+          
+          await MyTicket.updateOne(
+            { _id: ticket._id },
+            { $set: { qrCode: qrDataUrl } }
+          );
+          
+          return { ticketNumber: ticket.ticketNumber, qrDataUrl };
+        } catch (qrError) {
+          console.error(`❌ QR code generation failed for ticket ${ticket.ticketNumber}:`, qrError);
+          return null;
+        }
+      })
+    );
+
+    const qrCodes = qrResults.filter((result): result is { ticketNumber: string; qrDataUrl: string } => result !== null);
 
     console.log(`✅ Generated and saved ${qrCodes.length} QR codes for ${tickets.length} tickets`);
 
@@ -150,6 +176,7 @@ export async function POST(request: NextRequest) {
       </div>
     `).join('');
 
+    // Full HTML email template
     const emailHtml = `
       <!DOCTYPE html>
       <html>
@@ -305,7 +332,7 @@ export async function POST(request: NextRequest) {
       </html>
     `;
 
-    const transporter = getTransporter();
+    const transporter = await getTransporter();
     const mailOptions = {
       from: `"CACK-pass" <${gmailUser}>`,
       to: email,
@@ -347,7 +374,8 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: 'Missing Gmail credentials' }, { status: 500 });
       }
 
-      const transporter = nodemailer.createTransport({
+      const { createTransport } = await import('nodemailer');
+      const transporter = createTransport({
         service: 'gmail',
         auth: { user: gmailUser, pass: gmailPass },
       });

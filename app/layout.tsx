@@ -1,17 +1,33 @@
 // app/layout.tsx
 import type { Metadata, Viewport } from 'next'
-import { Inter } from 'next/font/google'
+// 1. Change the import to use localFont
+import localFont from 'next/font/local' 
 import './globals.css'
 import { Header } from '@/components/layout/Header'
 import { Footer } from '@/components/layout/Footer'
 import { AppProviders } from '@/components/providers/AppProviders'
 import { Toaster } from 'sonner'
 import { Suspense } from 'react'
+import { SpeedInsights } from '@vercel/speed-insights/next';
+import { Analytics } from '@vercel/analytics/react'; // Adjusted entrypoint to prevent TS issues
 
-const inter = Inter({ 
-  subsets: ['latin'],
+// 2. Configure the local font targeting your public folder file
+const inter = localFont({
+  src: [
+    {
+      path: '../public/fonts/InterVariable.ttf',
+      style: 'normal',
+    },
+    {
+      path: '../public/fonts/InterVariable-Italic.ttf',
+      style: 'italic',
+    },
+  ],
   variable: '--font-inter',
+  weight: '100 900', // Both files are variable and support all weights automatically
+  display: 'swap',
 })
+
 
 export const metadata: Metadata = {
   title: 'CACK-pass - Event Ticketing Platform',
@@ -46,7 +62,6 @@ export const viewport: Viewport = {
   viewportFit: 'cover',
 }
 
-// Loading component for Suspense fallback
 function LoadingFallback() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background dark:bg-dark-background">
@@ -69,6 +84,7 @@ export default function RootLayout({
         <link rel="icon" href="/favicon.ico" />
         <meta name="color-scheme" content="dark light" />
       </head>
+      {/* 3. The local font configuration applies identically to your existing body className structure */}
       <body className={`${inter.className} antialiased bg-background text-text dark:bg-dark-background dark:text-dark-text`}>
         <Suspense fallback={<LoadingFallback />}>
           <AppProviders>
@@ -76,6 +92,8 @@ export default function RootLayout({
               <Header />
               <main className="flex-1">
                 {children}
+                <SpeedInsights />
+                <Analytics />
               </main>
               <Footer />
             </div>

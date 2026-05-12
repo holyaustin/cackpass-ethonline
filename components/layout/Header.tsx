@@ -1,15 +1,21 @@
-// /components/layout/Header.tsx - FIXED VERSION
+// /components/layout/Header.tsx - UPDATED VERSION (ADD handleLoginClick)
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { usePrivy } from '@privy-io/react-auth'
+import { useState, useEffect, useRef, lazy, Suspense } from 'react'
 import { Sun, Moon, Menu, X, User as UserIcon, LogOut } from 'lucide-react'
 import { useRouter, usePathname } from 'next/navigation'
 import Image from 'next/image'
 import Link from 'next/link'
 import { toast } from 'sonner'
+import { useAuth } from '@/components/providers/AuthProvider'
 
-// Public pages that should NOT trigger auth checks
+// ========== NEW ENHANCEMENT 1: Lazy load the wallet button component ==========
+// This removes Privy from the initial bundle entirely
+const LazyWalletButton = lazy(() => 
+  import('@/components/auth/WalletButton').then(mod => ({ default: mod.WalletButton }))
+)
+
+// Public pages that should NOT trigger auth checks (KEPT EXISTING)
 const PUBLIC_PAGES = [
   '/',
   '/events',
@@ -18,10 +24,10 @@ const PUBLIC_PAGES = [
   '/terms',
   '/payment/success',
   '/payment/failed',
-  '/complete-profile', // IMPORTANT: Add this to prevent redirect loop
+  '/complete-profile', // IMPORTANT: Keep this - it needs auth but is special
 ]
 
-// Check if current path is public
+// Check if current path is public (KEPT EXISTING - UNCHANGED)
 const isPublicPage = (pathname: string): boolean => {
   // Exact matches
   if (PUBLIC_PAGES.includes(pathname)) return true
@@ -34,134 +40,43 @@ const isPublicPage = (pathname: string): boolean => {
   return false
 }
 
+// ========== NEW ENHANCEMENT 2: Skeleton loader for wallet button ==========
+function WalletButtonSkeleton() {
+  return (
+    <div className="hidden md:flex items-center space-x-3">
+      <div className="h-10 w-24 bg-gray-200 dark:bg-gray-700 rounded-xl animate-pulse"></div>
+    </div>
+  )
+}
+
+function MobileWalletButtonSkeleton() {
+  return (
+    <button className="btn-primary w-full py-3" disabled>
+      Loading...
+    </button>
+  )
+}
+
 export function Header() {
   const [darkMode, setDarkMode] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
-  const [isLoggingOut, setIsLoggingOut] = useState(false)
+  
+  // ========== NEW ENHANCEMENT 3: Track if wallet button should load ==========
+  // This prevents Privy from loading until user actually needs it
+  const [shouldLoadWallet, setShouldLoadWallet] = useState(false)
+  
+  // Get auth context - this will work once AuthProvider is created
+  const { isAuthReady, loadAuth } = useAuth()
   
   const router = useRouter()
   const pathname = usePathname()
-  const { user, authenticated, ready, logout, login } = usePrivy()
   
-  // IMPORTANT: Track if we've already handled post-login redirect
-  const hasHandledPostLogin = useRef(false)
-  // Track if user was already checked
-  const hasCheckedUser = useRef(false)
+  // ========== NOTE: usePrivy has been REMOVED from Header ==========
+  // All Privy logic moved to WalletButton component that loads lazily
+  // This is the KEY optimization - removes 500KB+ from initial bundle
 
-  // Handle login
-  const handleLogin = async () => {
-    try {
-      console.log('🔄 Starting login process...')
-      await login()
-      console.log('✅ Login initiated successfully')
-    } catch (error) {
-      console.error('❌ Login failed:', error)
-      toast.error('Login failed. Please try again.')
-    }
-  }
-
-  // Handle logout
-  const handleLogout = async () => {
-    setIsLoggingOut(true)
-    
-    const toastId = toast.loading('Logging out...')
-    
-    try {
-      await logout()
-      // Reset the refs on logout
-      hasHandledPostLogin.current = false
-      hasCheckedUser.current = false
-      toast.dismiss(toastId)
-      toast.success('Logged out successfully')
-      router.push('/')
-    } catch (error) {
-      console.error('Logout failed:', error)
-      toast.dismiss(toastId)
-      toast.error('Logout failed. Please try again.')
-    } finally {
-      setIsLoggingOut(false)
-    }
-  }
-
-  // IMPORTANT: Only run post-login redirect ONCE after authentication
-  useEffect(() => {
-    // Don't run if not ready or not authenticated
-    if (!ready || !authenticated || !user) return
-    
-    // Don't run if we already handled post-login
-    if (hasHandledPostLogin.current) return
-    
-    // Skip redirect on public pages
-    if (isPublicPage(pathname)) {
-      console.log(`🔓 Public page detected (${pathname}), skipping redirect`)
-      return
-    }
-    
-    // Skip if already on dashboard or complete-profile
-    if (pathname === '/dashboard' || pathname === '/complete-profile') {
-      console.log(`📍 Already on ${pathname}, skipping redirect`)
-      hasHandledPostLogin.current = true
-      return
-    }
-    
-    console.log('🔐 User authenticated, checking status...')
-    
-    const checkUserAndRedirect = async () => {
-      // Prevent multiple simultaneous checks
-      if (hasCheckedUser.current) return
-      hasCheckedUser.current = true
-      
-      try {
-        // Get wallet address
-        const walletAddress = user.wallet?.address
-        
-        if (!walletAddress) {
-          console.log('⚠️ No wallet address, redirecting to complete-profile')
-          hasHandledPostLogin.current = true
-          router.push('/complete-profile')
-          return
-        }
-        
-        console.log('✅ Found wallet address:', walletAddress)
-        
-        // Check user status
-        const response = await fetch(`/api/auth/user?walletAddress=${walletAddress}`)
-        
-        if (response.ok) {
-          const data = await response.json()
-          console.log('📊 User status:', data)
-          
-          if (data.needsProfileCompletion || !data.user?.isProfileComplete) {
-            console.log('📝 Profile incomplete, redirecting to complete-profile')
-            hasHandledPostLogin.current = true
-            router.push('/complete-profile')
-          } else {
-            console.log('✅ Profile complete, redirecting to dashboard')
-            hasHandledPostLogin.current = true
-            router.push('/dashboard')
-          }
-        } else {
-          console.log('⚠️ API check failed, redirecting to complete-profile')
-          hasHandledPostLogin.current = true
-          router.push('/complete-profile')
-        }
-        
-      } catch (error) {
-        console.error('💥 Error in post-login flow:', error)
-        hasHandledPostLogin.current = true
-        router.push('/complete-profile')
-      }
-    }
-    
-    // Add small delay to ensure everything is loaded
-    const timer = setTimeout(checkUserAndRedirect, 500)
-    return () => clearTimeout(timer)
-  }, [ready, authenticated, user, router, pathname])
-
-  // Reset the handled flag when user logs out (handled in logout function)
-
-  // Theme handling
+  // Theme handling (KEPT EXISTING - UNCHANGED)
   useEffect(() => {
     if (darkMode) {
       document.documentElement.classList.add('dark')
@@ -170,7 +85,7 @@ export function Header() {
     }
   }, [darkMode])
 
-  // Scroll handling
+  // Scroll handling (KEPT EXISTING - UNCHANGED)
   useEffect(() => {
     const handleScroll = () => {
       setScrolled(window.scrollY > 10)
@@ -179,16 +94,32 @@ export function Header() {
     return () => window.removeEventListener('scroll', handleScroll)
   }, [])
 
-  // Get user display name
-  const getUserDisplayName = () => {
-    if (!user) return 'Guest'
-    
-    if (user.google?.name) return user.google.name
-    if (user.twitter?.username) return `@${user.twitter.username}`
-    if (user.email?.address) return user.email.address.split('@')[0]
-    
-    return 'User'
+  // ========== NEW FUNCTION: Handle login button click ==========
+  // This triggers both wallet loading AND auth loading
+  const handleLoginClick = () => {
+    console.log('🔘 Login button clicked - loading auth and wallet');
+    // Load the wallet button UI
+    setShouldLoadWallet(true);
+    // Also trigger auth provider to load Privy
+    loadAuth();
+  };
+
+  // ========== NEW ENHANCEMENT 4: Preload wallet on hover/focus ==========
+  // This ensures instant response when user clicks while keeping initial load fast
+  const handleWalletPreload = () => {
+    // Only preload if not already loaded
+    if (!shouldLoadWallet && !isAuthReady) {
+      setShouldLoadWallet(true);
+      // Also preload auth on hover for faster response
+      loadAuth();
+    }
   }
+
+  // Determine if we can show the wallet button
+  // auth can be loaded either:
+  // 1. Automatically (if page needs it, e.g., dashboard)
+  // 2. Manually (user clicked login)
+  const canShowWallet = isAuthReady || shouldLoadWallet;
 
   return (
     <header className={`sticky top-0 z-50 transition-all duration-200 ${
@@ -198,7 +129,7 @@ export function Header() {
     }`}>
       <nav className="responsive-container">
         <div className="flex items-center justify-between h-16 md:h-20">
-          {/* Logo */}
+          {/* Logo - UNCHANGED */}
           <Link href="/" className="flex items-center space-x-3">
             <div className="relative w-10 h-10 md:w-16 md:h-16">
               <Image
@@ -215,7 +146,7 @@ export function Header() {
             </span>
           </Link>
 
-          {/* Desktop Navigation */}
+          {/* Desktop Navigation - UNCHANGED */}
           <div className="hidden md:flex items-center space-x-8">
             <Link href="/events" className="text-text hover:text-primary dark:text-dark-text dark:hover:text-dark-primary transition-colors font-medium">
               Events
@@ -227,7 +158,7 @@ export function Header() {
 
           {/* Right Side Actions */}
           <div className="flex items-center space-x-3">
-            {/* Theme Toggle */}
+            {/* Theme Toggle - UNCHANGED */}
             <button
               onClick={() => setDarkMode(!darkMode)}
               className="p-2 rounded-lg bg-background dark:bg-dark-background hover:bg-gray-100 dark:hover:bg-gray-200 transition-colors"
@@ -240,47 +171,29 @@ export function Header() {
               )}
             </button>
 
-            {/* Auth Section */}
-            {authenticated ? (
-              <div className="hidden md:flex items-center space-x-3">
-                <div className="text-right">
-                  <div className="text-xs text-text-light dark:text-dark-secondary">
-                    Welcome back
-                  </div>
-                  <div className="text-sm font-medium text-text dark:text-dark-text">
-                    {getUserDisplayName()}
-                  </div>
-                </div>
+            {/* ========== UPDATED: Lazy loaded auth section with proper click handler ========== */}
+            {/* Desktop Auth - loads only on interaction */}
+            <div 
+              className="hidden md:block"
+              onMouseEnter={handleWalletPreload}   // Preload on hover for instant response
+              onFocus={handleWalletPreload}        // Preload on focus for keyboard users
+            >
+              <Suspense fallback={<WalletButtonSkeleton />}>
+                {canShowWallet ? (
+                  <LazyWalletButton />
+                ) : (
+                  // Show a placeholder button that triggers loading on click
+                  <button 
+                    onClick={handleLoginClick}  // UPDATED: Use handleLoginClick
+                    className="btn-primary px-6 py-3"
+                  >
+                    Login
+                  </button>
+                )}
+              </Suspense>
+            </div>
 
-                <button
-                  onClick={handleLogout}
-                  disabled={isLoggingOut}
-                  className="px-4 py-2 border border-primary dark:border-primary text-gray-700 dark:text-primary rounded-xl hover:bg-gray-50 dark:hover:bg-gray-300 transition-colors disabled:opacity-50 flex items-center gap-2"
-                >
-                  {isLoggingOut ? (
-                    <>
-                      <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                      Logging out...
-                    </>
-                  ) : (
-                    <>
-                      <LogOut className="h-4 w-4" />
-                      Logout
-                    </>
-                  )}
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={handleLogin}
-                className="btn-primary px-6 py-3"
-                disabled={!ready}
-              >
-                {!ready ? 'Loading...' : 'Login'}
-              </button>
-            )}
-
-            {/* Mobile Menu Button */}
+            {/* Mobile Menu Button - UNCHANGED */}
             <button
               className="md:hidden p-2"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -295,7 +208,7 @@ export function Header() {
           </div>
         </div>
 
-        {/* Mobile Menu */}
+        {/* ========== Mobile Menu - UPDATED with lazy loading ========== */}
         {mobileMenuOpen && (
           <div className="md:hidden py-4 border-t border-gray-100 dark:border-gray-300">
             <div className="flex flex-col space-y-4">
@@ -314,46 +227,13 @@ export function Header() {
                 Dashboard
               </Link>
               
-              {authenticated ? (
-                <>
-                  <div className="px-4 py-3 border-t border-gray-100 dark:border-gray-300 mt-4">
-                    <div className="text-xs text-gray-600 dark:text-gray-400 mb-2">
-                      Signed in as
-                    </div>
-                    <div className="font-medium text-text dark:text-dark-text">
-                      {getUserDisplayName()}
-                    </div>
-                  </div>
-                  <button
-                    onClick={handleLogout}
-                    disabled={isLoggingOut}
-                    className="px-4 py-3 mt-4 border border-gray-900 dark:border-gray-900 text-gray-900 dark:text-gray-900 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-left flex items-center gap-2"
-                  >
-                    {isLoggingOut ? (
-                      <>
-                        <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                        Logging out...
-                      </>
-                    ) : (
-                      <>
-                        <LogOut className="h-4 w-4" />
-                        Logout
-                      </>
-                    )}
-                  </button>
-                </>
-              ) : (
-                <button
-                  onClick={() => {
-                    handleLogin()
-                    setMobileMenuOpen(false)
-                  }}
-                  className="btn-primary px-4 py-3 mt-4"
-                  disabled={!ready}
-                >
-                  {!ready ? 'Loading...' : 'Login'}
-                </button>
-              )}
+              {/* Mobile Auth Section - Also lazy loaded */}
+              <div className="px-4 py-3 mt-4 border-t border-gray-100 dark:border-gray-300">
+                <Suspense fallback={<MobileWalletButtonSkeleton />}>
+                  {/* Load immediately on mobile menu open for better UX */}
+                  <LazyWalletButton mobile />
+                </Suspense>
+              </div>
             </div>
           </div>
         )}

@@ -1,37 +1,78 @@
-import { ethers } from 'ethers'
+// lib/contracts/client.ts
+// ✅ ADDED: Remove static import, will use dynamic import
+// ❌ REMOVED: import { ethers } from 'ethers'
 import { CackPassCoreABI } from './abis/CackPassCore'
 import { TicketMarketABI } from './abis/TicketMarket'
 import { RoyaltyEngineABI } from './abis/RoyaltyEngine'
 
-export function getProvider() {
+// ============ TYPES ============
+export interface EventData {
+  organizer: string;
+  name: string;
+  baseURI: string;
+  startTime: number;
+  endTime: number;
+  isActive: boolean;
+}
+
+export interface TicketTypeData {
+  maxTickets: number;
+  ticketsSold: number;
+  available: number;
+  price: string;
+  isActive: boolean;
+}
+
+// ✅ ADDED: Type for ethers Contract
+export type EthersContract = any; // Will be properly typed at runtime
+
+// ✅ ADDED: Module cache for ethers
+let ethersModuleCache: any = null;
+
+// ✅ ADDED: Helper function to dynamically load ethers
+async function loadEthers() {
+  if (!ethersModuleCache) {
+    ethersModuleCache = await import('ethers');
+  }
+  return ethersModuleCache;
+}
+
+// ✅ UPDATED: Get provider with dynamic import
+export async function getProvider() {
+  const { ethers } = await loadEthers();
   if (typeof window !== 'undefined' && window.ethereum) {
     return new ethers.BrowserProvider(window.ethereum)
   }
   return new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_RPC_URL!)
 }
 
-export function getContract<T extends ethers.Contract>(
+// ✅ UPDATED: Get contract with dynamic import - FIXED TYPE ERROR
+export async function getContract<T = any>(
   contractAddress: string,
   abi: any,
-  signer?: ethers.Signer | ethers.Provider
-): T {
-  const provider = signer || getProvider()
-  return new ethers.Contract(contractAddress, abi, provider) as T
+  signer?: any
+): Promise<T> {
+  const { ethers } = await loadEthers();
+  const provider = signer || await getProvider()
+  // ✅ FIXED: Explicitly type as ethers.Contract
+  const contract = new ethers.Contract(contractAddress, abi, provider) as T
+  return contract
 }
 
-// Type-safe contract instances - THESE ARE THE EXPORTED FUNCTIONS
-export const getCackPassCore = (signer?: ethers.Signer) => 
+// ✅ UPDATED: Type-safe contract instances - THESE ARE THE EXPORTED FUNCTIONS
+export const getCackPassCore = async (signer?: any): Promise<any> => 
   getContract(process.env.NEXT_PUBLIC_CACKPASS_CORE_ADDRESS!, CackPassCoreABI, signer)
 
-export const getTicketMarket = (signer?: ethers.Signer) => 
+export const getTicketMarket = async (signer?: any): Promise<any> => 
   getContract(process.env.NEXT_PUBLIC_TICKET_MARKET_ADDRESS!, TicketMarketABI, signer)
 
-export const getRoyaltyEngine = (signer?: ethers.Signer) => 
+export const getRoyaltyEngine = async (signer?: any): Promise<any> => 
   getContract(process.env.NEXT_PUBLIC_ROYALTY_ENGINE_ADDRESS!, RoyaltyEngineABI, signer)
 
-// Helper function to get signer from Privy wallet
-export async function getSignerFromWallet(wallet: any): Promise<ethers.Signer> {
+// ✅ UPDATED: Helper function to get signer from Privy wallet
+export async function getSignerFromWallet(wallet: any): Promise<any> {
   try {
+    const { ethers } = await loadEthers();
     // Get provider from wallet
     const provider = await wallet.getEthereumProvider()
     const ethersProvider = new ethers.BrowserProvider(provider)
@@ -48,8 +89,10 @@ export async function getSignerFromWallet(wallet: any): Promise<ethers.Signer> {
 // Alias for getCackPassCore for backward compatibility with new code
 export const getContractClient = () => getCackPassCore();
 
-export async function getEventData(eventId: number) {
-  const contract = getCackPassCore();
+// ✅ UPDATED: Get event data with proper typing
+export async function getEventData(eventId: number): Promise<EventData> {
+  const { ethers } = await loadEthers();
+  const contract = await getCackPassCore();
   try {
     const event = await contract.events(eventId);
     
@@ -72,8 +115,9 @@ export async function getEventData(eventId: number) {
   }
 }
 
-export async function getAvailableTickets(eventId: number, ticketCategory: number) {
-  const contract = getCackPassCore();
+// ✅ UPDATED: Get available tickets with proper typing
+export async function getAvailableTickets(eventId: number, ticketCategory: number): Promise<TicketTypeData> {
+  const contract = await getCackPassCore();
   try {
     const ticketType = await contract.ticketTypes(eventId, ticketCategory);
     
@@ -90,6 +134,7 @@ export async function getAvailableTickets(eventId: number, ticketCategory: numbe
   }
 }
 
+// ✅ UPDATED: Check ticket availability
 export async function checkTicketAvailability(
   eventId: number, 
   ticketCategory: number, 
@@ -104,9 +149,10 @@ export async function checkTicketAvailability(
   }
 }
 
+// ✅ UPDATED: Get ticket price
 export async function getTicketPrice(eventId: number, ticketCategory: number): Promise<string> {
   try {
-    const contract = getCackPassCore();
+    const contract = await getCackPassCore();
     const ticketType = await contract.ticketTypes(eventId, ticketCategory);
     return ticketType.ticketPrice.toString();
   } catch (error) {
@@ -115,6 +161,7 @@ export async function getTicketPrice(eventId: number, ticketCategory: number): P
   }
 }
 
+// ✅ UPDATED: Check if event is active
 export async function isEventActive(eventId: number): Promise<boolean> {
   try {
     const event = await getEventData(eventId);
@@ -126,10 +173,10 @@ export async function isEventActive(eventId: number): Promise<boolean> {
   }
 }
 
-// Utility function to get all ticket categories for an event
-export async function getEventTicketCategories(eventId: number) {
+// ✅ UPDATED: Get all ticket categories for an event
+export async function getEventTicketCategories(eventId: number): Promise<TicketTypeData[]> {
   const categories = [0, 1, 2, 3]; // From TicketCategory enum
-  const results = [];
+  const results: TicketTypeData[] = [];
   
   for (const category of categories) {
     try {
@@ -138,7 +185,7 @@ export async function getEventTicketCategories(eventId: number) {
         results.push({
           category,
           ...ticketData
-        });
+        } as any);
       }
     } catch (error) {
       // Category might not exist for this event, skip

@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react'
 import { usePrivy } from '@privy-io/react-auth'
 import { X, Building, Globe, Phone, Save, Loader2, Wallet, Mail, AlertCircle } from 'lucide-react'
 import { toast } from 'sonner'
-import PhoneInput from 'react-phone-number-input'
+import { PhoneInput } from '@/components/auth/OptimizedPhoneInput'
 import 'react-phone-number-input/style.css'
 
 const COUNTRIES = [

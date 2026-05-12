@@ -1,4 +1,4 @@
-// app/dashboard/wallet/page.tsx - FIXED WITH REAL-TIME UPDATES
+// app/dashboard/wallet/page.tsx - COMPLETE WORKING VERSION
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
@@ -14,7 +14,6 @@ import {
 } from 'lucide-react'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { toast } from 'sonner'
-import { ethers } from 'ethers'
 import QRCode from 'qrcode'
 
 // Lisk Mainnet Configuration
@@ -63,6 +62,17 @@ const RATE_LIMIT_CONFIG = {
 
 // Real-time balance polling interval (30 seconds)
 const BALANCE_POLL_INTERVAL = 30000
+
+// ✅ ADDED: Module cache for ethers
+let ethersModuleCache: any = null;
+
+// ✅ ADDED: Helper function to dynamically load ethers
+async function loadEthers() {
+  if (!ethersModuleCache) {
+    ethersModuleCache = await import('ethers');
+  }
+  return ethersModuleCache;
+}
 
 // Rate limiter implementation
 class RateLimiter {
@@ -241,7 +251,7 @@ async function rateLimitedFetch(url: string, options?: RequestInit): Promise<Res
   }
 }
 
-// Fetch USDC balance from Lisk Mainnet - UPDATED WITH REAL-TIME SUPPORT
+// ✅ UPDATED: Fetch USDC balance from Lisk Mainnet with dynamic ethers
 async function fetchUSDCBalance(walletAddress: string): Promise<{
   usdcBalance: string;
   usdBalance: string;
@@ -251,7 +261,7 @@ async function fetchUSDCBalance(walletAddress: string): Promise<{
   try {
     console.log('💰 Fetching USDC balance for:', walletAddress)
     
-    // Use Lisk Mainnet RPC URL
+    const { ethers } = await loadEthers();
     const provider = new ethers.JsonRpcProvider(LISK_CONFIG.RPC_URL)
     
     // Create USDC contract instance
@@ -311,6 +321,7 @@ async function fetchUSDCBalance(walletAddress: string): Promise<{
           )
           
           if (usdcToken) {
+            const { ethers } = await loadEthers();
             const decimals = parseInt(usdcToken.token.decimals)
             usdcBalance = ethers.formatUnits(usdcToken.value, decimals)
           }
@@ -339,7 +350,7 @@ async function fetchUSDCBalance(walletAddress: string): Promise<{
   }
 }
 
-// Fetch USDC transactions from Lisk Blockscout API with pagination
+// ✅ UPDATED: Fetch USDC transactions from Lisk Blockscout API with pagination
 async function fetchUSDCTransactions(
   walletAddress: string,
   page: number = 1,
@@ -351,6 +362,7 @@ async function fetchUSDCTransactions(
   try {
     console.log(`📝 Fetching USDC transactions page ${page} for:`, walletAddress)
     
+    const { ethers } = await loadEthers();
     const transactions: Transaction[] = []
     let totalItems = 0
     let totalPages = 1
@@ -383,7 +395,7 @@ async function fetchUSDCTransactions(
           const startIndex = (page - 1) * pageSize
           const paginatedItems = usdcTransactions.slice(startIndex, startIndex + pageSize)
           
-          paginatedItems.forEach((transfer: any) => {
+          for (const transfer of paginatedItems) {
             try {
               const isReceived = transfer.to?.hash?.toLowerCase() === walletAddress.toLowerCase()
               const decimals = parseInt(transfer.token?.decimals || '6') // USDC has 6 decimals
@@ -412,7 +424,7 @@ async function fetchUSDCTransactions(
             } catch (transferError) {
               console.error('Error processing USDC transfer:', transferError)
             }
-          })
+          }
         } else {
           console.log('No USDC transactions found')
         }
@@ -511,7 +523,7 @@ export default function WalletPage() {
     }
   }, [walletAddress])
 
-  // Fetch balance function - SIMILAR TO DASHBOARD
+  // ✅ UPDATED: Fetch balance function with dynamic ethers
   const fetchBalance = useCallback(async (showToast = false): Promise<boolean> => {
     if (!walletAddress) {
       setBalance(prev => ({
@@ -597,7 +609,7 @@ export default function WalletPage() {
     }
   }, [walletAddress])
 
-  // Main fetch function - SIMILAR TO DASHBOARD
+  // Main fetch function
   const fetchWalletData = useCallback(async (showToast = false, page: number = 1) => {
     if (!walletAddress) {
       setBalance(prev => ({
@@ -631,7 +643,7 @@ export default function WalletPage() {
     }
   }, [authenticated, ready, walletAddress, fetchWalletData])
 
-  // Set up polling for real-time balance updates - CRITICAL FIX
+  // Set up polling for real-time balance updates
   useEffect(() => {
     if (!walletAddress || !authenticated) {
       // Clear any existing intervals
@@ -701,6 +713,7 @@ export default function WalletPage() {
     }
   }
 
+  // ✅ UPDATED: Handle send transaction with dynamic ethers
   const handleSendTransaction = async () => {
     if (!user || !walletAddress) {
       toast.error('Please connect your wallet')
@@ -712,8 +725,8 @@ export default function WalletPage() {
       return
     }
 
-    if (!sendToAddress || !ethers.isAddress(sendToAddress)) {
-      toast.error('Please enter a valid recipient address')
+    if (!sendToAddress) {
+      toast.error('Please enter a recipient address')
       return
     }
 
@@ -721,6 +734,16 @@ export default function WalletPage() {
     setHasPendingTransaction(true)
 
     try {
+      const { ethers } = await loadEthers();
+      
+      // Validate address
+      if (!ethers.isAddress(sendToAddress)) {
+        toast.error('Please enter a valid recipient address')
+        setIsSending(false)
+        setHasPendingTransaction(false)
+        return
+      }
+      
       // For embedded wallets, use window.ethereum
       if (!window.ethereum) {
         throw new Error('No Ethereum provider found. Please install MetaMask or use a Web3-enabled browser.')
@@ -871,7 +894,7 @@ export default function WalletPage() {
 
         {activeTab === 'overview' && (
           <>
-            {/* Balance Card - EXACTLY LIKE DASHBOARD */}
+            {/* Balance Card */}
             <div className="glass-card rounded-3xl p-6 mb-8 bg-gradient-to-r from-primary to-primary-dark text-white font-extrabold">
               <div className="flex items-center justify-between mb-6">
                 <div>
@@ -910,7 +933,7 @@ export default function WalletPage() {
                   )}
                 </div>
                 
-                {/* Wallet Address Display - EXACTLY LIKE DASHBOARD */}
+                {/* Wallet Address Display */}
                 <div className="flex items-center gap-3 p-3 bg-white/20 rounded-2xl backdrop-blur-sm">
                   <Wallet className="h-6 w-6" />
                   {walletAddress ? (

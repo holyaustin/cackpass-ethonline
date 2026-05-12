@@ -1,4 +1,3 @@
-// app/dashboard/page.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -12,7 +11,7 @@ import {
 import Link from 'next/link'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { toast } from 'sonner'
-import { ethers } from 'ethers'
+// ❌ REMOVED: import { ethers } from 'ethers'
 
 // USDC ABI - Minimal interface for balanceOf
 const USDC_ABI = [
@@ -24,6 +23,17 @@ const USDC_ABI = [
 const LISK_MAINNET_USDC_ADDRESS = '0xF242275d3a6527d877f2c927a82D9b057609cc71'
 // Lisk Mainnet RPC URL
 const LISK_MAINNET_RPC_URL = 'https://rpc.api.lisk.com'
+
+// ✅ ADDED: Module cache for ethers
+let ethersModuleCache: any = null;
+
+// ✅ ADDED: Helper function to dynamically load ethers
+async function loadEthers() {
+  if (!ethersModuleCache) {
+    ethersModuleCache = await import('ethers');
+  }
+  return ethersModuleCache;
+}
 
 interface DashboardStats {
   usdcBalance: string
@@ -65,7 +75,7 @@ function getWalletAddressFromUser(user: any): string | null {
   return null
 }
 
-// Function to fetch USDC balance from Lisk Mainnet
+// ✅ UPDATED: Function to fetch USDC balance from Lisk Mainnet with dynamic ethers
 async function fetchUSDCBalance(walletAddress: string): Promise<{
   usdcBalance: string;
   usdBalance: string;
@@ -75,6 +85,7 @@ async function fetchUSDCBalance(walletAddress: string): Promise<{
   try {
     console.log('💰 Fetching USDC balance for:', walletAddress)
     
+    const { ethers } = await loadEthers();
     const provider = new ethers.JsonRpcProvider(LISK_MAINNET_RPC_URL)
     
     try {
@@ -619,4 +630,4 @@ export default function DashboardPage() {
       </div>
     </div>
   )
-}     
+}
