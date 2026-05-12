@@ -5,9 +5,6 @@ const nextConfig: NextConfig = {
 
     // ✅ ADDED: Optimize package imports
   modularizeImports: {
-    'lucide-react': {
-      transform: 'lucide-react/dist/esm/icons/{{member}}',
-    },
     'date-fns': {
       transform: 'date-fns/{{member}}',
     },
