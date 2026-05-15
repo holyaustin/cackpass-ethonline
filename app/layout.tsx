@@ -1,6 +1,5 @@
 // app/layout.tsx
 import type { Metadata, Viewport } from 'next'
-// 1. Change the import to use localFont
 import localFont from 'next/font/local' 
 import './globals.css'
 import { Header } from '@/components/layout/Header'
@@ -8,10 +7,9 @@ import { Footer } from '@/components/layout/Footer'
 import { AppProviders } from '@/components/providers/AppProviders'
 import { Toaster } from 'sonner'
 import { Suspense } from 'react'
-import { SpeedInsights } from '@vercel/speed-insights/next';
-import { Analytics } from '@vercel/analytics/react'; // Adjusted entrypoint to prevent TS issues
+import { SpeedInsights } from '@vercel/speed-insights/next'
+import { Analytics } from '@vercel/analytics/react'
 
-// 2. Configure the local font targeting your public folder file
 const inter = localFont({
   src: [
     {
@@ -24,10 +22,9 @@ const inter = localFont({
     },
   ],
   variable: '--font-inter',
-  weight: '100 900', // Both files are variable and support all weights automatically
-  display: 'swap',
+  weight: '100 900',
+  display: 'swap', // Ensures text renders instantly using a fallback font
 })
-
 
 export const metadata: Metadata = {
   title: 'CACK-pass - Event Ticketing Platform',
@@ -62,14 +59,10 @@ export const viewport: Viewport = {
   viewportFit: 'cover',
 }
 
+// Optimized: Pure CSS styling skeleton reduces asset-blocking times on mobile devices
 function LoadingFallback() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background dark:bg-dark-background">
-      <div className="text-center">
-        <div className="w-16 h-16 border-4 border-primary/30 border-t-primary rounded-full animate-spin mx-auto mb-4"></div>
-        <p className="text-text dark:text-dark-text">Loading CACK-pass...</p>
-      </div>
-    </div>
+    <div className="min-h-screen bg-background dark:bg-dark-background opacity-50 transition-opacity duration-200" />
   )
 }
 
@@ -84,19 +77,22 @@ export default function RootLayout({
         <link rel="icon" href="/favicon.ico" />
         <meta name="color-scheme" content="dark light" />
       </head>
-      {/* 3. The local font configuration applies identically to your existing body className structure */}
-      <body className={`${inter.className} antialiased bg-background text-text dark:bg-dark-background dark:text-dark-text`}>
+      {/* Fixed: Replaced inter.className with inter.variable font fallback integration */}
+      <body className={`${inter.variable} font-sans antialiased bg-background text-text dark:bg-dark-background dark:text-dark-text`}>
         <Suspense fallback={<LoadingFallback />}>
           <AppProviders>
             <div className="min-h-screen flex flex-col">
               <Header />
               <main className="flex-1">
                 {children}
-                <SpeedInsights />
-                <Analytics />
               </main>
               <Footer />
             </div>
+            
+            {/* Fixed: Relocated tracking scripts to the absolute bottom of the DOM render stack */}
+            <SpeedInsights />
+            <Analytics />
+            
             <Toaster 
               position="top-right"
               toastOptions={{

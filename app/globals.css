@@ -1,8 +1,12 @@
 /* app/globals.css */
+/* app/globals.css */
 @import 'tailwindcss';
 
 /* Define custom properties at root level for light theme */
 @theme {
+
+  --font-sans: var(--font-inter);
+
   /* Theme 1: Warm & Balanced (Default/Light) */
   --color-primary: #D95427;
   --color-primary-dark: #BF4519;
@@ -26,32 +30,18 @@
   --animate-fade-in: fade-in 0.5s ease-out;
   
   @keyframes float {
-    0%, 100% {
-      transform: translateY(0);
-    }
-    50% {
-      transform: translateY(-10px);
-    }
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
   }
   
   @keyframes slide-up {
-    0% {
-      transform: translateY(20px);
-      opacity: 0;
-    }
-    100% {
-      transform: translateY(0);
-      opacity: 1;
-    }
+    0% { transform: translateY(20px); opacity: 0; }
+    100% { transform: translateY(0); opacity: 1; }
   }
   
   @keyframes fade-in {
-    0% {
-      opacity: 0;
-    }
-    100% {
-      opacity: 1;
-    }
+    0% { opacity: 0; }
+    100% { opacity: 1; }
   }
   
   /* Subtle grain texture */
@@ -91,13 +81,19 @@
   body {
     @apply antialiased;
     background: var(--gradient-background);
-    background-attachment: fixed;
     background-size: cover;
     position: relative;
     color: var(--color-text);
     font-feature-settings: 'rlig' 1, 'calt' 1;
     -webkit-tap-highlight-color: transparent;
     min-height: 100vh;
+  }
+  
+  /* Fix 2: Optimize heavy scrolling background repaints specifically for mobile viewports */
+  @media (min-width: 768px) {
+    body {
+      background-attachment: fixed;
+    }
   }
   
   /* Subtle texture overlay */
@@ -128,6 +124,7 @@
   }
 }
 
+/* Keep the rest of your `@layer components` intact below this point */
 /* Component styles with enhanced gradients */
 @layer components {
   /* Enhanced card with gradient borders and glow */

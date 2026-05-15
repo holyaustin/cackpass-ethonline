@@ -103,7 +103,7 @@ export function HeroSection() {
         router.push('/dashboard');
       } else {
         setIsLoading(true);
-        const loadingToast = toast.loading('Connecting to wallet...');
+        const loadingToast = toast.loading('Connecting to server...');
         try {
           await login();
           toast.dismiss(loadingToast);

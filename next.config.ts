@@ -2,13 +2,6 @@ import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-
-    // ✅ ADDED: Optimize package imports
-  modularizeImports: {
-    'date-fns': {
-      transform: 'date-fns/{{member}}',
-    },
-  },
   
   // ✅ ADDED: Experimental optimizations
   experimental: {
@@ -18,6 +11,9 @@ const nextConfig: NextConfig = {
       '@privy-io/react-auth',
       '@radix-ui/react-dialog',
       '@radix-ui/react-dropdown-menu',
+      '@radix-ui/react-icons',
+      '@radix-ui/react-tabs',
+      '@radix-ui/react-toast'
     ],
   },
   
