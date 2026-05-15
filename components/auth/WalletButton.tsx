@@ -1,14 +1,12 @@
-// /components/auth/WalletButton.tsx - NEW FILE
-// This contains ALL the Privy logic that was previously in Header
+// /components/auth/WalletButton.tsx
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
 import { usePrivy } from '@privy-io/react-auth'
-import { LogOut, User as UserIcon } from 'lucide-react'
+import { LogOut } from 'lucide-react'
 import { useRouter, usePathname } from 'next/navigation'
 import { toast } from 'sonner'
 
-// ========== COPIED EXACTLY from Header - KEPT ALL LOGIC ==========
 const PUBLIC_PAGES = [
   '/',
   '/events',
@@ -31,127 +29,162 @@ interface WalletButtonProps {
 }
 
 export function WalletButton({ mobile = false }: WalletButtonProps) {
-  // ========== ALL EXISTING STATE and REFS from Header ==========
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const router = useRouter()
   const pathname = usePathname()
   const { user, authenticated, ready, logout, login } = usePrivy()
   const hasHandledPostLogin = useRef(false)
-  const hasCheckedUser = useRef(false)
+  const isLoggingOutRef = useRef(false) // Track logout state
+  
+  console.log(`🏗️ [WalletButton] Rendering: mobile=${mobile}, authenticated=${authenticated}, ready=${ready}, hasUser=${!!user}, pathname=${pathname}`);
 
-  // ========== EXISTING LOGIN HANDLER (UNCHANGED) ==========
   const handleLogin = async () => {
+    console.log('🔄 [WalletButton] handleLogin called');
     try {
-      console.log('🔄 Starting login process...')
+      console.log('🚀 [WalletButton] Calling login()...');
       await login()
-      console.log('✅ Login initiated successfully')
+      console.log('✅ [WalletButton] Login initiated successfully')
     } catch (error) {
-      console.error('❌ Login failed:', error)
+      console.error('❌ [WalletButton] Login failed:', error)
       toast.error('Login failed. Please try again.')
     }
   }
 
-  // ========== EXISTING LOGOUT HANDLER (UNCHANGED) ==========
   const handleLogout = async () => {
+    console.log('🔄 [WalletButton] handleLogout called');
     setIsLoggingOut(true)
-    
+    isLoggingOutRef.current = true // Set logout flag
     const toastId = toast.loading('Logging out...')
     
     try {
       await logout()
       hasHandledPostLogin.current = false
-      hasCheckedUser.current = false
       toast.dismiss(toastId)
       toast.success('Logged out successfully')
+      
+      // Navigate to home page
+      console.log('🏠 [WalletButton] Redirecting to home page after logout');
       router.push('/')
     } catch (error) {
       console.error('Logout failed:', error)
       toast.dismiss(toastId)
       toast.error('Logout failed. Please try again.')
+      isLoggingOutRef.current = false // Reset flag on error
     } finally {
       setIsLoggingOut(false)
     }
   }
 
-  // ========== EXISTING POST-LOGIN REDIRECT LOGIC (UNCHANGED) ==========
+  // Reset flags when authentication state changes
   useEffect(() => {
-    if (!ready || !authenticated || !user) return
-    if (hasHandledPostLogin.current) return
-    if (isPublicPage(pathname)) {
-      console.log(`🔓 Public page detected (${pathname}), skipping redirect`)
-      return
+    if (!authenticated) {
+      console.log('🔓 [WalletButton] User not authenticated, resetting flags');
+      hasHandledPostLogin.current = false;
+      // Reset logout flag after a brief delay to ensure navigation completes
+      setTimeout(() => {
+        isLoggingOutRef.current = false;
+      }, 1000);
     }
+  }, [authenticated]);
+
+  // Post-login redirect logic - SINGLE SOURCE OF TRUTH
+  useEffect(() => {
+    console.log(`🔄 [WalletButton] Post-login effect: ready=${ready}, authenticated=${authenticated}, hasUser=${!!user}, hasHandled=${hasHandledPostLogin.current}, isLoggingOut=${isLoggingOutRef.current}, pathname=${pathname}`);
+    
+    // CRITICAL: Don't redirect if we're in the process of logging out
+    if (isLoggingOutRef.current) {
+      console.log(`🚫 [WalletButton] Logout in progress, skipping redirect logic`);
+      return;
+    }
+
+    // Must be ready, authenticated, and have user
+    if (!ready || !authenticated || !user) {
+      console.log(`⏭️ [WalletButton] Skipping - not ready/authenticated/user`);
+      return;
+    }
+
+    // Already handled
+    if (hasHandledPostLogin.current) {
+      console.log(`⏭️ [WalletButton] Already handled post-login`);
+      return;
+    }
+
+    // If we're already on dashboard or complete-profile, don't redirect
     if (pathname === '/dashboard' || pathname === '/complete-profile') {
-      console.log(`📍 Already on ${pathname}, skipping redirect`)
-      hasHandledPostLogin.current = true
-      return
+      console.log(`📍 [WalletButton] Already on ${pathname}, marking as handled`);
+      hasHandledPostLogin.current = true;
+      return;
+    }
+
+    // If we're on a public page and there are no OAuth params, don't redirect
+    const hasOAuthParams = typeof window !== 'undefined' && 
+      (new URLSearchParams(window.location.search).has('privy_oauth_code') ||
+       new URLSearchParams(window.location.search).has('privy_oauth_state'));
+    
+    if (isPublicPage(pathname) && !hasOAuthParams) {
+      console.log(`🔓 [WalletButton] On public page without OAuth, skipping redirect`);
+      return;
     }
     
-    console.log('🔐 User authenticated, checking status...')
+    console.log('🔐 [WalletButton] Processing post-login redirect...');
+    hasHandledPostLogin.current = true;
     
-    const checkUserAndRedirect = async () => {
-      if (hasCheckedUser.current) return
-      hasCheckedUser.current = true
-      
+    const performRedirect = async () => {
       try {
+        // Clean OAuth params from URL first
+        if (hasOAuthParams && typeof window !== 'undefined') {
+          console.log('🧹 [WalletButton] Cleaning OAuth params from URL');
+          window.history.replaceState({}, '', window.location.pathname);
+        }
+
         const walletAddress = user.wallet?.address
+        console.log(`👛 [WalletButton] Wallet address: ${walletAddress || 'none'}`);
         
         if (!walletAddress) {
-          console.log('⚠️ No wallet address, redirecting to complete-profile')
-          hasHandledPostLogin.current = true
+          console.log('🏠 [WalletButton] No wallet, redirecting to /complete-profile');
           router.push('/complete-profile')
           return
         }
         
-        console.log('✅ Found wallet address:', walletAddress)
-        
+        console.log(`🌐 [WalletButton] Fetching /api/auth/user?walletAddress=${walletAddress}`);
         const response = await fetch(`/api/auth/user?walletAddress=${walletAddress}`)
+        console.log(`📊 [WalletButton] API response status: ${response.status}`);
         
         if (response.ok) {
           const data = await response.json()
-          console.log('📊 User status:', data)
+          console.log(`📝 [WalletButton] User data:`, data);
           
           if (data.needsProfileCompletion || !data.user?.isProfileComplete) {
-            console.log('📝 Profile incomplete, redirecting to complete-profile')
-            hasHandledPostLogin.current = true
+            console.log('📝 [WalletButton] Profile incomplete, redirecting to /complete-profile');
             router.push('/complete-profile')
           } else {
-            console.log('✅ Profile complete, redirecting to dashboard')
-            hasHandledPostLogin.current = true
+            console.log('✅ [WalletButton] Profile complete, redirecting to /dashboard');
             router.push('/dashboard')
           }
         } else {
-          console.log('⚠️ API check failed, redirecting to complete-profile')
-          hasHandledPostLogin.current = true
+          console.log('⚠️ [WalletButton] API failed, redirecting to /complete-profile');
           router.push('/complete-profile')
         }
-        
       } catch (error) {
-        console.error('💥 Error in post-login flow:', error)
-        hasHandledPostLogin.current = true
+        console.error('💥 [WalletButton] Redirect error:', error);
         router.push('/complete-profile')
       }
     }
     
-    const timer = setTimeout(checkUserAndRedirect, 500)
-    return () => clearTimeout(timer)
+    performRedirect()
   }, [ready, authenticated, user, router, pathname])
 
-  // ========== EXISTING USER DISPLAY NAME (UNCHANGED) ==========
   const getUserDisplayName = () => {
     if (!user) return 'Guest'
-    
     if (user.google?.name) return user.google.name
     if (user.twitter?.username) return `@${user.twitter.username}`
     if (user.email?.address) return user.email.address.split('@')[0]
-    
     return 'User'
   }
 
-  // ========== RENDER LOGIC - KEEPS ALL EXISTING UI ==========
-  
   // Not authenticated - Show Login button
   if (!authenticated) {
+    console.log(`🔓 [WalletButton] Not authenticated, showing login button (mobile=${mobile})`);
     if (mobile) {
       return (
         <button
@@ -176,6 +209,7 @@ export function WalletButton({ mobile = false }: WalletButtonProps) {
   }
 
   // Authenticated - Show user info and logout button
+  console.log(`✅ [WalletButton] Authenticated, showing user info (mobile=${mobile})`);
   if (mobile) {
     return (
       <div className="space-y-3">

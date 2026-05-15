@@ -1,19 +1,25 @@
 // components/sections/HeroSection.tsx
 'use client'
 
-import { usePrivy } from '@privy-io/react-auth'
+import { useAuth } from '@/components/providers/AuthProvider'
 import { ArrowRight, Sparkles, Shield, Ticket, Users, Zap } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 
 export function HeroSection() {
-  const { user, authenticated, ready, login } = usePrivy()
+  const { isAuthenticated, ready, login } = useAuth()
   const [isVisible, setIsVisible] = useState(false)
   const [currentFeature, setCurrentFeature] = useState(0)
   const [isTransitioning, setIsTransitioning] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+  const [stars, setStars] = useState<Array<{ width: number; height: number; top: number; left: number; shadow: number; delay: number; duration: number }>>([])
+  const [boldStars, setBoldStars] = useState<Array<{ width: number; height: number; top: number; left: number; shadow: number; delay: number; duration: number }>>([])
+  const [shootingStars, setShootingStars] = useState<Array<{ top: number; left: number; delay: number }>>([])
+  const [mounted, setMounted] = useState(false)
 
-const router = useRouter()
+  const router = useRouter()
 
   const features = [
     {
@@ -46,17 +52,38 @@ const router = useRouter()
     }
   ]
 
+  // Generate consistent star positions on mount only
+  useEffect(() => {
+    const generateStars = (count: number, isBold: boolean = false) => {
+      return Array.from({ length: count }).map(() => ({
+        width: Math.random() * (isBold ? 5 : 3) + (isBold ? 2 : 1),
+        height: Math.random() * (isBold ? 5 : 3) + (isBold ? 2 : 1),
+        top: Math.random() * 100,
+        left: Math.random() * 100,
+        shadow: Math.random() * (isBold ? 6 : 8) + (isBold ? 4 : 2),
+        delay: Math.random() * 5,
+        duration: (isBold ? 1 + Math.random() * 2 : 1 + Math.random() * 3)
+      }))
+    }
+
+    const generateShootingStars = (count: number) => {
+      return Array.from({ length: count }).map((_, i) => ({
+        top: 20 + i * 25,
+        left: -5 + i * 10,
+        delay: i * 7
+      }))
+    }
+
+    setStars(generateStars(60, false))
+    setBoldStars(generateStars(40, true))
+    setShootingStars(generateShootingStars(3))
+    setMounted(true)
+  }, [])
+
   const nextFeature = useCallback(() => {
     if (isTransitioning) return;
     setIsTransitioning(true);
     setCurrentFeature((prev) => (prev + 1) % features.length);
-    setTimeout(() => setIsTransitioning(false), 500);
-  }, [features.length, isTransitioning])
-
-  const prevFeature = useCallback(() => {
-    if (isTransitioning) return;
-    setIsTransitioning(true);
-    setCurrentFeature((prev) => (prev - 1 + features.length) % features.length);
     setTimeout(() => setIsTransitioning(false), 500);
   }, [features.length, isTransitioning])
 
@@ -68,25 +95,29 @@ const router = useRouter()
     return () => clearInterval(interval)
   }, [nextFeature])
 
-const handleGetStarted = async () => {
-  if (authenticated) {
-    router.push('/dashboard')
-  } else {
-    try {
-      await login()
-      // Don't redirect here - let the useEffect handle it
-    } catch (error) {
-      console.error('Login failed:', error)
-    }
-  }
-}
+// Inside HeroSection component, replace the handleGetStarted function with this:
 
-// Watch for authentication changes
-useEffect(() => {
-  if (authenticated && ready) {
-    router.push('/dashboard')
-  }
-}, [authenticated, ready, router])
+    const handleGetStarted = async () => {
+      if (isLoading) return;
+      if (isAuthenticated) {
+        router.push('/dashboard');
+      } else {
+        setIsLoading(true);
+        const loadingToast = toast.loading('Connecting to wallet...');
+        try {
+          await login();
+          toast.dismiss(loadingToast);
+          toast.success('Login successful! Redirecting...');
+          // The redirect will be handled by the AuthProvider's useEffect after authentication
+        } catch (error: any) {
+          toast.dismiss(loadingToast);
+          console.error('Login failed:', error);
+          toast.error('Unable to login. Please try again later.');
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    };
 
   return (
     <section className="relative overflow-hidden min-h-screen lg:min-h-[95vh] flex items-center py-8 md:py-12">
@@ -119,60 +150,68 @@ useEffect(() => {
         <div className="absolute top-1/3 left-1/3 w-[600px] h-[600px] bg-gradient-to-r from-orange-500/20 via-orange-500/10 to-transparent rounded-full blur-3xl animate-pulse" />
         <div className="absolute bottom-1/3 right-1/3 w-[500px] h-[500px] bg-gradient-to-r from-teal-500/20 via-teal-500/10 to-transparent rounded-full blur-3xl animate-pulse delay-1500" />
         
-        {/* Star field */}
-        <div className="absolute inset-0">
-          {Array.from({ length: 60 }).map((_, i) => (
-            <div
-              key={`dark-star-${i}`}
-              className="absolute rounded-full animate-twinkle"
-              style={{
-                width: `${Math.random() * 4 + 2}px`,
-                height: `${Math.random() * 4 + 2}px`,
-                top: `${Math.random() * 100}%`,
-                left: `${Math.random() * 100}%`,
-                backgroundColor: 'white',
-                boxShadow: `0 0 ${Math.random() * 8 + 4}px white`,
-                animationDelay: `${Math.random() * 5}s`,
-                animationDuration: `${1 + Math.random() * 3}s`
-              }}
-            />
-          ))}
-        </div>
+        {/* Star field - only render after mount to avoid hydration mismatch */}
+        {mounted && (
+          <>
+            <div className="absolute inset-0">
+              {stars.map((star, i) => (
+                <div
+                  key={`dark-star-${i}`}
+                  className="absolute rounded-full animate-twinkle"
+                  style={{
+                    width: `${star.width}px`,
+                    height: `${star.height}px`,
+                    top: `${star.top}%`,
+                    left: `${star.left}%`,
+                    backgroundColor: 'white',
+                    boxShadow: `0 0 ${star.shadow}px white`,
+                    animationDelay: `${star.delay}s`,
+                    animationDuration: `${star.duration}s`
+                  }}
+                />
+              ))}
+            </div>
+            
+            {/* Enhanced Bold Stars */}
+            <div className="absolute inset-0">
+              {boldStars.map((star, i) => (
+                <div
+                  key={`bold-star-${i}`}
+                  className="absolute rounded-full animate-twinkle"
+                  style={{
+                    width: `${star.width}px`,
+                    height: `${star.height}px`,
+                    top: `${star.top}%`,
+                    left: `${star.left}%`,
+                    backgroundColor: 'white',
+                    boxShadow: `0 0 ${star.shadow}px white`,
+                    animationDelay: `${star.delay}s`,
+                    animationDuration: `${star.duration}s`
+                  }}
+                />
+              ))}
+            </div>
+            
+            {/* Shooting Stars */}
+            <div className="absolute inset-0">
+              {shootingStars.map((star, i) => (
+                <div
+                  key={`shooting-star-${i}`}
+                  className="absolute w-24 h-1 bg-gradient-to-r from-transparent via-white to-transparent rounded-full animate-shooting-star"
+                  style={{
+                    top: `${star.top}%`,
+                    left: `${star.left}%`,
+                    animationDelay: `${star.delay}s`,
+                    opacity: 0.7
+                  }}
+                />
+              ))}
+            </div>
+          </>
+        )}
         
         {/* Grid pattern */}
         <div className="absolute inset-0 bg-grid-slate-800/30 [mask-image:radial-gradient(ellipse_at_center,black,transparent_70%)]" />
-
-                {/* Enhanced Bold Stars */}
-        {Array.from({ length: 40 }).map((_, i) => (
-          <div
-            key={`dark-star-${i}`}
-            className="absolute rounded-full animate-twinkle"
-            style={{
-              width: `${Math.random() * 4 + 2}px`,
-              height: `${Math.random() * 4 + 2}px`,
-              top: `${Math.random() * 100}%`,
-              left: `${Math.random() * 100}%`,
-              backgroundColor: 'white',
-              boxShadow: `0 0 ${Math.random() * 6 + 4}px white`,
-              animationDelay: `${Math.random() * 5}s`,
-              animationDuration: `${1 + Math.random() * 2}s`
-            }}
-          />
-        ))}
-        
-        {/* Shooting Stars */}
-        {Array.from({ length: 3 }).map((_, i) => (
-          <div
-            key={`shooting-star-${i}`}
-            className="absolute w-24 h-1 bg-gradient-to-r from-transparent via-white to-transparent rounded-full animate-shooting-star"
-            style={{
-              top: `${20 + i * 25}%`,
-              left: `${-5 + i * 10}%`,
-              animationDelay: `${i * 7}s`,
-              opacity: 0.7
-            }}
-          />
-        ))}
         
         {/* Animated rings */}
         <div className="absolute top-32 right-32 w-48 h-48 border border-orange-500/40 rounded-full animate-spin-slow">
@@ -375,10 +414,20 @@ useEffect(() => {
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
                 <button
                   onClick={handleGetStarted}
-                  className="btn-primary bg-gradient-to-r from-orange-500 to-orange-400 hover:from-orange-600 hover:to-orange-500 border-none text-white px-8 py-4 text-lg font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 flex items-center justify-center space-x-2 group"
+                  disabled={isLoading}
+                  className="btn-primary bg-gradient-to-r from-orange-500 to-orange-400 hover:from-orange-600 hover:to-orange-500 border-none text-white px-8 py-4 text-lg font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 flex items-center justify-center space-x-2 group disabled:opacity-70 disabled:cursor-not-allowed"
                 >
-                  <span>Create Ticket</span>
-                  <ArrowRight className="h-5 w-5 group-hover:translate-x-1 transition-transform" />
+                  {isLoading ? (
+                    <>
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                      <span>Loading...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Create Ticket</span>
+                      <ArrowRight className="h-5 w-5 group-hover:translate-x-1 transition-transform" />
+                    </>
+                  )}
                 </button>
                 
                 <Link href="/events" className="w-full sm:w-auto">

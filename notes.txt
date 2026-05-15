@@ -17,3 +17,4 @@ const PUBLIC_PAGES = [
   '/payment/success',
   '/payment/failed'
 ]
+

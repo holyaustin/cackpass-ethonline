@@ -5,19 +5,17 @@ import { PrivyProvider } from '@privy-io/react-auth'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { sepolia, mainnet } from 'viem/chains'
 
-// Optimized QueryClient configuration
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 60 * 1000, // 1 minute - prevents unnecessary refetches
+      staleTime: 60 * 1000,
       retry: 1,
-      refetchOnWindowFocus: false, // Improves performance
-      gcTime: 5 * 60 * 1000, // Garbage collection time (renamed from cacheTime in v5)
+      refetchOnWindowFocus: false,
+      gcTime: 5 * 60 * 1000,
     },
   },
 })
 
-// Custom chain configuration for Lisk Sepolia
 const liskSepolia = {
   id: 4202,
   name: 'Lisk Sepolia',
