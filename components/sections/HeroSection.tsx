@@ -95,29 +95,43 @@ export function HeroSection() {
     return () => clearInterval(interval)
   }, [nextFeature])
 
-// Inside HeroSection component, replace the handleGetStarted function with this:
-
-    const handleGetStarted = async () => {
-      if (isLoading) return;
-      if (isAuthenticated) {
-        router.push('/dashboard');
-      } else {
-        setIsLoading(true);
-        const loadingToast = toast.loading('Connecting to server...');
-        try {
-          await login();
-          toast.dismiss(loadingToast);
-          toast.success('Login successful! Redirecting...');
-          // The redirect will be handled by the AuthProvider's useEffect after authentication
-        } catch (error: any) {
-          toast.dismiss(loadingToast);
-          console.error('Login failed:', error);
-          toast.error('Unable to login. Please try again later.');
-        } finally {
-          setIsLoading(false);
-        }
-      }
-    };
+  const handleGetStarted = async () => {
+    console.log('🎯 [HeroSection] Get Started clicked');
+    
+    if (isLoading) {
+      console.log('⏳ [HeroSection] Already loading, ignoring click');
+      return;
+    }
+    
+    // If already authenticated, just navigate to dashboard
+    if (isAuthenticated) {
+      console.log('✅ [HeroSection] User authenticated, navigating to dashboard');
+      router.push('/dashboard');
+      return;
+    }
+    
+    // Not authenticated - trigger login
+    console.log('🔐 [HeroSection] User not authenticated, triggering login');
+    setIsLoading(true);
+    const loadingToast = toast.loading('Connecting...');
+    
+    try {
+      console.log('🚀 [HeroSection] Calling login()');
+      await login();
+      
+      toast.dismiss(loadingToast);
+      toast.success('Authentication successful!');
+      console.log('✅ [HeroSection] Login successful - WalletButton will handle redirect');
+      
+      // Don't navigate here - let WalletButton's redirect logic handle it
+      // The user will be redirected to /complete-profile or /dashboard automatically
+    } catch (error: any) {
+      console.error('❌ [HeroSection] Login failed:', error);
+      toast.dismiss(loadingToast);
+      toast.error('Authentication failed. Please try again.');
+      setIsLoading(false);
+    }
+  };
 
   return (
     <section className="relative overflow-hidden min-h-screen lg:min-h-[95vh] flex items-center py-8 md:py-12">
@@ -420,11 +434,11 @@ export function HeroSection() {
                   {isLoading ? (
                     <>
                       <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                      <span>Loading...</span>
+                      <span>Connecting...</span>
                     </>
                   ) : (
                     <>
-                      <span>Create Ticket</span>
+                      <span>{isAuthenticated ? 'Go to Dashboard' : 'Create Ticket'}</span>
                       <ArrowRight className="h-5 w-5 group-hover:translate-x-1 transition-transform" />
                     </>
                   )}

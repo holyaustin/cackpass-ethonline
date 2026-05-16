@@ -1,4 +1,3 @@
-// /components/auth/WalletButton.tsx
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
@@ -6,6 +5,7 @@ import { usePrivy } from '@privy-io/react-auth'
 import { LogOut } from 'lucide-react'
 import { useRouter, usePathname } from 'next/navigation'
 import { toast } from 'sonner'
+import { ProfileModal } from './ProfileModal'
 
 const PUBLIC_PAGES = [
   '/',
@@ -28,15 +28,101 @@ interface WalletButtonProps {
   mobile?: boolean
 }
 
+// Helper function to extract email from user
+const getUserEmail = (user: any): string => {
+  if (!user) return '';
+  
+  // Check email account
+  if (user.email?.address) {
+    return user.email.address;
+  }
+  
+  // Check Google account
+  if (user.google?.email) {
+    return user.google.email;
+  }
+  
+  // Twitter doesn't provide email, so return empty
+  // User will need to provide email in profile modal
+  
+  return '';
+};
+
+// Helper function to check if user has email from OAuth provider
+const hasEmailFromProvider = (user: any): boolean => {
+  if (!user) return false;
+  return !!(user.email?.address || user.google?.email);
+};
+
 export function WalletButton({ mobile = false }: WalletButtonProps) {
   const [isLoggingOut, setIsLoggingOut] = useState(false)
+  const [showProfileModal, setShowProfileModal] = useState(false)
+  const [userEmail, setUserEmail] = useState<string>('')
+  const [needsEmail, setNeedsEmail] = useState(false)
+  const [isCheckingUser, setIsCheckingUser] = useState(false)
+  
   const router = useRouter()
   const pathname = usePathname()
   const { user, authenticated, ready, logout, login } = usePrivy()
   const hasHandledPostLogin = useRef(false)
-  const isLoggingOutRef = useRef(false) // Track logout state
+  const isLoggingOutRef = useRef(false)
   
   console.log(`🏗️ [WalletButton] Rendering: mobile=${mobile}, authenticated=${authenticated}, ready=${ready}, hasUser=${!!user}, pathname=${pathname}`);
+
+  // ✅ Function to check if user exists in database and show modal if needed
+  const checkUserAndShowModal = async (userData: any) => {
+    if (isCheckingUser) return;
+    
+    setIsCheckingUser(true);
+    
+    try {
+      const walletAddress = userData.wallet?.address;
+      const email = getUserEmail(userData);
+      const hasEmail = hasEmailFromProvider(userData);
+      
+      console.log('🔍 [WalletButton] Checking user in database:', { walletAddress, email, hasEmail });
+      
+      if (!walletAddress) {
+        console.log('⚠️ [WalletButton] No wallet address, showing profile modal');
+        setUserEmail(email);
+        setNeedsEmail(!hasEmail); // Only need email if OAuth didn't provide one
+        setShowProfileModal(true);
+        return;
+      }
+      
+      // Check if user exists in database
+      const response = await fetch(`/api/auth/user?walletAddress=${walletAddress}`);
+      console.log(`📊 [WalletButton] API response status: ${response.status}`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('📝 [WalletButton] User data from DB:', data);
+        
+        // If user doesn't exist OR profile is incomplete, show modal
+        if (!data.user || data.needsProfileCompletion || !data.user?.isProfileComplete) {
+          console.log('📝 [WalletButton] User needs profile completion, showing modal');
+          setUserEmail(email || data.user?.email || '');
+          setNeedsEmail(!hasEmail && !data.user?.email);
+          setShowProfileModal(true);
+        } else {
+          console.log('✅ [WalletButton] User profile complete, navigating to dashboard');
+          router.push('/dashboard');
+        }
+      } else {
+        // User not found in database, show modal
+        console.log('⚠️ [WalletButton] User not found in DB, showing profile modal');
+        setUserEmail(email);
+        setNeedsEmail(!hasEmail);
+        setShowProfileModal(true);
+      }
+    } catch (error) {
+      console.error('💥 [WalletButton] Error checking user:', error);
+      // On error, show modal to be safe
+      setShowProfileModal(true);
+    } finally {
+      setIsCheckingUser(false);
+    }
+  };
 
   const handleLogin = async () => {
     console.log('🔄 [WalletButton] handleLogin called');
@@ -53,126 +139,69 @@ export function WalletButton({ mobile = false }: WalletButtonProps) {
   const handleLogout = async () => {
     console.log('🔄 [WalletButton] handleLogout called');
     setIsLoggingOut(true)
-    isLoggingOutRef.current = true // Set logout flag
+    isLoggingOutRef.current = true
+    hasHandledPostLogin.current = false
+    setShowProfileModal(false) // Close modal if open
     const toastId = toast.loading('Logging out...')
     
     try {
       await logout()
-      hasHandledPostLogin.current = false
       toast.dismiss(toastId)
       toast.success('Logged out successfully')
-      
-      // Navigate to home page
-      console.log('🏠 [WalletButton] Redirecting to home page after logout');
-      router.push('/')
+      window.location.href = '/'
     } catch (error) {
       console.error('Logout failed:', error)
       toast.dismiss(toastId)
       toast.error('Logout failed. Please try again.')
-      isLoggingOutRef.current = false // Reset flag on error
-    } finally {
+      isLoggingOutRef.current = false
       setIsLoggingOut(false)
     }
   }
+
+  const handleProfileComplete = () => {
+    console.log('✅ [WalletButton] Profile completed, navigating to dashboard');
+    setShowProfileModal(false);
+    router.push('/dashboard');
+  };
 
   // Reset flags when authentication state changes
   useEffect(() => {
     if (!authenticated) {
       console.log('🔓 [WalletButton] User not authenticated, resetting flags');
       hasHandledPostLogin.current = false;
-      // Reset logout flag after a brief delay to ensure navigation completes
-      setTimeout(() => {
-        isLoggingOutRef.current = false;
-      }, 1000);
     }
   }, [authenticated]);
 
-  // Post-login redirect logic - SINGLE SOURCE OF TRUTH
+  // ✅ Post-login logic - Check database and show modal if needed
   useEffect(() => {
     console.log(`🔄 [WalletButton] Post-login effect: ready=${ready}, authenticated=${authenticated}, hasUser=${!!user}, hasHandled=${hasHandledPostLogin.current}, isLoggingOut=${isLoggingOutRef.current}, pathname=${pathname}`);
     
-    // CRITICAL: Don't redirect if we're in the process of logging out
+    // Don't redirect during logout
     if (isLoggingOutRef.current) {
-      console.log(`🚫 [WalletButton] Logout in progress, skipping redirect logic`);
+      console.log(`🚫 [WalletButton] Logout in progress, skipping`);
       return;
     }
 
-    // Must be ready, authenticated, and have user
+    // Wait for Privy to be fully ready AND authenticated AND have user
     if (!ready || !authenticated || !user) {
-      console.log(`⏭️ [WalletButton] Skipping - not ready/authenticated/user`);
+      console.log(`⏭️ [WalletButton] Skipping - Privy not fully ready/authenticated`);
       return;
     }
 
-    // Already handled
+    // Already handled this
     if (hasHandledPostLogin.current) {
       console.log(`⏭️ [WalletButton] Already handled post-login`);
       return;
     }
 
-    // If we're already on dashboard or complete-profile, don't redirect
-    if (pathname === '/dashboard' || pathname === '/complete-profile') {
-      console.log(`📍 [WalletButton] Already on ${pathname}, marking as handled`);
-      hasHandledPostLogin.current = true;
-      return;
-    }
-
-    // If we're on a public page and there are no OAuth params, don't redirect
-    const hasOAuthParams = typeof window !== 'undefined' && 
-      (new URLSearchParams(window.location.search).has('privy_oauth_code') ||
-       new URLSearchParams(window.location.search).has('privy_oauth_state'));
-    
-    if (isPublicPage(pathname) && !hasOAuthParams) {
-      console.log(`🔓 [WalletButton] On public page without OAuth, skipping redirect`);
-      return;
-    }
-    
-    console.log('🔐 [WalletButton] Processing post-login redirect...');
+    // Mark as handled to prevent multiple checks
     hasHandledPostLogin.current = true;
     
-    const performRedirect = async () => {
-      try {
-        // Clean OAuth params from URL first
-        if (hasOAuthParams && typeof window !== 'undefined') {
-          console.log('🧹 [WalletButton] Cleaning OAuth params from URL');
-          window.history.replaceState({}, '', window.location.pathname);
-        }
-
-        const walletAddress = user.wallet?.address
-        console.log(`👛 [WalletButton] Wallet address: ${walletAddress || 'none'}`);
-        
-        if (!walletAddress) {
-          console.log('🏠 [WalletButton] No wallet, redirecting to /complete-profile');
-          router.push('/complete-profile')
-          return
-        }
-        
-        console.log(`🌐 [WalletButton] Fetching /api/auth/user?walletAddress=${walletAddress}`);
-        const response = await fetch(`/api/auth/user?walletAddress=${walletAddress}`)
-        console.log(`📊 [WalletButton] API response status: ${response.status}`);
-        
-        if (response.ok) {
-          const data = await response.json()
-          console.log(`📝 [WalletButton] User data:`, data);
-          
-          if (data.needsProfileCompletion || !data.user?.isProfileComplete) {
-            console.log('📝 [WalletButton] Profile incomplete, redirecting to /complete-profile');
-            router.push('/complete-profile')
-          } else {
-            console.log('✅ [WalletButton] Profile complete, redirecting to /dashboard');
-            router.push('/dashboard')
-          }
-        } else {
-          console.log('⚠️ [WalletButton] API failed, redirecting to /complete-profile');
-          router.push('/complete-profile')
-        }
-      } catch (error) {
-        console.error('💥 [WalletButton] Redirect error:', error);
-        router.push('/complete-profile')
-      }
-    }
+    // Check if this is an OAuth or wallet login and show modal if needed
+    console.log('🔐 [WalletButton] Checking user and showing modal if needed');
+    checkUserAndShowModal(user);
     
-    performRedirect()
-  }, [ready, authenticated, user, router, pathname])
+  }, [ready, authenticated, user, router, pathname]);
 
   const getUserDisplayName = () => {
     if (!user) return 'Guest'
@@ -182,29 +211,62 @@ export function WalletButton({ mobile = false }: WalletButtonProps) {
     return 'User'
   }
 
+  // Extract email from user for modal
+  const getInitialEmail = (): string => {
+    return getUserEmail(user);
+  };
+
+  // Check if user needs to provide email
+  const doesUserNeedEmail = (): boolean => {
+    if (!user) return true;
+    return !hasEmailFromProvider(user);
+  };
+
   // Not authenticated - Show Login button
   if (!authenticated) {
     console.log(`🔓 [WalletButton] Not authenticated, showing login button (mobile=${mobile})`);
     if (mobile) {
       return (
-        <button
-          onClick={handleLogin}
-          className="btn-primary w-full py-3"
-          disabled={!ready}
-        >
-          {!ready ? 'Loading...' : 'Login'}
-        </button>
+        <>
+          <button
+            onClick={handleLogin}
+            className="btn-primary w-full py-3"
+            disabled={!ready}
+          >
+            {!ready ? 'Loading...' : 'Login'}
+          </button>
+          <ProfileModal
+            isOpen={showProfileModal}
+            onClose={() => setShowProfileModal(false)}
+            onComplete={handleProfileComplete}
+            initialEmail={getInitialEmail()}
+            needsEmail={needsEmail}
+            preventClose={true}
+            hideCloseButton={true}
+          />
+        </>
       )
     }
     
     return (
-      <button
-        onClick={handleLogin}
-        className="btn-primary px-6 py-3"
-        disabled={!ready}
-      >
-        {!ready ? 'Loading...' : 'Login'}
-      </button>
+      <>
+        <button
+          onClick={handleLogin}
+          className="btn-primary px-6 py-3"
+          disabled={!ready}
+        >
+          {!ready ? 'Loading...' : 'Login'}
+        </button>
+        <ProfileModal
+          isOpen={showProfileModal}
+          onClose={() => setShowProfileModal(false)}
+          onComplete={handleProfileComplete}
+          initialEmail={getInitialEmail()}
+          needsEmail={needsEmail}
+          preventClose={true}
+          hideCloseButton={true}
+        />
+      </>
     )
   }
 
@@ -212,17 +274,62 @@ export function WalletButton({ mobile = false }: WalletButtonProps) {
   console.log(`✅ [WalletButton] Authenticated, showing user info (mobile=${mobile})`);
   if (mobile) {
     return (
-      <div className="space-y-3">
-        <div className="text-xs text-gray-600 dark:text-gray-400 mb-2">
-          Signed in as
+      <>
+        <div className="space-y-3">
+          <div className="text-xs text-gray-600 dark:text-gray-400 mb-2">
+            Signed in as
+          </div>
+          <div className="font-medium text-text dark:text-dark-text mb-4">
+            {getUserDisplayName()}
+          </div>
+          <button
+            onClick={handleLogout}
+            disabled={isLoggingOut}
+            className="w-full px-4 py-3 border border-gray-900 dark:border-gray-900 text-gray-900 dark:text-gray-900 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors flex items-center justify-center gap-2"
+          >
+            {isLoggingOut ? (
+              <>
+                <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                Logging out...
+              </>
+            ) : (
+              <>
+                <LogOut className="h-4 w-4" />
+                Logout
+              </>
+            )}
+          </button>
         </div>
-        <div className="font-medium text-text dark:text-dark-text mb-4">
-          {getUserDisplayName()}
+        <ProfileModal
+          isOpen={showProfileModal}
+          onClose={() => setShowProfileModal(false)}
+          onComplete={handleProfileComplete}
+          initialEmail={getInitialEmail()}
+          needsEmail={needsEmail}
+          preventClose={true}
+          hideCloseButton={true}
+        />
+      </>
+    )
+  }
+
+  // Desktop authenticated view
+  return (
+    <>
+      <div className="flex items-center space-x-3">
+        <div className="text-right">
+          <div className="text-xs text-text-light dark:text-dark-secondary">
+            Welcome back
+          </div>
+          <div className="text-sm font-medium text-text dark:text-dark-text">
+            {getUserDisplayName()}
+          </div>
         </div>
+
         <button
           onClick={handleLogout}
           disabled={isLoggingOut}
-          className="w-full px-4 py-3 border border-gray-900 dark:border-gray-900 text-gray-900 dark:text-gray-900 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors flex items-center justify-center gap-2"
+          className="px-4 py-2 border border-primary dark:border-primary text-gray-700 dark:text-primary rounded-xl hover:bg-gray-50 dark:hover:bg-gray-300 transition-colors disabled:opacity-50 flex items-center gap-2"
         >
           {isLoggingOut ? (
             <>
@@ -237,38 +344,15 @@ export function WalletButton({ mobile = false }: WalletButtonProps) {
           )}
         </button>
       </div>
-    )
-  }
-
-  // Desktop authenticated view
-  return (
-    <div className="flex items-center space-x-3">
-      <div className="text-right">
-        <div className="text-xs text-text-light dark:text-dark-secondary">
-          Welcome back
-        </div>
-        <div className="text-sm font-medium text-text dark:text-dark-text">
-          {getUserDisplayName()}
-        </div>
-      </div>
-
-      <button
-        onClick={handleLogout}
-        disabled={isLoggingOut}
-        className="px-4 py-2 border border-primary dark:border-primary text-gray-700 dark:text-primary rounded-xl hover:bg-gray-50 dark:hover:bg-gray-300 transition-colors disabled:opacity-50 flex items-center gap-2"
-      >
-        {isLoggingOut ? (
-          <>
-            <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-            Logging out...
-          </>
-        ) : (
-          <>
-            <LogOut className="h-4 w-4" />
-            Logout
-          </>
-        )}
-      </button>
-    </div>
+      <ProfileModal
+        isOpen={showProfileModal}
+        onClose={() => setShowProfileModal(false)}
+        onComplete={handleProfileComplete}
+        initialEmail={getInitialEmail()}
+        needsEmail={needsEmail}
+        preventClose={true}
+        hideCloseButton={true}
+      />
+    </>
   )
 }

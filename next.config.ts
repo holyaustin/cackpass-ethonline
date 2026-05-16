@@ -5,6 +5,8 @@ const nextConfig: NextConfig = {
   
   // ✅ ADDED: Experimental optimizations
   experimental: {
+    // Limits the size of chunks stored in memory during active file changes
+    webpackMemoryOptimizations: true,
     optimizePackageImports: [
       'lucide-react',
       'date-fns',

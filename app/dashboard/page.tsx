@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, lazy, Suspense } from 'react'
 import { usePrivy } from '@privy-io/react-auth'
 import { 
   Ticket, Wallet, Plus, History, Send, Settings, 
@@ -9,9 +9,14 @@ import {
   AlertCircle, Loader2, Shield, Mail, Scan
 } from 'lucide-react'
 import Link from 'next/link'
-import { LoadingSpinner } from '@/components/common/LoadingSpinner'
+import dynamic from 'next/dynamic'
 import { toast } from 'sonner'
-// ❌ REMOVED: import { ethers } from 'ethers'
+
+// Lazy load heavy components
+const LoadingSpinner = dynamic(() => 
+  import('@/components/common/LoadingSpinner').then(mod => ({ default: mod.LoadingSpinner })),
+  { ssr: false }
+)
 
 // USDC ABI - Minimal interface for balanceOf
 const USDC_ABI = [
@@ -24,15 +29,22 @@ const LISK_MAINNET_USDC_ADDRESS = '0xF242275d3a6527d877f2c927a82D9b057609cc71'
 // Lisk Mainnet RPC URL
 const LISK_MAINNET_RPC_URL = 'https://rpc.api.lisk.com'
 
-// ✅ ADDED: Module cache for ethers
-let ethersModuleCache: any = null;
+// Module cache for ethers - lazy load only when needed
+let ethersModuleCache: any = null
+let ethersLoadPromise: Promise<any> | null = null
 
-// ✅ ADDED: Helper function to dynamically load ethers
+// Helper function to dynamically load ethers only once
 async function loadEthers() {
-  if (!ethersModuleCache) {
-    ethersModuleCache = await import('ethers');
+  if (ethersModuleCache) return ethersModuleCache
+  
+  if (!ethersLoadPromise) {
+    ethersLoadPromise = import('ethers').then(module => {
+      ethersModuleCache = module
+      return module
+    })
   }
-  return ethersModuleCache;
+  
+  return ethersLoadPromise
 }
 
 interface DashboardStats {
@@ -42,6 +54,44 @@ interface DashboardStats {
   upcomingEvents: number
   isLoading: boolean
   error: string | null
+}
+
+// Skeleton component for balance card
+function BalanceCardSkeleton() {
+  return (
+    <div className="glass-card rounded-3xl p-6 mb-8 bg-gradient-to-r from-primary to-primary-dark text-white">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex-1">
+          <div className="h-4 w-24 bg-white/20 rounded animate-pulse mb-2"></div>
+          <div className="h-8 w-32 bg-white/20 rounded animate-pulse"></div>
+        </div>
+        <div className="h-12 w-32 bg-white/20 rounded-2xl animate-pulse"></div>
+      </div>
+      <div className="flex gap-3">
+        <div className="flex-1 h-12 bg-white/20 rounded-xl animate-pulse"></div>
+        <div className="flex-1 h-12 bg-white/20 rounded-xl animate-pulse"></div>
+      </div>
+    </div>
+  )
+}
+
+// Skeleton for menu items
+function MenuItemsSkeleton() {
+  return (
+    <div className="space-y-3">
+      {[1, 2, 3, 4].map((i) => (
+        <div key={i} className="glass-card rounded-2xl p-4 h-20 animate-pulse">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-gray-200 dark:bg-gray-700 rounded-xl"></div>
+            <div className="flex-1">
+              <div className="h-4 w-32 bg-gray-200 dark:bg-gray-700 rounded mb-2"></div>
+              <div className="h-3 w-48 bg-gray-200 dark:bg-gray-700 rounded"></div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 // Helper function to extract wallet address from Privy user
@@ -75,7 +125,7 @@ function getWalletAddressFromUser(user: any): string | null {
   return null
 }
 
-// ✅ UPDATED: Function to fetch USDC balance from Lisk Mainnet with dynamic ethers
+// Function to fetch USDC balance from Lisk Mainnet with dynamic ethers
 async function fetchUSDCBalance(walletAddress: string): Promise<{
   usdcBalance: string;
   usdBalance: string;
@@ -85,7 +135,8 @@ async function fetchUSDCBalance(walletAddress: string): Promise<{
   try {
     console.log('💰 Fetching USDC balance for:', walletAddress)
     
-    const { ethers } = await loadEthers();
+    // Dynamically load ethers only when needed
+    const { ethers } = await loadEthers()
     const provider = new ethers.JsonRpcProvider(LISK_MAINNET_RPC_URL)
     
     try {
@@ -110,8 +161,11 @@ async function fetchUSDCBalance(walletAddress: string): Promise<{
       provider
     )
     
-    const rawBalance = await usdcContract.balanceOf(walletAddress)
-    const decimals = await usdcContract.decimals()
+    // Parallel fetch for better performance
+    const [rawBalance, decimals] = await Promise.all([
+      usdcContract.balanceOf(walletAddress),
+      usdcContract.decimals()
+    ])
     
     const usdcBalance = ethers.formatUnits(rawBalance, decimals)
     const usdcBalanceFormatted = parseFloat(usdcBalance).toFixed(2)
@@ -131,8 +185,7 @@ async function fetchUSDCBalance(walletAddress: string): Promise<{
   } catch (error: any) {
     console.error('❌ Error fetching USDC balance:', {
       error: error.message,
-      code: error.code,
-      stack: error.stack
+      code: error.code
     })
     return {
       usdcBalance: '0.00',
@@ -150,17 +203,23 @@ export default function DashboardPage() {
     usdBalance: '0.00',
     ticketCount: 0,
     upcomingEvents: 0,
-    isLoading: true,
+    isLoading: false,
     error: null
   })
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [walletAddress, setWalletAddress] = useState<string | null>(null)
   const [balanceUpdateTime, setBalanceUpdateTime] = useState<string>('')
   const [userEmail, setUserEmail] = useState<string | null>(null)
+  const [pageLoaded, setPageLoaded] = useState(false)
 
   // Events the user can scan (organiser or scanner)
   const [scanEvents, setScanEvents] = useState<any[]>([])
   const [loadingScanEvents, setLoadingScanEvents] = useState(false)
+
+  // Set page as loaded immediately for instant render
+  useEffect(() => {
+    setPageLoaded(true)
+  }, [])
 
   // Fetch wallet address and email when user is authenticated
   useEffect(() => {
@@ -172,42 +231,56 @@ export default function DashboardPage() {
     }
   }, [authenticated, ready, user])
 
-  // Fetch balance when wallet address changes
+  // Fetch balance when wallet address changes - with debounce
   useEffect(() => {
-    if (walletAddress) {
-      fetchDashboardData()
-    } else if (authenticated && ready) {
-      setStats(prev => ({
-        ...prev,
-        isLoading: false,
-        error: 'No wallet address found. Please connect your wallet.'
-      }))
+    if (!walletAddress) {
+      if (authenticated && ready) {
+        setStats(prev => ({
+          ...prev,
+          isLoading: false,
+          error: 'No wallet address found. Please connect your wallet.'
+        }))
+      }
+      return
     }
+
+    // Delay balance fetch slightly to prioritize page render
+    const timer = setTimeout(() => {
+      fetchDashboardData()
+    }, 100)
+
+    return () => clearTimeout(timer)
   }, [walletAddress, authenticated, ready])
 
-  // Fetch scan-authorised events
+  // Fetch scan-authorised events - low priority, fetch after balance
   useEffect(() => {
-    const fetchScanEvents = async () => {
-      if (!walletAddress && !userEmail) return
-      setLoadingScanEvents(true)
-      try {
-        const res = await fetch(`/api/events/scan-authorised`, {
-          headers: {
-            'x-wallet-address': walletAddress || '',
-            'x-user-email': userEmail || '',
-          },
-        })
-        const data = await res.json()
-        if (data.events) {
-          setScanEvents(data.events)
+    if (!walletAddress && !userEmail) return
+    
+    // Delay this fetch to not block critical UI
+    const timer = setTimeout(() => {
+      const fetchScanEvents = async () => {
+        setLoadingScanEvents(true)
+        try {
+          const res = await fetch(`/api/events/scan-authorised`, {
+            headers: {
+              'x-wallet-address': walletAddress || '',
+              'x-user-email': userEmail || '',
+            },
+          })
+          const data = await res.json()
+          if (data.events) {
+            setScanEvents(data.events)
+          }
+        } catch (error) {
+          console.error('Failed to fetch scan events', error)
+        } finally {
+          setLoadingScanEvents(false)
         }
-      } catch (error) {
-        console.error('Failed to fetch scan events', error)
-      } finally {
-        setLoadingScanEvents(false)
       }
-    }
-    fetchScanEvents()
+      fetchScanEvents()
+    }, 500) // Fetch after 500ms to prioritize balance
+
+    return () => clearTimeout(timer)
   }, [walletAddress, userEmail])
 
   const fetchDashboardData = async (showToast = false) => {
@@ -227,13 +300,28 @@ export default function DashboardPage() {
     setStats(prev => ({ ...prev, isLoading: true, error: null }))
 
     try {
-      const balanceData = await fetchUSDCBalance(walletAddress)
+      // Fetch balance in background
+      const balancePromise = fetchUSDCBalance(walletAddress)
+      
+      // Simulate other dashboard data (replace with actual API calls)
+      const statsPromise = Promise.resolve({
+        ticketCount: 3,
+        upcomingEvents: 2
+      })
+
+      // Fetch in parallel
+      const [balanceData, statsData] = await Promise.all([
+        balancePromise,
+        statsPromise
+      ])
       
       if (balanceData.success) {
         setStats(prev => ({
           ...prev,
           usdcBalance: balanceData.usdcBalance,
           usdBalance: balanceData.usdBalance,
+          ticketCount: statsData.ticketCount,
+          upcomingEvents: statsData.upcomingEvents,
           isLoading: false,
           error: null
         }))
@@ -250,6 +338,8 @@ export default function DashboardPage() {
       } else {
         setStats(prev => ({
           ...prev,
+          ticketCount: statsData.ticketCount,
+          upcomingEvents: statsData.upcomingEvents,
           isLoading: false,
           error: balanceData.error || 'Failed to fetch balance'
         }))
@@ -258,13 +348,6 @@ export default function DashboardPage() {
           toast.error('Failed to update balance')
         }
       }
-      
-      // Placeholder for other dashboard data
-      setStats(prev => ({
-        ...prev,
-        ticketCount: 3,
-        upcomingEvents: 2
-      }))
       
     } catch (error: any) {
       console.error('❌ Failed to fetch dashboard data:', error)
@@ -299,10 +382,13 @@ export default function DashboardPage() {
     fetchDashboardData(true)
   }
 
+  // Show loading only for auth, not for the whole page
   if (!ready) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <LoadingSpinner size="lg" text="Loading dashboard..." />
+        <Suspense fallback={<div>Loading...</div>}>
+          <LoadingSpinner size="lg" text="Loading dashboard..." />
+        </Suspense>
       </div>
     )
   }
@@ -330,7 +416,7 @@ export default function DashboardPage() {
 
   const userName = user?.email?.address?.split('@')[0] || user?.google?.name || 'User'
 
-  // Dashboard menu items
+  // Dashboard menu items - static data
   const menuItems = [
     {
       title: 'My Tickets',
@@ -410,7 +496,7 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-950">
       <div className="container mx-auto px-4 py-6 max-w-6xl">
-        {/* Header */}
+        {/* Header - Renders immediately */}
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-2">
             <div className="p-2 bg-primary/10 rounded-lg">
@@ -425,85 +511,85 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Balance Card */}
-        <div className="glass-card rounded-3xl p-6 mb-8 bg-gradient-to-r from-primary to-primary-dark text-white font-extrabold">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <div className="flex items-center gap-3 mb-2">
-                <p className="text-sm opacity-90">Total Balance</p>
-                <button 
-                  onClick={refreshBalance}
-                  disabled={isRefreshing || stats.isLoading}
-                  className="p-1 hover:bg-white/20 rounded-md transition-colors disabled:opacity-50"
-                  title="Refresh balance"
-                >
-                  <RefreshCw className={`h-3 w-3 ${isRefreshing ? 'animate-spin' : ''}`} />
-                </button>
-                {balanceUpdateTime && (
-                  <span className="text-xs opacity-70">Updated at {balanceUpdateTime}</span>
+        {/* Balance Card - Show skeleton while loading */}
+        {stats.isLoading && !stats.usdcBalance ? (
+          <BalanceCardSkeleton />
+        ) : (
+          <div className="glass-card rounded-3xl p-6 mb-8 bg-gradient-to-r from-primary to-primary-dark text-white font-extrabold">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <div className="flex items-center gap-3 mb-2">
+                  <p className="text-sm opacity-90">Total Balance</p>
+                  <button 
+                    onClick={refreshBalance}
+                    disabled={isRefreshing || stats.isLoading}
+                    className="p-1 hover:bg-white/20 rounded-md transition-colors disabled:opacity-50"
+                    title="Refresh balance"
+                  >
+                    <RefreshCw className={`h-3 w-3 ${isRefreshing ? 'animate-spin' : ''}`} />
+                  </button>
+                  {balanceUpdateTime && (
+                    <span className="text-xs opacity-70">Updated at {balanceUpdateTime}</span>
+                  )}
+                </div>
+                
+                {stats.error ? (
+                  <div className="flex items-center gap-2 text-yellow-300">
+                    <AlertCircle className="h-4 w-4" />
+                    <p className="text-sm">{stats.error}</p>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="flex items-baseline gap-2">
+                      <p className="text-3xl font-extrabold">${stats.usdBalance}</p>
+                      <p className="text-sm opacity-80 font-extrabold">USDC</p>
+                    </div>
+                    <p className="text-xs opacity-70 mt-2 font-extrabold">USDC on Lisk Mainnet (1:1 with USD)</p>
+                  </div>
                 )}
               </div>
               
-              {stats.isLoading ? (
-                <div className="flex items-center gap-2">
-                  <div className="h-8 w-32 bg-white/20 rounded animate-pulse"></div>
-                </div>
-              ) : stats.error ? (
-                <div className="flex items-center gap-2 text-yellow-300">
-                  <AlertCircle className="h-4 w-4" />
-                  <p className="text-sm">{stats.error}</p>
-                </div>
-              ) : (
-                <div>
-                  <div className="flex items-baseline gap-2">
-                    <p className="text-3xl font-extrabold">${stats.usdBalance}</p>
-                    <p className="text-sm opacity-80 font-extrabold">USDC</p>
+              <div className="flex items-center gap-3 p-3 bg-white/20 rounded-2xl backdrop-blur-sm">
+                <Wallet className="h-6 w-6" />
+                {walletAddress ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-mono max-w-[120px] truncate">
+                      {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
+                    </span>
+                    <button 
+                      onClick={copyWalletAddress}
+                      className="p-1 hover:bg-white/20 rounded-md transition-colors"
+                      title="Copy wallet address"
+                    >
+                      <Copy className="h-3 w-3" />
+                    </button>
                   </div>
-                  <p className="text-xs opacity-70 mt-2 font-extrabold">USDC on Lisk Mainnet (1:1 with USD)</p>
-                </div>
-              )}
+                ) : (
+                  <span className="text-sm opacity-70">No wallet</span>
+                )}
+              </div>
             </div>
             
-            <div className="flex items-center gap-3 p-3 bg-white/20 rounded-2xl backdrop-blur-sm">
-              <Wallet className="h-6 w-6" />
-              {walletAddress ? (
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-mono max-w-[120px] truncate">
-                    {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
-                  </span>
-                  <button 
-                    onClick={copyWalletAddress}
-                    className="p-1 hover:bg-white/20 rounded-md transition-colors"
-                    title="Copy wallet address"
-                  >
-                    <Copy className="h-3 w-3" />
-                  </button>
-                </div>
-              ) : (
-                <span className="text-sm opacity-70">No wallet</span>
-              )}
+            <div className="flex gap-3 text-lg">
+              <Link 
+                href="/dashboard/create-ticket"
+                className="flex-1 py-3 bg-white text-primary font-semibold rounded-xl text-center hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+              >
+                <Plus className="h-4 w-4" />
+                Create Ticket
+              </Link>
+              <Link 
+                href="/dashboard/wallet"
+                className="flex-1 py-3 bg-white/20 text-white rounded-xl text-center hover:bg-white/30 transition-colors flex items-center justify-center gap-2"
+              >
+                <CreditCard className="h-4 w-4" />
+                Fund Wallet
+              </Link>
             </div>
           </div>
-          
-          <div className="flex gap-3 text-lg">
-            <Link 
-              href="/dashboard/create-ticket"
-              className="flex-1 py-3 bg-white text-primary font-semibold rounded-xl text-center hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
-            >
-              <Plus className="h-4 w-4" />
-              Create Ticket
-            </Link>
-            <Link 
-              href="/dashboard/wallet"
-              className="flex-1 py-3 bg-white/20 text-white rounded-xl text-center hover:bg-white/30 transition-colors flex items-center justify-center gap-2"
-            >
-              <CreditCard className="h-4 w-4" />
-              Fund Wallet
-            </Link>
-          </div>
-        </div>
+        )}
 
-        {/* Quick Actions Menu */}
+        {/* Quick Actions Menu - Renders immediately */}
         <div className="space-y-3">
           <h2 className="text-lg font-semibold mb-4">Quick Actions</h2>
           {menuItems.map((item) => (
@@ -539,57 +625,68 @@ export default function DashboardPage() {
           ))}
         </div>
 
-        {/* Events You Can Scan – only shown if there are upcoming events */}
+        {/* Events You Can Scan – lazy loaded */}
         {showScanSection && (
           <div className="mt-8">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold">Events You Can Scan</h2>
             </div>
             <div className="space-y-3">
-              {upcomingScanEvents.map((ev) => (
-                <div key={ev._id} className="glass-card rounded-2xl p-4 flex items-center justify-between flex-wrap gap-3">
+              {loadingScanEvents ? (
+                <div className="glass-card rounded-2xl p-4 h-20 animate-pulse">
                   <div className="flex items-center gap-3">
-                    {/* Visual icon for identification */}
-                    <div className="w-10 h-10 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
-                      <Scan className="h-5 w-5 text-green-600 dark:text-green-400" />
+                    <div className="w-10 h-10 bg-gray-200 dark:bg-gray-700 rounded-full"></div>
+                    <div className="flex-1">
+                      <div className="h-4 w-32 bg-gray-200 dark:bg-gray-700 rounded mb-2"></div>
+                      <div className="h-3 w-24 bg-gray-200 dark:bg-gray-700 rounded"></div>
                     </div>
-                    <div>
-                      <h3 className="font-semibold">{ev.title}</h3>
-                      <p className="text-sm text-gray-500">
-                        {new Date(ev.startDate).toLocaleDateString()}
-                      </p>
-                      {ev.isOrganizer && (
-                        <span className="inline-block text-xs text-primary mt-1 bg-primary/10 px-2 py-0.5 rounded-full">
-                          Organizer
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    {ev.isOrganizer && (
-                      <Link
-                        href={`/dashboard/event-scanners/${ev._id}`}
-                        className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-2"
-                      >
-                        <Mail className="h-4 w-4" />
-                        Manage Scanners
-                      </Link>
-                    )}
-                    <Link
-                      href={`/events/${ev._id}/scan`}
-                      className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors flex items-center gap-2"
-                    >
-                      <QrCode className="h-4 w-4" />
-                      Scan Tickets
-                    </Link>
                   </div>
                 </div>
-              ))}
+              ) : (
+                upcomingScanEvents.map((ev) => (
+                  <div key={ev._id} className="glass-card rounded-2xl p-4 flex items-center justify-between flex-wrap gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+                        <Scan className="h-5 w-5 text-green-600 dark:text-green-400" />
+                      </div>
+                      <div>
+                        <h3 className="font-semibold">{ev.title}</h3>
+                        <p className="text-sm text-gray-500">
+                          {new Date(ev.startDate).toLocaleDateString()}
+                        </p>
+                        {ev.isOrganizer && (
+                          <span className="inline-block text-xs text-primary mt-1 bg-primary/10 px-2 py-0.5 rounded-full">
+                            Organizer
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      {ev.isOrganizer && (
+                        <Link
+                          href={`/dashboard/event-scanners/${ev._id}`}
+                          className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-2"
+                        >
+                          <Mail className="h-4 w-4" />
+                          Manage Scanners
+                        </Link>
+                      )}
+                      <Link
+                        href={`/events/${ev._id}/scan`}
+                        className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors flex items-center gap-2"
+                      >
+                        <QrCode className="h-4 w-4" />
+                        Scan Tickets
+                      </Link>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         )}
 
-        {/* Events Quick Access */}
+        {/* Events Quick Access - Renders immediately */}
         <div className="mt-8">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold">Discover Events</h2>

@@ -39,7 +39,7 @@ export function Header() {
 
   console.log(`🏗️ [Header] Rendering: pathname=${pathname}, isAuthReady=${isAuthReady}, shouldLoadWallet=${shouldLoadWallet}`);
 
-  // Check for OAuth params on mount - DON'T clean them
+  // Check for OAuth params on mount - DON'T CLEAN THEM
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -50,6 +50,7 @@ export function Header() {
         console.log('🔐 [Header] OAuth callback detected, forcing wallet load');
         setShouldLoadWallet(true);
         window.dispatchEvent(new CustomEvent('load-auth'));
+        // ❌ REMOVED: DO NOT CLEAN URL HERE - Let WalletButton handle it
       }
     }
   }, []);

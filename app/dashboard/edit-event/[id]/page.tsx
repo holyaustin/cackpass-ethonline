@@ -421,14 +421,14 @@ export default function EditEventPage() {
       )
     } else if (locationType === 'zoom' || locationType === 'google_meet') {
       return (
-        <div className="space-y-4">
+        <div className="space-y-4 bg-primary p-4 rounded-lg">
           <div><label className="block text-sm font-medium mb-2">Meeting ID</label><input type="text" value={locationDetails.meetingId || ''} onChange={(e) => handleLocationDetailsChange('meetingId', e.target.value)} className="w-full px-4 py-3 border rounded-xl" /></div>
           <div><label className="block text-sm font-medium mb-2">Password (optional)</label><input type="text" value={locationDetails.password || ''} onChange={(e) => handleLocationDetailsChange('password', e.target.value)} className="w-full px-4 py-3 border rounded-xl" /></div>
         </div>
       )
     } else if (locationType === 'custom_link') {
       return (
-        <div><label className="block text-sm font-medium mb-2">Custom Virtual Link</label><input type="url" value={locationDetails.virtualLink || ''} onChange={(e) => handleLocationDetailsChange('virtualLink', e.target.value)} className="w-full px-4 py-3 border rounded-xl" /></div>
+        <div className="bg-primary p-4 rounded-lg"><label className="block text-sm font-medium mb-2">Custom Virtual Link</label><input type="url" value={locationDetails.virtualLink || ''} onChange={(e) => handleLocationDetailsChange('virtualLink', e.target.value)} className="w-full px-4 py-3 border rounded-xl" /></div>
       )
     }
     return null
@@ -499,7 +499,7 @@ export default function EditEventPage() {
               ))}
             </div>
             <div className="p-6 border rounded-xl bg-white">{renderLocationInput()}</div>
-            <div className="mt-4 p-4 bg-blue-50 rounded-lg">
+            <div className="mt-4 p-4 bg-navy-500 rounded-lg">
               <div className="text-sm font-medium mb-1">Location Preview</div>
               <div className="flex items-center gap-2"><MapPin className="h-4 w-4 text-gray-400" /><span>{formatLocation()}</span></div>
             </div>

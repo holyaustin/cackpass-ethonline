@@ -14,7 +14,7 @@ const PUBLIC_PAGES = [
   '/terms',
   '/payment/success',
   '/payment/failed',
-  '/complete-profile',
+  //'/complete-profile',
 ];
 
 function needsAuth(pathname: string): boolean {
