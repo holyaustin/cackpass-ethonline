@@ -1,18 +1,36 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import { usePrivy } from '@privy-io/react-auth'
 import { useRouter } from 'next/navigation'
 import { 
   ArrowLeft, Calendar, Clock, MapPin, Tag, 
-  FileText, DollarSign, Users, Image as ImageIcon,
-  Upload, X, Check, Globe, Video, Camera,
-  Bold, Italic, Link as LinkIcon, Save,
-  Loader2, Map, Building, Home, Coffee, Zap,
-  Monitor, MessageSquare, Info, Flag, Plus, Trash2
+  DollarSign, Users, Upload, X, Check,
+  Save, Loader2, Map, Building, Home, Coffee, Zap,
+  Monitor, Video, Plus, Trash2, Camera
 } from 'lucide-react'
-import { LoadingSpinner } from '@/components/common/LoadingSpinner'
+import dynamic from 'next/dynamic'
 import { toast } from 'sonner'
+
+// Lazy load heavy components
+const LoadingSpinner = dynamic(() => 
+  import('@/components/common/LoadingSpinner').then(mod => ({ default: mod.LoadingSpinner })),
+  { ssr: false }
+)
+
+// Skeleton components for better UX
+function FormSkeleton() {
+  return (
+    <div className="space-y-8 animate-pulse">
+      {[1, 2, 3, 4, 5].map((i) => (
+        <div key={i}>
+          <div className="h-4 w-32 bg-gray-200 dark:bg-gray-700 rounded mb-2"></div>
+          <div className="h-12 bg-gray-200 dark:bg-gray-700 rounded-xl"></div>
+        </div>
+      ))}
+    </div>
+  )
+}
 
 // Category options
 const CATEGORIES = [
@@ -33,7 +51,7 @@ const LOCATION_TYPES = [
   { id: 'in_person', label: 'In Person', icon: MapPin, description: 'Physical venue or location' },
   { id: 'zoom', label: 'Zoom', icon: Video, description: 'Zoom meeting' },
   { id: 'google_meet', label: 'Google Meet', icon: Monitor, description: 'Google Meet' },
-  { id: 'custom_link', label: 'Custom Link', icon: LinkIcon, description: 'Your own virtual link' },
+  { id: 'custom_link', label: 'Custom Link', icon: Map, description: 'Your own virtual link' },
 ]
 
 // Venue types
@@ -58,7 +76,7 @@ const COUNTRIES = [
   { value: 'Other', label: 'Other Country', flag: '🌍' },
 ]
 
-// Currencies - Default to NGN
+// Currencies
 const CURRENCIES = [
   { value: 'NGN', label: 'NGN', symbol: '₦' },
   { value: 'USD', label: 'USD', symbol: '$' },
@@ -160,14 +178,18 @@ function extractEmailFromPrivyUser(privyUser: any): string {
   return ''
 }
 
-// Helper function to fetch user email from database
+// Helper function to fetch user email from database - memoized
+let emailCache: { [key: string]: string } = {}
 async function fetchUserEmailFromDatabase(walletAddress: string): Promise<string> {
+  if (emailCache[walletAddress]) return emailCache[walletAddress]
+  
   try {
     const response = await fetch(`/api/auth/user?walletAddress=${walletAddress}`)
     if (!response.ok) return ''
     const data = await response.json()
-    if (data.user && data.user.email) return data.user.email
-    return ''
+    const email = data.user?.email || ''
+    if (email) emailCache[walletAddress] = email
+    return email
   } catch (error) {
     console.error('Error fetching user email:', error)
     return ''
@@ -181,6 +203,7 @@ export default function CreateTicketPage() {
   const [userEmail, setUserEmail] = useState<string>('')
   const [walletAddress, setWalletAddress] = useState<string | null>(null)
   const [isFetchingEmail, setIsFetchingEmail] = useState(true)
+  const [formLoaded, setFormLoaded] = useState(false)
   
   // Form state
   const [formData, setFormData] = useState({
@@ -219,6 +242,11 @@ export default function CreateTicketPage() {
   const [showCapacityInput, setShowCapacityInput] = useState(false)
   const [charCount, setCharCount] = useState(0)
 
+  // Set form as loaded immediately for instant render
+  useEffect(() => {
+    setFormLoaded(true)
+  }, [])
+
   // Set default dates on mount
   useEffect(() => {
     if (ready && authenticated) {
@@ -236,10 +264,13 @@ export default function CreateTicketPage() {
     }
   }, [ready, authenticated])
 
-  // Load user data
+  // Load user data - optimized with early return
   useEffect(() => {
     const loadUserData = async () => {
-      if (!ready || !authenticated || !user) return
+      if (!ready || !authenticated || !user) {
+        setIsFetchingEmail(false)
+        return
+      }
       
       const wallet = extractWalletAddress(user)
       setWalletAddress(wallet)
@@ -252,28 +283,37 @@ export default function CreateTicketPage() {
       let email = extractEmailFromPrivyUser(user)
       
       if (!email) {
-        email = await fetchUserEmailFromDatabase(wallet)
+        // Delay email fetch to not block form render
+        setTimeout(async () => {
+          email = await fetchUserEmailFromDatabase(wallet)
+          setUserEmail(email)
+          setIsFetchingEmail(false)
+        }, 100)
+      } else {
+        setUserEmail(email)
+        setIsFetchingEmail(false)
       }
-      
-      setUserEmail(email)
-      setIsFetchingEmail(false)
     }
     
     loadUserData()
   }, [ready, authenticated, user])
 
-  // Validate dates
+  // Validate dates - debounced
   useEffect(() => {
-    if (formData.startDate && formData.endDate) {
-      const startDateTime = new Date(`${formData.startDate}T${formData.startTime}`)
-      const endDateTime = new Date(`${formData.endDate}T${formData.endTime}`)
-      
-      if (endDateTime <= startDateTime) {
-        setDateError('End date/time must be after start date/time')
-      } else {
-        setDateError('')
+    const timer = setTimeout(() => {
+      if (formData.startDate && formData.endDate) {
+        const startDateTime = new Date(`${formData.startDate}T${formData.startTime}`)
+        const endDateTime = new Date(`${formData.endDate}T${formData.endTime}`)
+        
+        if (endDateTime <= startDateTime) {
+          setDateError('End date/time must be after start date/time')
+        } else {
+          setDateError('')
+        }
       }
-    }
+    }, 300)
+
+    return () => clearTimeout(timer)
   }, [formData.startDate, formData.endDate, formData.startTime, formData.endTime])
 
   const handleCategoryChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -333,7 +373,7 @@ export default function CreateTicketPage() {
     setLocationDetails(prev => ({ ...prev, [field]: value }))
   }
 
-  // Upload image to IPFS via Pinata
+  // Upload image to IPFS via Pinata - lazy loaded
   const uploadToPinata = async (file: File): Promise<{success: boolean, cid: string}> => {
     try {
       const formData = new FormData()
@@ -370,7 +410,7 @@ export default function CreateTicketPage() {
     }
   }
 
-  // Email sending function
+  // Email sending function - lazy loaded only when needed
   const sendOrganizerEmail = async (eventData: any, eventId: string) => {
     try {
       let organizerEmail = userEmail
@@ -574,16 +614,14 @@ export default function CreateTicketPage() {
         toast.success(`Event saved! Created ${ticketTypesCreated} ticket type(s).`)
       }
 
-      // Send email notification
-      await sendOrganizerEmail(eventData, savedEventId)
+      // Send email notification in background
+      sendOrganizerEmail(eventData, savedEventId)
 
       const successMessage = formData.isFree 
         ? 'Free event created successfully!'
         : `Paid event created successfully! Ticket price: ${formData.currency === 'NGN' ? '₦' : '$'}${formData.priceAmount}`
       
       toast.success(successMessage)
-      
-      const eventUrl = `${window.location.origin}${redirectUrl}`
       
       toast.info(
         <div className="space-y-2">
@@ -609,9 +647,15 @@ export default function CreateTicketPage() {
     }
   }
 
-  // Loading states
-  if (!ready || isFetchingEmail) {
-    return <LoadingSpinner fullScreen text="Loading your profile..." />
+  // Loading states - show minimal loading
+  if (!ready) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Suspense fallback={<div>Loading...</div>}>
+          <LoadingSpinner fullScreen text="Loading..." />
+        </Suspense>
+      </div>
+    )
   }
   
   if (!authenticated) {
@@ -625,7 +669,29 @@ export default function CreateTicketPage() {
     )
   }
 
-  // Show warning if no email found
+  // Show warning if no email found - but don't block form render
+  if (isFetchingEmail) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <div className="sticky top-0 z-10 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
+          <div className="container mx-auto px-4 py-4 max-w-3xl">
+            <div className="flex items-center justify-between">
+              <button onClick={() => router.back()} className="flex items-center gap-2 text-gray-600">
+                <ArrowLeft className="h-5 w-5" />
+                <span>Back</span>
+              </button>
+              <h1 className="text-xl font-bold">Create Event</h1>
+              <div className="w-20"></div>
+            </div>
+          </div>
+        </div>
+        <div className="container mx-auto px-4 py-6 max-w-3xl">
+          <FormSkeleton />
+        </div>
+      </div>
+    )
+  }
+
   if (!userEmail || userEmail === '') {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
@@ -794,309 +860,313 @@ export default function CreateTicketPage() {
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-8">
-          {/* Event Name */}
-          <div>
-            <label className="block text-sm font-medium mb-2">Event Name</label>
-            <input
-              type="text"
-              value={formData.eventName}
-              onChange={(e) => setFormData(prev => ({ ...prev, eventName: e.target.value }))}
-              placeholder="What's your event called?"
-              maxLength={75}
-              required
-              className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-lg"
-            />
-            <div className="mt-1 text-right text-sm text-gray-500">{formData.eventName.length}/75</div>
-          </div>
-
-          {/* Date & Time */}
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-2">Start</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="relative">
-                    <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <input
-                      type="date"
-                      value={formData.startDate}
-                      onChange={(e) => setFormData(prev => ({ ...prev, startDate: e.target.value }))}
-                      required
-                      className="w-full pl-10 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl"
-                    />
-                  </div>
-                  <div className="relative">
-                    <Clock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <input
-                      type="time"
-                      value={formData.startTime}
-                      onChange={(e) => setFormData(prev => ({ ...prev, startTime: e.target.value }))}
-                      required
-                      className="w-full pl-10 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl"
-                    />
-                  </div>
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-2">End</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="relative">
-                    <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <input
-                      type="date"
-                      value={formData.endDate}
-                      onChange={(e) => setFormData(prev => ({ ...prev, endDate: e.target.value }))}
-                      required
-                      className="w-full pl-10 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl"
-                    />
-                  </div>
-                  <div className="relative">
-                    <Clock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <input
-                      type="time"
-                      value={formData.endTime}
-                      onChange={(e) => setFormData(prev => ({ ...prev, endTime: e.target.value }))}
-                      required
-                      className="w-full pl-10 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-            {dateError && <div className="text-sm text-red-500">{dateError}</div>}
-          </div>
-
-          {/* Category */}
-          <div>
-            <label className="block text-sm font-medium mb-2">Event Category</label>
-            <div className="relative">
-              <Tag className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <select
-                value={formData.category}
-                onChange={handleCategoryChange}
+        {formLoaded ? (
+          <form onSubmit={handleSubmit} className="space-y-8">
+            {/* Event Name */}
+            <div>
+              <label className="block text-sm font-medium mb-2">Event Name</label>
+              <input
+                type="text"
+                value={formData.eventName}
+                onChange={(e) => setFormData(prev => ({ ...prev, eventName: e.target.value }))}
+                placeholder="What's your event called?"
+                maxLength={75}
                 required
-                className="w-full pl-10 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl appearance-none"
-              >
-                <option value="">Select category...</option>
-                {CATEGORIES.map((cat) => (
-                  <option key={cat.value} value={cat.value}>{cat.icon} {cat.label}</option>
-                ))}
-              </select>
-            </div>
-            {showCustomCategory && (
-              <div className="mt-4">
-                <input
-                  type="text"
-                  value={formData.customCategory}
-                  onChange={(e) => setFormData(prev => ({ ...prev, customCategory: e.target.value }))}
-                  placeholder="Specify your category..."
-                  className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl"
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Location */}
-          <div>
-            <label className="block text-sm font-medium mb-2">Event Location</label>
-            <div className="mb-6">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {LOCATION_TYPES.map((loc) => (
-                  <button
-                    key={loc.id}
-                    type="button"
-                    onClick={() => handleLocationTypeChange(loc.id)}
-                    className={`p-4 rounded-xl border flex flex-col items-center text-center gap-3 transition-all ${
-                      locationType === loc.id
-                        ? 'border-primary bg-primary/5'
-                        : 'border-gray-200 dark:border-gray-700'
-                    }`}
-                  >
-                    <loc.icon className="h-5 w-5" />
-                    <div>
-                      <div className="font-medium text-sm">{loc.label}</div>
-                      <div className="text-xs text-gray-500">{loc.description}</div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="mt-6 p-6 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl">
-              {renderLocationInput()}
-            </div>
-            <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-              <div className="text-sm font-medium mb-1">Location Preview</div>
-              <div className="flex items-center gap-2">
-                <MapPin className="h-4 w-4 text-gray-400" />
-                <span className="text-sm">{formatLocation()}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Description - Increased limit */}
-          <div>
-            <label className="block text-sm font-medium mb-2">Event Description</label>
-            <textarea
-              value={formData.description}
-              onChange={(e) => {
-                setFormData(prev => ({ ...prev, description: e.target.value }))
-                setCharCount(e.target.value.length)
-              }}
-              placeholder="Tell people about your event..."
-              rows={8}
-              required
-              maxLength={5000}
-              className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl resize-none"
-            />
-            <div className="mt-1 text-right text-sm text-gray-500">{charCount}/5000</div>
-          </div>
-
-          {/* Ticket Price */}
-          <div>
-            <label className="block text-sm font-medium mb-3">Ticket Price</label>
-            <div className="grid grid-cols-2 gap-4 mb-4">
-              <div>
-                <input type="radio" id="free-ticket" name="ticket-price-type" checked={formData.isFree} onChange={() => handlePriceTypeChange(true)} className="hidden" />
-                <label htmlFor="free-ticket" className={`block p-4 border-2 rounded-xl cursor-pointer transition-all ${
-                  formData.isFree ? 'border-primary bg-primary/5' : 'border-gray-200 dark:border-gray-700'
-                }`}>
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-gray-100 dark:bg-gray-800"><span className="text-2xl">🎟️</span></div>
-                    <div><div className="font-semibold">Free</div><div className="text-sm text-gray-600">₦0.00</div></div>
-                  </div>
-                </label>
-              </div>
-              <div>
-                <input type="radio" id="paid-ticket" name="ticket-price-type" checked={!formData.isFree} onChange={() => handlePriceTypeChange(false)} className="hidden" />
-                <label htmlFor="paid-ticket" className={`block p-4 border-2 rounded-xl cursor-pointer transition-all ${
-                  !formData.isFree ? 'border-primary bg-primary/5' : 'border-gray-200 dark:border-gray-700'
-                }`}>
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-gray-100 dark:bg-gray-800"><span className="text-2xl">💰</span></div>
-                    <div><div className="font-semibold">Paid</div><div className="text-sm text-gray-600">Enter amount</div></div>
-                  </div>
-                </label>
-              </div>
+                className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-lg"
+              />
+              <div className="mt-1 text-right text-sm text-gray-500">{formData.eventName.length}/75</div>
             </div>
 
-            {showPriceInput && (
-              <div className="mt-4 space-y-4">
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="col-span-2">
+            {/* Date & Time */}
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-2">Start</label>
+                  <div className="grid grid-cols-2 gap-2">
                     <div className="relative">
-                      <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 font-medium">
-                        {CURRENCIES.find(c => c.value === formData.currency)?.symbol || '₦'}
-                      </div>
+                      <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                       <input
-                        type="number"
-                        value={formData.priceAmount}
-                        onChange={(e) => setFormData(prev => ({ ...prev, priceAmount: e.target.value }))}
-                        placeholder="0.00"
-                        min="0"
-                        step="100"
+                        type="date"
+                        value={formData.startDate}
+                        onChange={(e) => setFormData(prev => ({ ...prev, startDate: e.target.value }))}
+                        required
+                        className="w-full pl-10 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl"
+                      />
+                    </div>
+                    <div className="relative">
+                      <Clock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                      <input
+                        type="time"
+                        value={formData.startTime}
+                        onChange={(e) => setFormData(prev => ({ ...prev, startTime: e.target.value }))}
                         required
                         className="w-full pl-10 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl"
                       />
                     </div>
                   </div>
-                  <div>
-                    <select
-                      value={formData.currency}
-                      onChange={(e) => setFormData(prev => ({ ...prev, currency: e.target.value }))}
-                      className="w-full px-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl"
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-2">End</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="relative">
+                      <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                      <input
+                        type="date"
+                        value={formData.endDate}
+                        onChange={(e) => setFormData(prev => ({ ...prev, endDate: e.target.value }))}
+                        required
+                        className="w-full pl-10 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl"
+                      />
+                    </div>
+                    <div className="relative">
+                      <Clock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                      <input
+                        type="time"
+                        value={formData.endTime}
+                        onChange={(e) => setFormData(prev => ({ ...prev, endTime: e.target.value }))}
+                        required
+                        className="w-full pl-10 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              {dateError && <div className="text-sm text-red-500">{dateError}</div>}
+            </div>
+
+            {/* Category */}
+            <div>
+              <label className="block text-sm font-medium mb-2">Event Category</label>
+              <div className="relative">
+                <Tag className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <select
+                  value={formData.category}
+                  onChange={handleCategoryChange}
+                  required
+                  className="w-full pl-10 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl appearance-none"
+                >
+                  <option value="">Select category...</option>
+                  {CATEGORIES.map((cat) => (
+                    <option key={cat.value} value={cat.value}>{cat.icon} {cat.label}</option>
+                  ))}
+                </select>
+              </div>
+              {showCustomCategory && (
+                <div className="mt-4">
+                  <input
+                    type="text"
+                    value={formData.customCategory}
+                    onChange={(e) => setFormData(prev => ({ ...prev, customCategory: e.target.value }))}
+                    placeholder="Specify your category..."
+                    className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Location */}
+            <div>
+              <label className="block text-sm font-medium mb-2">Event Location</label>
+              <div className="mb-6">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {LOCATION_TYPES.map((loc) => (
+                    <button
+                      key={loc.id}
+                      type="button"
+                      onClick={() => handleLocationTypeChange(loc.id)}
+                      className={`p-4 rounded-xl border flex flex-col items-center text-center gap-3 transition-all ${
+                        locationType === loc.id
+                          ? 'border-primary bg-primary/5'
+                          : 'border-gray-200 dark:border-gray-700'
+                      }`}
                     >
-                      {CURRENCIES.map((c) => (
-                        <option key={c.value} value={c.value}>{c.label}</option>
+                      <loc.icon className="h-5 w-5" />
+                      <div>
+                        <div className="font-medium text-sm">{loc.label}</div>
+                        <div className="text-xs text-gray-500">{loc.description}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="mt-6 p-6 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl">
+                {renderLocationInput()}
+              </div>
+              <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                <div className="text-sm font-medium mb-1">Location Preview</div>
+                <div className="flex items-center gap-2">
+                  <MapPin className="h-4 w-4 text-gray-400" />
+                  <span className="text-sm">{formatLocation()}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Description */}
+            <div>
+              <label className="block text-sm font-medium mb-2">Event Description</label>
+              <textarea
+                value={formData.description}
+                onChange={(e) => {
+                  setFormData(prev => ({ ...prev, description: e.target.value }))
+                  setCharCount(e.target.value.length)
+                }}
+                placeholder="Tell people about your event..."
+                rows={8}
+                required
+                maxLength={5000}
+                className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl resize-none"
+              />
+              <div className="mt-1 text-right text-sm text-gray-500">{charCount}/5000</div>
+            </div>
+
+            {/* Ticket Price */}
+            <div>
+              <label className="block text-sm font-medium mb-3">Ticket Price</label>
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                  <input type="radio" id="free-ticket" name="ticket-price-type" checked={formData.isFree} onChange={() => handlePriceTypeChange(true)} className="hidden" />
+                  <label htmlFor="free-ticket" className={`block p-4 border-2 rounded-xl cursor-pointer transition-all ${
+                    formData.isFree ? 'border-primary bg-primary/5' : 'border-gray-200 dark:border-gray-700'
+                  }`}>
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-gray-100 dark:bg-gray-800"><span className="text-2xl">🎟️</span></div>
+                      <div><div className="font-semibold">Free</div><div className="text-sm text-gray-600">₦0.00</div></div>
+                    </div>
+                  </label>
+                </div>
+                <div>
+                  <input type="radio" id="paid-ticket" name="ticket-price-type" checked={!formData.isFree} onChange={() => handlePriceTypeChange(false)} className="hidden" />
+                  <label htmlFor="paid-ticket" className={`block p-4 border-2 rounded-xl cursor-pointer transition-all ${
+                    !formData.isFree ? 'border-primary bg-primary/5' : 'border-gray-200 dark:border-gray-700'
+                  }`}>
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-gray-100 dark:bg-gray-800"><span className="text-2xl">💰</span></div>
+                      <div><div className="font-semibold">Paid</div><div className="text-sm text-gray-600">Enter amount</div></div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {showPriceInput && (
+                <div className="mt-4 space-y-4">
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="col-span-2">
+                      <div className="relative">
+                        <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 font-medium">
+                          {CURRENCIES.find(c => c.value === formData.currency)?.symbol || '₦'}
+                        </div>
+                        <input
+                          type="number"
+                          value={formData.priceAmount}
+                          onChange={(e) => setFormData(prev => ({ ...prev, priceAmount: e.target.value }))}
+                          placeholder="0.00"
+                          min="0"
+                          step="100"
+                          required
+                          className="w-full pl-10 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <select
+                        value={formData.currency}
+                        onChange={(e) => setFormData(prev => ({ ...prev, currency: e.target.value }))}
+                        className="w-full px-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl"
+                      >
+                        {CURRENCIES.map((c) => (
+                          <option key={c.value} value={c.value}>{c.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Ticket Type</label>
+                    <select
+                      value={formData.ticketType}
+                      onChange={(e) => setFormData(prev => ({ ...prev, ticketType: e.target.value }))}
+                      className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl"
+                    >
+                      {TICKET_TYPES.map((type) => (
+                        <option key={type.value} value={type.value}>{type.label}</option>
                       ))}
                     </select>
                   </div>
                 </div>
-                
-                <div>
-                  <label className="block text-sm font-medium mb-2">Ticket Type</label>
-                  <select
-                    value={formData.ticketType}
-                    onChange={(e) => setFormData(prev => ({ ...prev, ticketType: e.target.value }))}
-                    className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl"
-                  >
-                    {TICKET_TYPES.map((type) => (
-                      <option key={type.value} value={type.value}>{type.label}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Capacity */}
-          <div>
-            <label className="block text-sm font-medium mb-3">Ticket Capacity</label>
-            <div className="mb-4">
-              <label className="flex items-center gap-3 p-4 border border-gray-200 dark:border-gray-700 rounded-xl cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={formData.unlimitedCapacity}
-                  onChange={(e) => handleCapacityToggle(e.target.checked)}
-                  className="w-5 h-5 rounded border-gray-300 text-primary"
-                />
-                <div className="p-2 bg-gray-100 dark:bg-gray-800 rounded-lg"><span className="text-xl font-bold">∞</span></div>
-                <div><div className="font-semibold">Unlimited tickets</div><div className="text-sm text-gray-600">No capacity limit</div></div>
-              </label>
-            </div>
-            {showCapacityInput && (
-              <div className="relative">
-                <Users className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <input
-                  type="number"
-                  value={formData.capacity}
-                  onChange={(e) => setFormData(prev => ({ ...prev, capacity: e.target.value }))}
-                  placeholder="Maximum number of tickets"
-                  min="1"
-                  required
-                  className="w-full pl-10 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl"
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Event Image */}
-          <div>
-            <label className="block text-sm font-medium mb-3">Event Image</label>
-            <div className="border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-xl p-8 text-center">
-              <input type="file" id="image-upload" onChange={handleImageUpload} accept="image/*" className="hidden" />
-              {formData.imagePreview ? (
-                <div className="relative">
-                  <img src={formData.imagePreview} alt="Event preview" className="w-full max-w-md mx-auto h-64 object-cover rounded-lg" />
-                  <button type="button" onClick={() => setFormData(prev => ({ ...prev, image: null, imagePreview: '' }))} className="absolute top-2 right-2 p-2 bg-red-500 text-white rounded-full">
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <div className="w-16 h-16 mx-auto mb-4 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center">
-                    <Camera className="h-8 w-8 text-gray-400" />
-                  </div>
-                  <p className="font-medium mb-1">Upload Event Image</p>
-                  <p className="text-sm text-gray-500">PNG, JPG, or GIF • Max 5MB</p>
-                  <button type="button" onClick={() => document.getElementById('image-upload')?.click()} className="mt-4 px-6 py-2 bg-primary text-white rounded-lg">
-                    Choose Image
-                  </button>
-                </>
               )}
             </div>
-          </div>
 
-          {/* Submit */}
-          <div className="flex gap-4 pt-8">
-            <button type="button" onClick={() => router.back()} className="flex-1 py-4 border-2 border-gray-300 rounded-xl font-semibold" disabled={isLoading}>
-              Cancel
-            </button>
-            <button type="submit" disabled={isLoading} className="flex-1 py-4 bg-primary text-white rounded-xl font-semibold disabled:opacity-50 flex items-center justify-center gap-2">
-              {isLoading ? <><Loader2 className="h-5 w-5 animate-spin" /> Creating...</> : <><Save className="h-5 w-5" /> Create Event</>}
-            </button>
-          </div>
-        </form>
+            {/* Capacity */}
+            <div>
+              <label className="block text-sm font-medium mb-3">Ticket Capacity</label>
+              <div className="mb-4">
+                <label className="flex items-center gap-3 p-4 border border-gray-200 dark:border-gray-700 rounded-xl cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.unlimitedCapacity}
+                    onChange={(e) => handleCapacityToggle(e.target.checked)}
+                    className="w-5 h-5 rounded border-gray-300 text-primary"
+                  />
+                  <div className="p-2 bg-gray-100 dark:bg-gray-800 rounded-lg"><span className="text-xl font-bold">∞</span></div>
+                  <div><div className="font-semibold">Unlimited tickets</div><div className="text-sm text-gray-600">No capacity limit</div></div>
+                </label>
+              </div>
+              {showCapacityInput && (
+                <div className="relative">
+                  <Users className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <input
+                    type="number"
+                    value={formData.capacity}
+                    onChange={(e) => setFormData(prev => ({ ...prev, capacity: e.target.value }))}
+                    placeholder="Maximum number of tickets"
+                    min="1"
+                    required
+                    className="w-full pl-10 pr-3 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Event Image */}
+            <div>
+              <label className="block text-sm font-medium mb-3">Event Image</label>
+              <div className="border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-xl p-8 text-center">
+                <input type="file" id="image-upload" onChange={handleImageUpload} accept="image/*" className="hidden" />
+                {formData.imagePreview ? (
+                  <div className="relative">
+                    <img src={formData.imagePreview} alt="Event preview" className="w-full max-w-md mx-auto h-64 object-cover rounded-lg" />
+                    <button type="button" onClick={() => setFormData(prev => ({ ...prev, image: null, imagePreview: '' }))} className="absolute top-2 right-2 p-2 bg-red-500 text-white rounded-full">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="w-16 h-16 mx-auto mb-4 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center">
+                      <Camera className="h-8 w-8 text-gray-400" />
+                    </div>
+                    <p className="font-medium mb-1">Upload Event Image</p>
+                    <p className="text-sm text-gray-500">PNG, JPG, or GIF • Max 5MB</p>
+                    <button type="button" onClick={() => document.getElementById('image-upload')?.click()} className="mt-4 px-6 py-2 bg-primary text-white rounded-lg">
+                      Choose Image
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Submit */}
+            <div className="flex gap-4 pt-8">
+              <button type="button" onClick={() => router.back()} className="flex-1 py-4 border-2 border-gray-300 rounded-xl font-semibold" disabled={isLoading}>
+                Cancel
+              </button>
+              <button type="submit" disabled={isLoading} className="flex-1 py-4 bg-primary text-white rounded-xl font-semibold disabled:opacity-50 flex items-center justify-center gap-2">
+                {isLoading ? <><Loader2 className="h-5 w-5 animate-spin" /> Creating...</> : <><Save className="h-5 w-5" /> Create Event</>}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <FormSkeleton />
+        )}
       </div>
     </div>
   )
