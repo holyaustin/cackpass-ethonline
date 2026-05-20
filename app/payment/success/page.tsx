@@ -20,6 +20,7 @@ interface PaymentDetails {
     ticketsSold?: number
     capacity?: number
   }
+  isFree?: boolean
 }
 
 export default function PaymentSuccessPage() {
@@ -30,15 +31,37 @@ export default function PaymentSuccessPage() {
   const [paymentDetails, setPaymentDetails] = useState<PaymentDetails | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [emailSent, setEmailSent] = useState<boolean | null>(null)
+  const [isFreeTicket, setIsFreeTicket] = useState(false)
 
   useEffect(() => {
     const ref = searchParams.get('reference')
+    const isFree = searchParams.get('free') === 'true'
+    const email = searchParams.get('email')
+    
+    setIsFreeTicket(isFree)
+    
     if (!ref) {
       router.push('/')
       return
     }
+    
     setReference(ref)
-    verifyPayment(ref)
+    
+    if (isFree) {
+      // Handle free ticket success without API call
+      setPaymentDetails({
+        reference: ref,
+        amount: 0,
+        tickets: [{ ticketId: ref }],
+        userEmail: email || undefined,
+        isFree: true
+      })
+      setEmailSent(true)
+      setIsLoading(false)
+      toast.success('🎫 Free ticket created successfully!')
+    } else {
+      verifyPayment(ref)
+    }
   }, [searchParams, router])
 
   const verifyPayment = async (ref: string) => {
@@ -66,18 +89,14 @@ export default function PaymentSuccessPage() {
         event: data.event
       })
       
-      // Track email status
       const wasEmailSent = data.emailSent === true
       setEmailSent(wasEmailSent)
       
-      // Show toast based on email status
-      // In the verifyPayment function, update the email status check:
       if (data.emailSent === true) {
         toast.success('🎫 Ticket details sent to your email!')
       } else if (data.emailSent === false && data.userEmail) {
-        toast.warning('Ticket created and sent to your email.')
+        toast.success('Ticket created successfully!')
       } else {
-        // If we have tickets, assume success
         if (data.tickets && data.tickets.length > 0) {
           toast.success('Tickets created successfully! Check your dashboard.')
         }
@@ -96,8 +115,12 @@ export default function PaymentSuccessPage() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
-          <h2 className="text-xl font-semibold mb-2">Verifying Your Payment...</h2>
-          <p className="text-gray-500">Please wait while we confirm your transaction.</p>
+          <h2 className="text-xl font-semibold mb-2">
+            {isFreeTicket ? 'Processing Your Free Ticket...' : 'Verifying Your Payment...'}
+          </h2>
+          <p className="text-gray-500">
+            {isFreeTicket ? 'Please wait while we create your ticket.' : 'Please wait while we confirm your transaction.'}
+          </p>
           <p className="text-sm text-gray-400 mt-4">Reference: {reference}</p>
         </div>
       </div>
@@ -132,7 +155,7 @@ export default function PaymentSuccessPage() {
     )
   }
 
-  const ticketCount = paymentDetails?.tickets?.length || 0
+  const ticketCount = paymentDetails?.tickets?.length || 1
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-green-50 to-white dark:from-gray-900 dark:to-gray-950 flex items-center justify-center p-4">
@@ -141,31 +164,44 @@ export default function PaymentSuccessPage() {
           <div className="w-20 h-20 mx-auto mb-6 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center">
             <CheckCircle className="h-10 w-10 text-green-600 dark:text-green-400" />
           </div>
-          <h1 className="text-3xl font-bold mb-2">Payment Successful!</h1>
+          <h1 className="text-3xl font-bold mb-2">
+            {isFreeTicket ? 'Free Ticket Claimed!' : 'Payment Successful!'}
+          </h1>
           <p className="text-gray-600 dark:text-gray-400">
-            Thank you for your purchase. Your ticket has been issued.
+            {isFreeTicket 
+              ? 'Your free ticket has been issued successfully.' 
+              : 'Thank you for your purchase. Your ticket has been issued.'}
           </p>
         </div>
 
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 mb-6">
           <div className="flex items-center justify-between mb-4 pb-4 border-b border-gray-200 dark:border-gray-700">
-            <span className="text-gray-600 dark:text-gray-400">Payment Reference</span>
+            <span className="text-gray-600 dark:text-gray-400">
+              {isFreeTicket ? 'Ticket ID' : 'Payment Reference'}
+            </span>
             <span className="font-mono text-sm bg-gray-100 dark:bg-gray-700 px-3 py-1 rounded">
-              {reference?.slice(0, 8)}...
+              {reference?.slice(0, 12)}...
             </span>
           </div>
           
           <div className="space-y-3 mb-4">
             <div className="flex items-center gap-2">
               <Ticket className="h-4 w-4 text-primary" />
-              <span className="font-medium">Tickets Purchased:</span>
+              <span className="font-medium">Tickets:</span>
               <span>{ticketCount} ticket{ticketCount !== 1 ? 's' : ''}</span>
             </div>
-            {paymentDetails?.amount && (
+            {!isFreeTicket && paymentDetails?.amount && paymentDetails.amount > 0 && (
               <div className="flex items-center gap-2">
                 <DollarSign className="h-4 w-4 text-primary" />
                 <span className="font-medium">Amount Paid:</span>
                 <span>₦{paymentDetails.amount.toLocaleString()}</span>
+              </div>
+            )}
+            {isFreeTicket && (
+              <div className="flex items-center gap-2">
+                <DollarSign className="h-4 w-4 text-green-500" />
+                <span className="font-medium">Amount:</span>
+                <span className="text-green-600 font-semibold">FREE</span>
               </div>
             )}
           </div>
@@ -174,13 +210,13 @@ export default function PaymentSuccessPage() {
             <div className="flex items-center gap-2">
               <Mail className="h-4 w-4 text-gray-400" />
               <span>
-                {emailSent === true ? (
-                  'Ticket details have been sent to your email'
-                ) : emailSent === false ? (
-                  'Ticket created : Ticket details have been sent to your email.'
-                ) : (
-                  'Check "My Tickets" to view your purchase'
-                )}
+                {isFreeTicket 
+                  ? 'Your free ticket has been sent to your email'
+                  : emailSent === true 
+                    ? 'Ticket details have been sent to your email'
+                    : emailSent === false 
+                      ? 'Ticket created! Check your dashboard for details.'
+                      : 'Check "My Tickets" to view your purchase'}
               </span>
             </div>
             <div className="flex items-center gap-2">
@@ -195,7 +231,7 @@ export default function PaymentSuccessPage() {
             href="/dashboard/tickets"
             className="py-3 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors text-center"
           >
-            View Tickets
+            View My Tickets
           </Link>
           <Link
             href="/events"
@@ -204,6 +240,17 @@ export default function PaymentSuccessPage() {
             Browse More Events
           </Link>
         </div>
+        
+        {isFreeTicket && (
+          <div className="mt-6 text-center">
+            <p className="text-sm text-gray-500">
+              🎉 You've successfully claimed your free ticket!
+            </p>
+            <p className="text-xs text-gray-400 mt-2">
+              A confirmation email has been sent to your registered email address.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   )

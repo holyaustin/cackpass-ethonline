@@ -1,22 +1,57 @@
-// app/events/[id]/page.tsx (full version with user discount code input)
+// app/events/[id]/page.tsx
 'use client'
 
-import { useState, useEffect, Suspense } from 'react'
+import { useState, useEffect, Suspense, lazy, memo, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { 
   Calendar, MapPin, Clock, Users, Ticket, 
-  Share2, Heart, ChevronLeft, Star, Tag, 
-  Globe, Shield, QrCode, Loader2,
-  CreditCard, Wallet, CheckCircle,
-  AlertCircle, User, Mail, Check, Settings,
-  Percent, X
+  Heart, ChevronLeft, Tag, Globe, Shield, 
+  QrCode, Loader2, CreditCard, Wallet, 
+  CheckCircle, AlertCircle, User, Mail, 
+  Settings, Percent, X, Star, Share2
 } from 'lucide-react'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import { toast } from 'sonner'
-import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { usePrivy } from '@privy-io/react-auth'
 import { format } from 'date-fns'
-import ShareDropdown from '@/components/common/ShareDropdown'
+
+// Lazy load heavy components
+const LoadingSpinner = dynamic(() => 
+  import('@/components/common/LoadingSpinner').then(mod => ({ default: mod.LoadingSpinner })),
+  { ssr: false }
+)
+
+const ShareDropdown = dynamic(() => 
+  import('@/components/common/ShareDropdown').then(mod => ({ default: mod.default })),
+  { ssr: false, loading: () => <button className="p-2 hover:bg-gray-100 rounded-lg"><Share2 className="h-5 w-5 text-gray-400" /></button> }
+)
+
+// Skeleton components for better UX
+const EventHeaderSkeleton = () => (
+  <div className="relative h-64 md:h-80 lg:h-96 bg-gray-200 dark:bg-gray-700 animate-pulse">
+    <div className="absolute bottom-0 left-0 right-0 p-6">
+      <div className="container mx-auto max-w-6xl">
+        <div className="h-8 w-3/4 bg-gray-300 dark:bg-gray-600 rounded mb-4"></div>
+        <div className="h-4 w-1/2 bg-gray-300 dark:bg-gray-600 rounded"></div>
+      </div>
+    </div>
+  </div>
+)
+
+const TicketCardSkeleton = () => (
+  <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+    <div className="h-6 w-32 bg-gray-200 dark:bg-gray-700 rounded mb-4 animate-pulse"></div>
+    <div className="space-y-4">
+      {[1, 2].map((i) => (
+        <div key={i} className="p-5 rounded-xl border-2 border-gray-200">
+          <div className="h-5 w-48 bg-gray-200 dark:bg-gray-700 rounded mb-2 animate-pulse"></div>
+          <div className="h-4 w-32 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"></div>
+        </div>
+      ))}
+    </div>
+  </div>
+)
 
 declare global {
   interface Window {
@@ -85,7 +120,7 @@ const getSafeAvatarUrl = (avatar?: string) => {
   return `/${avatar}`
 }
 
-// Helper functions to extract wallet address and email from Privy user
+// Helper functions
 const getWalletAddress = (user: any): string | null => {
   if (!user) return null
   if (user.wallet?.address) return user.wallet.address
@@ -96,21 +131,134 @@ const getWalletAddress = (user: any): string | null => {
   return null
 }
 
-// Helper to fetch user email by wallet address
+// Memoized email fetch with cache
+let emailCache: { [key: string]: string } = {}
 const fetchUserEmailByWallet = async (wallet: string): Promise<string | null> => {
+  if (emailCache[wallet]) return emailCache[wallet]
+  
   try {
     const res = await fetch(`/api/auth/user?walletAddress=${wallet}`)
     if (!res.ok) return null
     const data = await res.json()
-    return data.user?.email || null
+    const email = data.user?.email || null
+    if (email) emailCache[wallet] = email
+    return email
   } catch (error) {
     console.error('Failed to fetch user email:', error)
     return null
   }
 }
 
-// Helper to check if a string is a valid MongoDB ObjectId
 const isValidObjectId = (id: string): boolean => /^[0-9a-fA-F]{24}$/.test(id)
+
+// Memoized DiscountModal component
+const DiscountModal = memo(({ 
+  show, 
+  onClose, 
+  eventId, 
+  existingDiscounts, 
+  isLoading, 
+  formData, 
+  setFormData, 
+  onSubmit, 
+  isCreating 
+}: any) => {
+  if (!show) return null
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80" onClick={onClose}>
+      <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-2xl font-bold">Manage Discount Codes</h2>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-full">
+            <X className="h-6 w-6" />
+          </button>
+        </div>
+
+        <div className="mb-6">
+          <h3 className="text-lg font-semibold mb-2">Existing Discounts</h3>
+          {isLoading ? (
+            <Loader2 className="h-5 w-5 animate-spin mx-auto" />
+          ) : existingDiscounts.length === 0 ? (
+            <p className="text-gray-500 text-sm">No discounts created yet.</p>
+          ) : (
+            <div className="space-y-2 max-h-48 overflow-y-auto">
+              {existingDiscounts.map((discount: DiscountCode) => (
+                <div key={discount._id} className="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                  <div>
+                    <span className="font-mono font-bold">{discount.code}</span>
+                    <span className="ml-2 text-sm">({discount.discountPercent}% off)</span>
+                    <div className="text-xs text-gray-500">Used: {discount.usedCount}/{discount.maxUses}</div>
+                  </div>
+                  {discount.expiresAt && (
+                    <span className="text-xs text-gray-400">
+                      Expires: {new Date(discount.expiresAt).toLocaleDateString()}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <form onSubmit={onSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Discount Code</label>
+            <input
+              type="text"
+              value={formData.code}
+              onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })}
+              placeholder="e.g., EARLYBIRD"
+              className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Discount Percent (%)</label>
+            <input
+              type="number"
+              value={formData.discountPercent}
+              onChange={(e) => setFormData({ ...formData, discountPercent: parseInt(e.target.value) })}
+              min="1"
+              max="100"
+              className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Max Uses</label>
+            <input
+              type="number"
+              value={formData.maxUses}
+              onChange={(e) => setFormData({ ...formData, maxUses: parseInt(e.target.value) })}
+              min="1"
+              className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Expiry Date (optional)</label>
+            <input
+              type="date"
+              value={formData.expiresAt}
+              onChange={(e) => setFormData({ ...formData, expiresAt: e.target.value })}
+              className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={isCreating}
+            className="w-full py-2 bg-primary text-white rounded-lg font-semibold hover:bg-primary-dark disabled:opacity-50"
+          >
+            {isCreating ? <Loader2 className="h-5 w-5 animate-spin mx-auto" /> : 'Create Discount Code'}
+          </button>
+        </form>
+      </div>
+    </div>
+  )
+})
+
+DiscountModal.displayName = 'DiscountModal'
 
 export default function EventPage() {
   return (
@@ -139,8 +287,9 @@ function EventPageContent() {
   const [userEmail, setUserEmail] = useState<string | null>(null)
   const [isFetchingEmail, setIsFetchingEmail] = useState(false)
   const [isOrganizer, setIsOrganizer] = useState(false)
+  const [paystackLoaded, setPaystackLoaded] = useState(false)
   
-  // Discount management state (for organizer)
+  // Discount management state
   const [showDiscountModal, setShowDiscountModal] = useState(false)
   const [existingDiscounts, setExistingDiscounts] = useState<DiscountCode[]>([])
   const [isLoadingDiscounts, setIsLoadingDiscounts] = useState(false)
@@ -161,22 +310,34 @@ function EventPageContent() {
   const walletAddress = getWalletAddress(user)
   const isLoggedIn = authenticated && ready
 
-  // Fetch logged‑in user's email from database
+  // Lazy load Paystack script only when needed
+  useEffect(() => {
+    if (!paystackLoaded && selectedPaymentMethod === 'paystack' && !event?.isFree) {
+      const script = document.createElement('script')
+      script.src = 'https://js.paystack.co/v2/inline.js'
+      script.async = true
+      script.onload = () => setPaystackLoaded(true)
+      document.body.appendChild(script)
+    }
+  }, [paystackLoaded, selectedPaymentMethod, event?.isFree])
+
+  // Fetch logged-in user's email - delayed to not block render
   useEffect(() => {
     const fetchUserEmail = async () => {
       if (!isLoggedIn || !walletAddress) return
-      setIsFetchingEmail(true)
-      try {
-        const response = await fetch(`/api/auth/user?walletAddress=${walletAddress}`)
-        if (response.ok) {
-          const data = await response.json()
-          if (data.user?.email) setUserEmail(data.user.email)
+      
+      // Delay email fetch to prioritize event data
+      setTimeout(async () => {
+        setIsFetchingEmail(true)
+        try {
+          const email = await fetchUserEmailByWallet(walletAddress)
+          if (email) setUserEmail(email)
+        } catch (error) {
+          console.error('Error fetching user email:', error)
+        } finally {
+          setIsFetchingEmail(false)
         }
-      } catch (error) {
-        console.error('Error fetching user email:', error)
-      } finally {
-        setIsFetchingEmail(false)
-      }
+      }, 200)
     }
     fetchUserEmail()
   }, [isLoggedIn, walletAddress])
@@ -187,7 +348,13 @@ function EventPageContent() {
       if (!eventId) return
       try {
         setIsLoading(true)
-        const eventResponse = await fetch(`/api/events/${eventId}`)
+        
+        // Fetch event and tickets in parallel
+        const [eventResponse, ticketsResponse] = await Promise.all([
+          fetch(`/api/events/${eventId}`),
+          fetch(`/api/events/${eventId}/tickets`)
+        ])
+        
         if (!eventResponse.ok) throw new Error('Failed to fetch event')
         const eventData = await eventResponse.json()
         if (!eventData.success || !eventData.event) throw new Error('Event not found')
@@ -201,8 +368,6 @@ function EventPageContent() {
         }
         setEvent(transformedEvent)
         
-        setIsLoadingTickets(true)
-        const ticketsResponse = await fetch(`/api/events/${eventId}/tickets`)
         if (ticketsResponse.ok) {
           const ticketsData = await ticketsResponse.json()
           const ticketTypesList = ticketsData.ticketTypes || []
@@ -210,6 +375,7 @@ function EventPageContent() {
           if (ticketTypesList.length > 0) setSelectedTicketType(ticketTypesList[0])
         }
         
+        // Check favorites from localStorage
         const favorites = JSON.parse(localStorage.getItem('cackpass_favorites') || '[]')
         setIsFavorite(favorites.includes(eventId))
       } catch (error) {
@@ -218,29 +384,31 @@ function EventPageContent() {
         router.push('/events')
       } finally {
         setIsLoading(false)
-        setIsLoadingTickets(false)
       }
     }
     fetchEventData()
   }, [eventId, router])
 
-  // Determine if the logged‑in user is the event organizer (by email)
+  // Check if user is organizer - delayed
   useEffect(() => {
     const checkOrganizer = async () => {
       if (!event || !userEmail) return
-      try {
-        const organizerEmail = await fetchUserEmailByWallet(event.organizerWallet)
-        setIsOrganizer(organizerEmail === userEmail)
-      } catch (error) {
-        console.error('Failed to check organizer status:', error)
-        setIsOrganizer(false)
-      }
+      
+      setTimeout(async () => {
+        try {
+          const organizerEmail = await fetchUserEmailByWallet(event.organizerWallet)
+          setIsOrganizer(organizerEmail === userEmail)
+        } catch (error) {
+          console.error('Failed to check organizer status:', error)
+          setIsOrganizer(false)
+        }
+      }, 300)
     }
     checkOrganizer()
   }, [event, userEmail])
 
-  // Fetch existing discounts when modal opens – with validation
-  const fetchDiscounts = async () => {
+  // Fetch discounts with validation
+  const fetchDiscounts = useCallback(async () => {
     if (!eventId || !isValidObjectId(eventId)) {
       toast.error('Invalid event ID. Cannot load discounts.')
       return
@@ -257,9 +425,9 @@ function EventPageContent() {
     } finally {
       setIsLoadingDiscounts(false)
     }
-  }
+  }, [eventId])
 
-  const handleOpenDiscountModal = () => {
+  const handleOpenDiscountModal = useCallback(() => {
     if (!eventId || !isValidObjectId(eventId)) {
       toast.error('Event ID is invalid. Cannot manage discounts.')
       return
@@ -272,9 +440,9 @@ function EventPageContent() {
     })
     fetchDiscounts()
     setShowDiscountModal(true)
-  }
+  }, [eventId, fetchDiscounts])
 
-  const handleCreateDiscount = async (e: React.FormEvent) => {
+  const handleCreateDiscount = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
     if (!eventId || !isValidObjectId(eventId)) {
       toast.error('Invalid event ID. Cannot create discount.')
@@ -305,17 +473,16 @@ function EventPageContent() {
         maxUses: 15,
         expiresAt: '',
       })
-      fetchDiscounts() // refresh list
+      fetchDiscounts()
     } catch (error: any) {
       console.error('Create discount error:', error)
       toast.error(error.message)
     } finally {
       setIsCreatingDiscount(false)
     }
-  }
+  }, [eventId, discountFormData, fetchDiscounts])
 
-  // User discount validation
-  const applyDiscount = async () => {
+  const applyDiscount = useCallback(async () => {
     if (!discountCode.trim() || !selectedTicketType) return
     setIsVerifyingDiscount(true)
     try {
@@ -343,59 +510,106 @@ function EventPageContent() {
     } finally {
       setIsVerifyingDiscount(false)
     }
+  }, [discountCode, selectedTicketType, eventId, selectedQuantity])
+
+const handleGetFreeTicket = useCallback(async () => {
+  if (!isLoggedIn) {
+    toast.error('Please login to get a free ticket')
+    login()
+    return
   }
-
-  useEffect(() => {
-    if (typeof window !== 'undefined' && !window.PaystackPop) {
-      const script = document.createElement('script')
-      script.src = 'https://js.paystack.co/v2/inline.js'
-      script.async = true
-      document.body.appendChild(script)
-    }
-  }, [])
-
-  const handleGetFreeTicket = async () => {
-    if (!isLoggedIn) {
-      toast.error('Please login to get a free ticket')
-      login()
-      return
-    }
-    if (!userEmail) {
-      toast.error('Please complete your profile with an email address first')
-      router.push('/complete-profile')
-      return
-    }
-    if (!selectedTicketType) {
-      toast.error('Please select a ticket type')
-      return
-    }
-    try {
-      setIsGettingFreeTicket(true)
-      const response = await fetch('/api/tickets/free', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          eventId: eventId,
-          quantity: selectedQuantity,
-          userEmail: userEmail,
-          userName: userEmail.split('@')[0] || 'User'
-        })
-      })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.error || 'Failed to get free ticket')
-      if (data.success) {
-        toast.success('Free ticket sent to your email! Check your inbox.')
-        setTimeout(() => window.location.reload(), 2000)
+  if (!userEmail) {
+    toast.error('Please complete your profile with an email address first')
+    router.push('/complete-profile')
+    return
+  }
+  if (!selectedTicketType) {
+    toast.error('Please select a ticket type')
+    return
+  }
+  
+  try {
+    setIsGettingFreeTicket(true)
+    
+    // Get the authentication token from Privy
+    let authToken = null
+    
+    // Try to get token from Privy's getAccessToken method
+    if (typeof window !== 'undefined' && (window as any).privy?.getAccessToken) {
+      try {
+        authToken = await (window as any).privy.getAccessToken()
+        console.log('🔐 Got token from window.privy.getAccessToken()')
+      } catch (e) {
+        console.log('Could not get token from window.privy')
       }
-    } catch (error) {
-      console.error('Error getting free ticket:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to get free ticket')
-    } finally {
-      setIsGettingFreeTicket(false)
     }
+    
+    // Alternative: Get token from localStorage if Privy stores it there
+    if (!authToken) {
+      const privyUser = localStorage.getItem('privy:user')
+      if (privyUser) {
+        try {
+          const parsed = JSON.parse(privyUser)
+          if (parsed.token) authToken = parsed.token
+          console.log('🔐 Got token from localStorage')
+        } catch (e) {}
+      }
+    }
+    
+    // Alternative: Get token from cookie
+    if (!authToken) {
+      const cookies = document.cookie.split(';')
+      for (const cookie of cookies) {
+        const [name, value] = cookie.trim().split('=')
+        if (name === 'privy-token' || name === 'privy_token' || name === 'privy:token') {
+          authToken = value
+          console.log('🔐 Got token from cookie')
+          break
+        }
+      }
+    }
+    
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+    }
+    
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`
+      console.log('🔐 [FREE] Sending request with auth token')
+    } else {
+      console.warn('⚠️ [FREE] No auth token found, request may fail')
+    }
+    
+    const response = await fetch('/api/tickets/free', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        eventId: eventId,
+        quantity: selectedQuantity,
+        userEmail: userEmail,
+        userName: userEmail.split('@')[0] || 'User'
+      })
+    })
+    
+    const data = await response.json()
+    if (!response.ok) throw new Error(data.error || 'Failed to get free ticket')
+    
+    if (data.success) {
+      toast.success('Free ticket created successfully! Redirecting...')
+      // ✅ Redirect to success page with ticket ID as reference
+      setTimeout(() => {
+        router.push(`/payment/success?reference=${data.ticket?.id || 'free-ticket'}&free=true&email=${encodeURIComponent(userEmail)}`)
+      }, 1500)
+    }
+  } catch (error) {
+    console.error('Error getting free ticket:', error)
+    toast.error(error instanceof Error ? error.message : 'Failed to get free ticket')
+  } finally {
+    setIsGettingFreeTicket(false)
   }
+}, [isLoggedIn, userEmail, selectedTicketType, eventId, selectedQuantity, login, router])
 
-  const handlePayWithCard = async () => {
+  const handlePayWithCard = useCallback(async () => {
     if (!isLoggedIn) {
       toast.error('Please login to purchase tickets')
       login()
@@ -410,6 +624,7 @@ function EventPageContent() {
       toast.error('Please select a ticket type')
       return
     }
+    
     let totalPrice = selectedTicketType.price * selectedQuantity
     let discountCodeValue = discountCode.trim()
     let discountPercent = 0
@@ -441,6 +656,7 @@ function EventPageContent() {
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.message || data.error || 'Failed to initialize payment')
+      
       if (window.PaystackPop && data.access_code) {
         const paystack = new window.PaystackPop()
         paystack.resumeTransaction(data.access_code, {
@@ -485,21 +701,22 @@ function EventPageContent() {
       toast.error(error instanceof Error ? error.message : 'Failed to process payment')
       setIsProcessingPayment(false)
     }
-  }
+  }, [isLoggedIn, userEmail, selectedTicketType, selectedQuantity, discountCode, appliedDiscount, eventId, login, router])
 
-  const handlePayWithCrypto = async () => {
+  const handlePayWithCrypto = useCallback(() => {
     toast.info('🚀 Crypto payments are coming soon! Stay tuned for updates.')
-  }
+  }, [])
 
-  const handleTicketTypeSelect = (ticketType: TicketTypeData) => {
+  const handleTicketTypeSelect = useCallback((ticketType: TicketTypeData) => {
     setSelectedTicketType(ticketType)
     setSelectedQuantity(1)
-  }
+  }, [])
 
-  const handleQuantityChange = (change: number) => {
-    if (!selectedTicketType) return
+  const handleQuantityChange = useCallback((change: number) => {
+    if (!selectedTicketType || !event) return
+    
     let maxAvailable = 10
-    if (selectedTicketType._id.toString().startsWith('virtual_') && event) {
+    if (selectedTicketType._id.toString().startsWith('virtual_')) {
       if (!event.unlimitedCapacity) {
         maxAvailable = (event.capacity || 0) - (event.ticketsSold || 0)
       } else {
@@ -508,6 +725,7 @@ function EventPageContent() {
     } else {
       maxAvailable = selectedTicketType.maxSupply === 0 ? 10 : selectedTicketType.maxSupply - selectedTicketType.currentSupply
     }
+    
     const newQuantity = selectedQuantity + change
     if (newQuantity < 1) {
       toast.error('Minimum quantity is 1')
@@ -518,39 +736,44 @@ function EventPageContent() {
       return
     }
     setSelectedQuantity(newQuantity)
-  }
+  }, [selectedTicketType, selectedQuantity, event])
 
-  const handleFavoriteToggle = () => {
+  const handleFavoriteToggle = useCallback(() => {
     const favorites = JSON.parse(localStorage.getItem('cackpass_favorites') || '[]')
     if (isFavorite) {
       localStorage.setItem('cackpass_favorites', JSON.stringify(favorites.filter((id: string) => id !== eventId)))
       setIsFavorite(false)
       toast.success('Removed from favorites')
     } else {
-      if (favorites.length >= 50) { toast.error('Maximum 50 favorites allowed'); return }
+      if (favorites.length >= 50) { 
+        toast.error('Maximum 50 favorites allowed')
+        return 
+      }
       favorites.push(eventId)
       localStorage.setItem('cackpass_favorites', JSON.stringify(favorites))
       setIsFavorite(true)
       toast.success('Added to favorites')
     }
-  }
+  }, [isFavorite, eventId])
 
-  const formatDateTime = (dateString: string) => {
+  const formatDateTime = useCallback((dateString: string) => {
     if (!dateString) return 'Date TBD'
     try {
       const date = new Date(dateString)
       return format(date, 'MMM d, yyyy • h:mm a')
-    } catch { return 'Invalid date' }
-  }
+    } catch { 
+      return 'Invalid date' 
+    }
+  }, [])
 
-  const getImageUrl = () => {
+  const getImageUrl = useCallback(() => {
     if (imageError) return '/placeholder-event.jpg'
     if (event?.imageCid) return `https://gateway.pinata.cloud/ipfs/${event.imageCid}`
     if (event?.bannerImage?.startsWith('http')) return event.bannerImage
     return '/placeholder-event.jpg'
-  }
+  }, [imageError, event])
 
-  const getAvailableTickets = (ticketType: TicketTypeData) => {
+  const getAvailableTickets = useCallback((ticketType: TicketTypeData) => {
     if (ticketType._id.toString().startsWith('virtual_') && event) {
       if (event.unlimitedCapacity) return 'Unlimited'
       const remaining = (event.capacity || 0) - (event.ticketsSold || 0)
@@ -558,9 +781,9 @@ function EventPageContent() {
     }
     if (ticketType.maxSupply === 0) return 'Unlimited'
     return Math.max(0, ticketType.maxSupply - ticketType.currentSupply)
-  }
+  }, [event])
 
-  const isTicketAvailable = (ticketType: TicketTypeData) => {
+  const isTicketAvailable = useCallback((ticketType: TicketTypeData) => {
     if (ticketType._id.toString().startsWith('virtual_') && event) {
       if (event.unlimitedCapacity) return true
       const remaining = (event.capacity || 0) - (event.ticketsSold || 0)
@@ -568,118 +791,46 @@ function EventPageContent() {
     }
     if (ticketType.maxSupply === 0) return true
     return ticketType.currentSupply < ticketType.maxSupply
-  }
+  }, [event])
 
-  const getTotalPrice = () => {
+  const getTotalPrice = useCallback(() => {
     if (!selectedTicketType || event?.isFree) return '0.00'
     let price = selectedTicketType.price * selectedQuantity
     if (appliedDiscount) price = price - appliedDiscount.amount
     return price.toFixed(2)
-  }
+  }, [selectedTicketType, selectedQuantity, appliedDiscount, event])
 
   const isPastEvent = event?.endDate ? new Date(event.endDate) < new Date() : false
-  const totalPrice = selectedTicketType ? (selectedTicketType.price * selectedQuantity).toFixed(2) : '0.00'
 
-  // Discount modal component (inline)
-  const DiscountModal = () => {
-    if (!showDiscountModal) return null
-
+  // Show skeleton while loading
+  if (isLoading) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80" onClick={() => setShowDiscountModal(false)}>
-        <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6" onClick={(e) => e.stopPropagation()}>
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-2xl font-bold">Manage Discount Codes</h2>
-            <button onClick={() => setShowDiscountModal(false)} className="p-1 hover:bg-gray-100 rounded-full">
-              <X className="h-6 w-6" />
-            </button>
-          </div>
-
-          {/* Existing discounts list */}
-          <div className="mb-6">
-            <h3 className="text-lg font-semibold mb-2">Existing Discounts</h3>
-            {isLoadingDiscounts ? (
-              <Loader2 className="h-5 w-5 animate-spin mx-auto" />
-            ) : existingDiscounts.length === 0 ? (
-              <p className="text-gray-500 text-sm">No discounts created yet.</p>
-            ) : (
-              <div className="space-y-2 max-h-48 overflow-y-auto">
-                {existingDiscounts.map((discount) => (
-                  <div key={discount._id} className="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                    <div>
-                      <span className="font-mono font-bold">{discount.code}</span>
-                      <span className="ml-2 text-sm">({discount.discountPercent}% off)</span>
-                      <div className="text-xs text-gray-500">Used: {discount.usedCount}/{discount.maxUses}</div>
-                    </div>
-                    {discount.expiresAt && (
-                      <span className="text-xs text-gray-400">
-                        Expires: {new Date(discount.expiresAt).toLocaleDateString()}
-                      </span>
-                    )}
-                  </div>
-                ))}
+      <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-950">
+        <EventHeaderSkeleton />
+        <div className="container mx-auto px-4 py-8 max-w-6xl">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="lg:col-span-2 space-y-6">
+              <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+                <div className="h-6 w-48 bg-gray-200 dark:bg-gray-700 rounded mb-4 animate-pulse"></div>
+                <div className="space-y-2">
+                  <div className="h-4 w-full bg-gray-200 dark:bg-gray-700 rounded animate-pulse"></div>
+                  <div className="h-4 w-5/6 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"></div>
+                </div>
               </div>
-            )}
+              <TicketCardSkeleton />
+            </div>
+            <div className="lg:col-span-1">
+              <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+                <div className="h-6 w-32 bg-gray-200 dark:bg-gray-700 rounded mb-4 animate-pulse"></div>
+                <div className="h-12 w-full bg-gray-200 dark:bg-gray-700 rounded animate-pulse"></div>
+              </div>
+            </div>
           </div>
-
-          {/* Create new discount form */}
-          <form onSubmit={handleCreateDiscount} className="space-y-4 ">
-            <div>
-              <label className="block text-sm font-medium mb-1">Discount Code</label>
-              <input
-                type="text"
-                value={discountFormData.code}
-                onChange={(e) => setDiscountFormData({ ...discountFormData, code: e.target.value.toUpperCase() })}
-                placeholder="e.g., EARLYBIRD"
-                className="w-full px-3 py-2 border text-white rounded-lg dark:bg-gray-700 dark:border-gray-600"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Discount Percent (%)</label>
-              <input
-                type="number"
-                value={discountFormData.discountPercent}
-                onChange={(e) => setDiscountFormData({ ...discountFormData, discountPercent: parseInt(e.target.value) })}
-                min="1"
-                max="100"
-                className="w-full px-3 py-2 border text-white rounded-lg dark:bg-gray-700 dark:border-gray-600"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Max Uses (Total tickets)</label>
-              <input
-                type="number"
-                value={discountFormData.maxUses}
-                onChange={(e) => setDiscountFormData({ ...discountFormData, maxUses: parseInt(e.target.value) })}
-                min="1"
-                className="w-full px-3 py-2 border text-white rounded-lg dark:bg-gray-700 dark:border-gray-600"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Expiry Date (optional)</label>
-              <input
-                type="date"
-                value={discountFormData.expiresAt}
-                onChange={(e) => setDiscountFormData({ ...discountFormData, expiresAt: e.target.value })}
-                className="w-full px-3 py-2 border text-white rounded-lg dark:bg-gray-700 dark:border-gray-600"
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={isCreatingDiscount}
-              className="w-full py-2 bg-primary text-white rounded-lg font-semibold hover:bg-primary-dark disabled:opacity-50"
-            >
-              {isCreatingDiscount ? <Loader2 className="h-5 w-5 animate-spin mx-auto" /> : 'Create Discount Code'}
-            </button>
-          </form>
         </div>
       </div>
     )
   }
 
-  if (isLoading) return <LoadingSpinner fullScreen text="Loading event details..." />
   if (!event) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
@@ -712,47 +863,59 @@ function EventPageContent() {
                 <Heart className={`h-5 w-5 ${isFavorite ? 'fill-red-500 text-red-500' : 'text-gray-400'}`} />
               </button>
 
-              {/* Edit button – only visible to the event organizer */}
               {isOrganizer && (
-                <Link
-                  href={`/dashboard/edit-event/${eventId}`}
-                  className="flex items-center gap-2 px-4 py-2 bg-secondary text-white rounded-xl hover:bg-primary-dark transition-all shadow-sm"
-                  title="Edit event"
-                >
-                  <Settings className="h-4 w-4" />
-                  <span className="text-base font-medium">Edit Event</span>
-                </Link>
+                <>
+                  <Link
+                    href={`/dashboard/edit-event/${eventId}`}
+                    className="flex items-center gap-2 px-4 py-2 bg-secondary text-white rounded-xl hover:bg-primary-dark transition-all shadow-sm"
+                  >
+                    <Settings className="h-4 w-4" />
+                    <span className="text-base font-medium">Edit</span>
+                  </Link>
+                  <button
+                    onClick={handleOpenDiscountModal}
+                    className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-all shadow-sm"
+                  >
+                    <Percent className="h-4 w-4" />
+                    <span className="text-base font-medium">Discounts</span>
+                  </button>
+                </>
               )}
 
-              {/* Manage Discounts button – only visible to organizer */}
-              {isOrganizer && (
-                <button
-                  onClick={handleOpenDiscountModal}
-                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-all shadow-sm"
-                  title="Manage discount codes"
-                >
-                  <Percent className="h-4 w-4" />
-                  <span className="text-base font-medium">Discounts</span>
-                </button>
-              )}
-
-              {/* Share Dropdown */}
-              <ShareDropdown 
-                url={`${process.env.NEXT_PUBLIC_APP_URL || window.location.origin}/events/${eventId}`}
-                title={event.title}
-                eventTitle={event.title}
-              />
+              <Suspense fallback={<button className="p-2"><Share2 className="h-5 w-5" /></button>}>
+                <ShareDropdown 
+                  url={`${process.env.NEXT_PUBLIC_APP_URL || window.location.origin}/events/${eventId}`}
+                  title={event.title}
+                  eventTitle={event.title}
+                />
+              </Suspense>
             </div>
           </div>
         </div>
       </div>
 
       {/* Discount Modal */}
-      <DiscountModal />
+      <DiscountModal
+        show={showDiscountModal}
+        onClose={() => setShowDiscountModal(false)}
+        eventId={eventId}
+        existingDiscounts={existingDiscounts}
+        isLoading={isLoadingDiscounts}
+        formData={discountFormData}
+        setFormData={setDiscountFormData}
+        onSubmit={handleCreateDiscount}
+        isCreating={isCreatingDiscount}
+      />
 
       {/* Event Header Image */}
       <div className="relative h-64 md:h-80 lg:h-96">
-        <img src={getImageUrl()} alt={event.title} className="w-full h-full object-cover" onError={() => setImageError(true)} />
+        <img 
+          src={getImageUrl()} 
+          alt={event.title} 
+          className="w-full h-full object-cover" 
+          onError={() => setImageError(true)}
+          loading="eager"
+        />
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent">
           <div className="absolute bottom-0 left-0 right-0 p-6">
             <div className="container mx-auto max-w-6xl">
@@ -829,15 +992,21 @@ function EventPageContent() {
             {/* Ticket Types */}
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
               <h2 className="text-xl font-bold mb-6">Available Tickets</h2>
-              {isLoadingTickets ? (
-                <div className="text-center py-12"><Loader2 className="h-8 w-8 animate-spin mx-auto text-gray-400 mb-4" /><p className="text-gray-600">Loading ticket options...</p></div>
-              ) : ticketTypes.length > 0 ? (
+              {ticketTypes.length > 0 ? (
                 <div className="space-y-4">
                   {ticketTypes.map((ticketType) => {
                     const available = getAvailableTickets(ticketType)
                     const isAvailable = isTicketAvailable(ticketType)
                     return (
-                      <div key={ticketType._id} onClick={() => isAvailable && handleTicketTypeSelect(ticketType)} className={`p-5 rounded-xl border-2 cursor-pointer transition-all ${selectedTicketType?._id === ticketType._id ? 'border-primary bg-primary/5' : 'border-gray-200 hover:border-gray-300'} ${!isAvailable ? 'opacity-60 cursor-not-allowed' : ''}`}>
+                      <div 
+                        key={ticketType._id} 
+                        onClick={() => isAvailable && handleTicketTypeSelect(ticketType)} 
+                        className={`p-5 rounded-xl border-2 cursor-pointer transition-all ${
+                          selectedTicketType?._id === ticketType._id 
+                            ? 'border-primary bg-primary/5' 
+                            : 'border-gray-200 hover:border-gray-300'
+                        } ${!isAvailable ? 'opacity-60 cursor-not-allowed' : ''}`}
+                      >
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                           <div className="flex-1">
                             <div className="flex flex-wrap items-center justify-between mb-3">
@@ -849,7 +1018,9 @@ function EventPageContent() {
                                 </div>
                               </div>
                               <div className="text-right">
-                                <div className="text-2xl font-bold text-primary">{event.isFree ? 'FREE' : `₦${ticketType.price.toLocaleString()}`}</div>
+                                <div className="text-2xl font-bold text-primary">
+                                  {event.isFree ? 'FREE' : `₦${ticketType.price.toLocaleString()}`}
+                                </div>
                                 {!event.isFree && <div className="text-sm text-gray-600">per ticket</div>}
                               </div>
                             </div>
@@ -862,7 +1033,11 @@ function EventPageContent() {
                   })}
                 </div>
               ) : (
-                <div className="text-center py-12"><Ticket className="h-16 w-16 mx-auto text-gray-400 mb-4" /><h3 className="text-lg font-semibold mb-2">No Tickets Available</h3><p className="text-gray-600 max-w-md mx-auto">Ticket sales haven't started yet or this event doesn't have any tickets configured.</p></div>
+                <div className="text-center py-12">
+                  <Ticket className="h-16 w-16 mx-auto text-gray-400 mb-4" />
+                  <h3 className="text-lg font-semibold mb-2">No Tickets Available</h3>
+                  <p className="text-gray-600 max-w-md mx-auto">Ticket sales haven't started yet or this event doesn't have any tickets configured.</p>
+                </div>
               )}
             </div>
           </div>
@@ -873,22 +1048,47 @@ function EventPageContent() {
               <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
                 <h2 className="text-xl font-bold mb-6">Get Your Ticket</h2>
                 {isPastEvent ? (
-                  <div className="text-center py-8"><Clock className="h-16 w-16 mx-auto text-gray-400 mb-4" /><h3 className="font-semibold mb-2">Event Has Ended</h3><Link href="/events" className="btn-primary px-6 py-3 inline-flex items-center gap-2 w-full justify-center"><Ticket className="h-4 w-4" />Browse Upcoming Events</Link></div>
+                  <div className="text-center py-8">
+                    <Clock className="h-16 w-16 mx-auto text-gray-400 mb-4" />
+                    <h3 className="font-semibold mb-2">Event Has Ended</h3>
+                    <Link href="/events" className="btn-primary px-6 py-3 inline-flex items-center gap-2 w-full justify-center">
+                      <Ticket className="h-4 w-4" />Browse Upcoming Events
+                    </Link>
+                  </div>
                 ) : (
                   <>
                     {selectedTicketType && (
                       <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-900 rounded-xl">
                         <div className="flex justify-between items-start mb-4">
-                          <div><h3 className="font-semibold mb-1">{selectedTicketType.name}</h3><p className="text-sm text-gray-600">{selectedTicketType.category}</p></div>
-                          <div className="text-right"><div className="text-2xl font-bold text-primary">{event.isFree ? 'FREE' : `₦${selectedTicketType.price.toLocaleString()}`}</div><div className="text-sm text-gray-600">per ticket</div></div>
+                          <div>
+                            <h3 className="font-semibold mb-1">{selectedTicketType.name}</h3>
+                            <p className="text-sm text-gray-600">{selectedTicketType.category}</p>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-2xl font-bold text-primary">
+                              {event.isFree ? 'FREE' : `₦${selectedTicketType.price.toLocaleString()}`}
+                            </div>
+                            <div className="text-sm text-gray-600">per ticket</div>
+                          </div>
                         </div>
                         <div className="flex items-center justify-between">
                           <div>
                             <p className="text-sm text-gray-600 mb-2">Quantity</p>
                             <div className="flex items-center gap-3">
-                              <button onClick={() => handleQuantityChange(-1)} disabled={selectedQuantity <= 1} className="w-10 h-10 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-100 disabled:opacity-50"><span className="text-lg">-</span></button>
+                              <button 
+                                onClick={() => handleQuantityChange(-1)} 
+                                disabled={selectedQuantity <= 1} 
+                                className="w-10 h-10 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-100 disabled:opacity-50"
+                              >
+                                <span className="text-lg">-</span>
+                              </button>
                               <span className="text-xl font-semibold w-12 text-center">{selectedQuantity}</span>
-                              <button onClick={() => handleQuantityChange(1)} className="w-10 h-10 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-100"><span className="text-lg">+</span></button>
+                              <button 
+                                onClick={() => handleQuantityChange(1)} 
+                                className="w-10 h-10 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-100"
+                              >
+                                <span className="text-lg">+</span>
+                              </button>
                             </div>
                           </div>
                           <div className="text-right">
@@ -903,13 +1103,17 @@ function EventPageContent() {
                     
                     {/* FREE EVENT BUTTON */}
                     {event.isFree && (
-                      <button onClick={handleGetFreeTicket} disabled={isGettingFreeTicket} className="w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-3 text-lg bg-green-500 hover:bg-green-600 text-white disabled:opacity-50">
+                      <button 
+                        onClick={handleGetFreeTicket} 
+                        disabled={isGettingFreeTicket} 
+                        className="w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-3 text-lg bg-green-500 hover:bg-green-600 text-white disabled:opacity-50"
+                      >
                         {isGettingFreeTicket ? <Loader2 className="h-5 w-5 animate-spin" /> : <Mail className="h-5 w-5" />}
                         {isGettingFreeTicket ? 'Processing...' : 'Get Free Ticket'}
                       </button>
                     )}
                     
-                    {/* PAID EVENT - Discount Code Input (for customers) */}
+                    {/* PAID EVENT - Discount Code Input */}
                     {!event.isFree && selectedTicketType && selectedTicketType.price > 0 && (
                       <div className="mb-4">
                         <label className="block text-sm font-medium mb-2">Discount Code</label>
@@ -918,7 +1122,7 @@ function EventPageContent() {
                             type="text"
                             value={discountCode}
                             onChange={(e) => setDiscountCode(e.target.value.toUpperCase())}
-                            placeholder="Enter discount code"
+                            placeholder="Enter code"
                             className="flex-1 px-4 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
                           />
                           <button
@@ -937,48 +1141,52 @@ function EventPageContent() {
                       </div>
                     )}
                     
-                    {/* PAID EVENT - Check if user can purchase */}
+                    {/* PAID EVENT - Payment Buttons */}
                     {!event.isFree && selectedTicketType && selectedTicketType.price > 0 && (
                       <div className="space-y-4">
                         {!isLoggedIn ? (
-                          <button onClick={() => login()} className="w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-2 text-base bg-primary hover:bg-primary-dark text-white transition-all">
-                            <User className="h-5 w-5" />
-                            Login to Purchase
+                          <button 
+                            onClick={() => login()} 
+                            className="w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-2 text-base bg-primary hover:bg-primary-dark text-white transition-all"
+                          >
+                            <User className="h-5 w-5" />Login to Purchase
                           </button>
                         ) : !userEmail && !isFetchingEmail ? (
-                          <button onClick={() => router.push('/complete-profile')} className="w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-2 text-base bg-yellow-500 hover:bg-yellow-600 text-white transition-all">
-                            <Mail className="h-5 w-5" />
-                            Complete Profile to Purchase
+                          <button 
+                            onClick={() => router.push('/complete-profile')} 
+                            className="w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-2 text-base bg-yellow-500 hover:bg-yellow-600 text-white transition-all"
+                          >
+                            <Mail className="h-5 w-5" />Complete Profile
                           </button>
                         ) : isFetchingEmail ? (
-                          <button disabled className="w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-2 text-base bg-gray-400 text-white cursor-not-allowed">
-                            <Loader2 className="h-5 w-5 animate-spin" />
-                            Loading...
+                          <button 
+                            disabled 
+                            className="w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-2 text-base bg-gray-400 text-white cursor-not-allowed"
+                          >
+                            <Loader2 className="h-5 w-5 animate-spin" />Loading...
                           </button>
                         ) : (
                           <>
-                            <div className="flex flex-col sm:flex-row gap-3 mb-4">
+                            <div className="flex gap-3 mb-4">
                               <button 
                                 onClick={() => setSelectedPaymentMethod('paystack')} 
-                                className={`flex-1 py-3 px-2 rounded-xl font-medium flex items-center justify-center gap-1.5 sm:gap-2 transition-all text-sm sm:text-base ${
+                                className={`flex-1 py-3 rounded-xl font-medium flex items-center justify-center gap-2 transition-all ${
                                   selectedPaymentMethod === 'paystack' 
                                     ? 'bg-primary text-white' 
-                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200'
+                                    : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200'
                                 }`}
                               >
-                                <CreditCard className="h-4 w-4 flex-shrink-0" />
-                                <span className="truncate">Pay with Card</span>
+                                <CreditCard className="h-4 w-4" />Card
                               </button>
                               <button 
                                 onClick={() => setSelectedPaymentMethod('crypto')} 
-                                className={`flex-1 py-3 px-2 rounded-xl font-medium flex items-center justify-center gap-1.5 sm:gap-2 transition-all text-sm sm:text-base ${
+                                className={`flex-1 py-3 rounded-xl font-medium flex items-center justify-center gap-2 transition-all ${
                                   selectedPaymentMethod === 'crypto' 
                                     ? 'bg-primary text-white' 
-                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200'
+                                    : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200'
                                 }`}
                               >
-                                <Wallet className="h-4 w-4 flex-shrink-0" />
-                                <span className="truncate">Pay with Crypto</span>
+                                <Wallet className="h-4 w-4" />Crypto
                               </button>
                             </div>
                             
@@ -986,60 +1194,38 @@ function EventPageContent() {
                               <button 
                                 onClick={handlePayWithCard} 
                                 disabled={isProcessingPayment} 
-                                className="w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-2 text-sm sm:text-base bg-green-600 hover:bg-green-700 text-white disabled:opacity-50 transition-all duration-200"
+                                className="w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
                               >
                                 {isProcessingPayment ? <Loader2 className="h-5 w-5 animate-spin" /> : <CreditCard className="h-5 w-5" />}
-                                <span className="truncate">{isProcessingPayment ? 'Processing...' : `Pay ₦${Number(getTotalPrice()).toLocaleString()} with Card`}</span>
+                                {isProcessingPayment ? 'Processing...' : `Pay ₦${Number(getTotalPrice()).toLocaleString()}`}
                               </button>
                             )}
                             
                             {selectedPaymentMethod === 'crypto' && (
                               <button 
                                 onClick={handlePayWithCrypto} 
-                                className="w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-2 text-sm sm:text-base bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white transition-all duration-200"
+                                className="w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
                               >
-                                <Wallet className="h-5 w-5" />
-                                <span className="truncate">Pay with Crypto (Coming Soon)</span>
+                                <Wallet className="h-5 w-5" />Pay with Crypto (Soon)
                               </button>
                             )}
-                            
-                            <div className="text-xs text-gray-500 dark:text-gray-400 text-center">
-                              {selectedPaymentMethod === 'paystack' 
-                                ? '🔒 Secure payment via Paystack (Card, Bank Transfer, USSD)' 
-                                : '🚀 Crypto payments are coming soon! Stay tuned for updates.'}
-                            </div>
                           </>
                         )}
-                      </div>
-                    )}
-                    
-                    {event.isFree && (
-                      <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                        <div className="flex items-center gap-2"><Mail className="h-4 w-4 text-green-500" /><span className="text-sm font-medium">Email Delivery</span></div>
-                        <p className="text-xs text-gray-600 mt-1">Your free ticket will be sent to your registered email address</p>
                       </div>
                     )}
                     
                     <div className="mt-6 space-y-3">
                       <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
                         <Shield className="h-5 w-5 text-green-500 flex-shrink-0" />
-                        <div><p className="font-medium text-sm">Secure Payment</p><p className="text-xs text-gray-600">PCI-DSS compliant payment processing</p></div>
+                        <div><p className="font-medium text-sm">Secure Payment</p><p className="text-xs text-gray-600">PCI-DSS compliant</p></div>
                       </div>
                       <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
                         <QrCode className="h-5 w-5 text-blue-500 flex-shrink-0" />
-                        <div><p className="font-medium text-sm">Digital Ticket</p><p className="text-xs text-gray-600">QR code for easy entry</p></div>
+                        <div><p className="font-medium text-sm">Digital Ticket</p><p className="text-xs text-gray-600">QR code for entry</p></div>
                       </div>
-                    </div>
-                    
-                    <div className="mt-6 pt-6 border-t border-gray-200">
-                      <p className="text-sm text-gray-600 text-center">Need help? <a href="mailto:support@cackpass.com" className="text-primary hover:underline font-medium">Contact support</a></p>
                     </div>
                   </>
                 )}
-              </div>
-              <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl text-center">
-                <div className="flex items-center justify-center gap-2 mb-2"><Shield className="h-4 w-4 text-green-500" /><span className="text-sm font-medium">100% Secure Transactions</span></div>
-                <p className="text-xs text-gray-500">Powered by Paystack • PCI-DSS Level 1 Certified</p>
               </div>
             </div>
           </div>

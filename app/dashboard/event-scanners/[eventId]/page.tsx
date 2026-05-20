@@ -2,13 +2,87 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense, lazy, useCallback, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { usePrivy } from '@privy-io/react-auth';
 import { toast } from 'sonner';
 import { Plus, Trash2, Mail, ArrowLeft, Loader2 } from 'lucide-react';
+import dynamic from 'next/dynamic';
 
+// Lazy load heavy components
+const LoadingSpinner = dynamic(() => 
+  import('@/components/common/LoadingSpinner').then(mod => ({ default: mod.LoadingSpinner })),
+  { ssr: false }
+);
+
+// Memoized Scanner List component to prevent unnecessary re-renders
+const ScannerList = memo(({ scanners, onRemove, saving }: { 
+  scanners: string[]; 
+  onRemove: (email: string) => void; 
+  saving: boolean;
+}) => {
+  if (scanners.length === 0) {
+    return (
+      <p className="text-gray-500 text-center py-8">
+        No scanners added yet.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {scanners.map((email) => (
+        <div
+          key={email}
+          className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg transition-all hover:bg-gray-100 dark:hover:bg-gray-600"
+        >
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <Mail className="h-4 w-4 text-gray-500 flex-shrink-0" />
+            <span className="truncate">{email}</span>
+          </div>
+          <button
+            onClick={() => onRemove(email)}
+            disabled={saving}
+            className="text-red-500 hover:text-red-700 disabled:opacity-50 transition-colors p-1"
+            aria-label={`Remove scanner ${email}`}
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+});
+
+ScannerList.displayName = 'ScannerList';
+
+// Email input validation with debounce
+function useDebouncedValue<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+
+  return debouncedValue;
+}
+
+// Main component with Suspense for lazy loading
 export default function EventScannersPage() {
+  return (
+    <Suspense fallback={<LoadingSpinner fullScreen text="Loading scanner management..." />}>
+      <EventScannersContent />
+    </Suspense>
+  );
+}
+
+function EventScannersContent() {
   const { eventId } = useParams();
   const router = useRouter();
   const { getAccessToken, authenticated, ready, user } = usePrivy();
@@ -17,7 +91,15 @@ export default function EventScannersPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [eventTitle, setEventTitle] = useState('');
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
 
+  // Debounced email for validation
+  const debouncedEmail = useDebouncedValue(newEmail, 300);
+  const isValidEmail = useMemo(() => {
+    return debouncedEmail.includes('@') && debouncedEmail.includes('.');
+  }, [debouncedEmail]);
+
+  // Fetch event details and scanners in parallel
   useEffect(() => {
     if (!ready) return;
     if (!authenticated) {
@@ -25,52 +107,58 @@ export default function EventScannersPage() {
       router.push('/');
       return;
     }
-    fetchEventDetails();
-    fetchScanners();
-  }, [eventId, ready, authenticated]);
+    
+    // Parallel fetching for better performance
+    const fetchData = async () => {
+      try {
+        const token = await getAccessToken();
+        if (!token) {
+          toast.error('Authentication failed. Please refresh the page.');
+          setLoading(false);
+          return;
+        }
 
-  const fetchEventDetails = async () => {
-    try {
-      const res = await fetch(`/api/events/${eventId}`);
-      const data = await res.json();
-      if (data.success) {
-        setEventTitle(data.event.title);
+        // Fetch both event details and scanners in parallel
+        const [eventRes, scannersRes] = await Promise.all([
+          fetch(`/api/events/${eventId}`),
+          fetch(`/api/events/${eventId}/scanners`, {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+        ]);
+
+        // Process event data
+        if (eventRes.ok) {
+          const eventData = await eventRes.json();
+          if (eventData.success) {
+            setEventTitle(eventData.event.title);
+          }
+        }
+
+        // Process scanners data
+        if (scannersRes.ok) {
+          const scannersData = await scannersRes.json();
+          setScanners(scannersData.scanners || []);
+        } else if (scannersRes.status === 401) {
+          toast.error('Session expired. Please refresh the page.');
+        } else {
+          const err = await scannersRes.json();
+          toast.error(err.error || 'Failed to load scanners');
+        }
+      } catch (error) {
+        console.error('Failed to fetch data:', error);
+        toast.error('Network error. Please check your connection.');
+      } finally {
+        setLoading(false);
+        setIsInitialLoad(false);
       }
-    } catch (error) {
-      console.error('Failed to fetch event details:', error);
-    }
-  };
+    };
 
-  const fetchScanners = async () => {
-    if (!authenticated || !ready) return;
-    const token = await getAccessToken();
-    if (!token) {
-      toast.error('Authentication failed. Please refresh the page.');
-      return;
-    }
-    try {
-      const res = await fetch(`/api/events/${eventId}/scanners`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setScanners(data.scanners || []);
-      } else if (res.status === 401) {
-        toast.error('Session expired. Please refresh the page.');
-      } else {
-        const err = await res.json();
-        toast.error(err.error || 'Failed to load scanners');
-      }
-    } catch (error) {
-      console.error('Failed to fetch scanners:', error);
-      toast.error('Network error. Please check your connection.');
-    } finally {
-      setLoading(false);
-    }
-  };
+    fetchData();
+  }, [eventId, ready, authenticated, getAccessToken, router]);
 
-  const addScanner = async () => {
-    if (!newEmail.includes('@')) {
+  // Memoized add scanner function
+  const addScanner = useCallback(async () => {
+    if (!isValidEmail) {
       toast.error('Enter a valid email address');
       return;
     }
@@ -88,11 +176,9 @@ export default function EventScannersPage() {
       return;
     }
 
-    console.log('Adding scanner:', newEmail, 'Event ID:', eventId);
-
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
 
       const res = await fetch(`/api/events/${eventId}/scanners`, {
         method: 'POST',
@@ -124,9 +210,10 @@ export default function EventScannersPage() {
     } finally {
       setSaving(false);
     }
-  };
+  }, [newEmail, isValidEmail, authenticated, ready, getAccessToken, eventId]);
 
-  const removeScanner = async (email: string) => {
+  // Memoized remove scanner function
+  const removeScanner = useCallback(async (email: string) => {
     if (!authenticated || !ready) return;
 
     setSaving(true);
@@ -161,14 +248,18 @@ export default function EventScannersPage() {
     } finally {
       setSaving(false);
     }
-  };
+  }, [authenticated, ready, getAccessToken, eventId]);
 
-  if (!ready || loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
+  // Handle enter key press
+  const handleKeyPress = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && isValidEmail && !saving) {
+      addScanner();
+    }
+  }, [isValidEmail, saving, addScanner]);
+
+  // Loading state
+  if (isInitialLoad && loading) {
+    return <LoadingSpinner fullScreen text="Loading scanner management..." />;
   }
 
   if (!authenticated) {
@@ -178,71 +269,75 @@ export default function EventScannersPage() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8">
       <div className="max-w-2xl mx-auto px-4">
+        {/* Back button with better UX */}
         <button
           onClick={() => router.back()}
-          className="flex items-center gap-2 text-gray-600 mb-6 hover:text-gray-900"
+          className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors mb-6 group"
+          aria-label="Go back"
         >
-          <ArrowLeft className="h-5 w-5" />
-          Back
+          <ArrowLeft className="h-5 w-5 group-hover:-translate-x-1 transition-transform" />
+          <span>Back</span>
         </button>
 
-        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6">
-          <h1 className="text-2xl font-bold mb-2">Scanner Management</h1>
-          <p className="text-gray-600 dark:text-gray-400 mb-6">
-            Event: <span className="font-semibold">{eventTitle}</span>
-          </p>
-          <p className="text-sm text-gray-500 mb-6">
-            Add email addresses of staff who will scan tickets at this event.
-          </p>
+        {/* Main card */}
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg overflow-hidden">
+          <div className="p-6">
+            <h1 className="text-2xl font-bold mb-2">Scanner Management</h1>
+            <p className="text-gray-600 dark:text-gray-400 mb-2">
+              Event: <span className="font-semibold">{eventTitle || 'Loading...'}</span>
+            </p>
+            <p className="text-sm text-gray-500 dark:text-gray-500 mb-6">
+              Add email addresses of staff who will scan tickets at this event.
+            </p>
 
-          <div className="flex gap-2 mb-6">
-            <input
-              type="email"
-              value={newEmail}
-              onChange={(e) => setNewEmail(e.target.value)}
-              placeholder="Enter scanner's email address"
-              className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
-              disabled={saving}
+            {/* Add scanner form */}
+            <div className="flex gap-2 mb-6">
+              <input
+                type="email"
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                onKeyPress={handleKeyPress}
+                placeholder="Enter scanner's email address"
+                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
+                disabled={saving}
+                autoComplete="off"
+              />
+              <button
+                onClick={addScanner}
+                disabled={saving || !isValidEmail}
+                className="btn-primary flex items-center gap-2 px-4 py-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:scale-105 active:scale-95"
+              >
+                {saving ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Plus className="h-4 w-4" />
+                )}
+                Add
+              </button>
+            </div>
+
+            {/* Scanner list header */}
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold">Authorized Scanners</h3>
+              {scanners.length > 0 && (
+                <span className="text-xs text-gray-500 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded-full">
+                  {scanners.length} {scanners.length === 1 ? 'scanner' : 'scanners'}
+                </span>
+              )}
+            </div>
+
+            {/* Scanner list with memoized component */}
+            <ScannerList 
+              scanners={scanners} 
+              onRemove={removeScanner} 
+              saving={saving} 
             />
-            <button
-              onClick={addScanner}
-              disabled={saving || !newEmail}
-              className="btn-primary flex items-center gap-2 px-4 py-2 disabled:opacity-50"
-            >
-              <Plus className="h-4 w-4" />
-              Add
-            </button>
-          </div>
-
-          <div className="space-y-2">
-            <h3 className="font-semibold mb-3">Authorized Scanners</h3>
-            {scanners.length === 0 ? (
-              <p className="text-gray-500 text-center py-8">
-                No scanners added yet.
-              </p>
-            ) : (
-              scanners.map((email) => (
-                <div
-                  key={email}
-                  className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg"
-                >
-                  <div className="flex items-center gap-2">
-                    <Mail className="h-4 w-4 text-gray-500" />
-                    <span>{email}</span>
-                  </div>
-                  <button
-                    onClick={() => removeScanner(email)}
-                    disabled={saving}
-                    className="text-red-500 hover:text-red-700 disabled:opacity-50"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-              ))
-            )}
           </div>
         </div>
       </div>
     </div>
   );
 }
+
+// Import memo from React
+import { memo } from 'react';

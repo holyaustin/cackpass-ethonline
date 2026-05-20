@@ -1,9 +1,10 @@
-// /app/api/tickets/free/route.ts - FIXED VERSION
 import { NextRequest, NextResponse } from 'next/server'
 import { PrivyClient } from '@privy-io/server-auth'
 import { connectDB } from '@/lib/database/connection'
 import mongoose from 'mongoose'
 import crypto from 'crypto'
+import nodemailer from 'nodemailer'
+import QRCode from 'qrcode'
 
 // Initialize Privy client
 const privy = new PrivyClient(
@@ -14,7 +15,140 @@ const privy = new PrivyClient(
 // Rate limiting store
 const rateLimitStore = new Map<string, { count: number, resetTime: number }>()
 const RATE_LIMIT_WINDOW = 3600000 // 1 hour in milliseconds
-const MAX_FREE_TICKETS_PER_HOUR = 5
+const MAX_FREE_TICKETS_PER_HOUR = 10 // ✅ Changed from 5 to 10
+
+// Email transporter (same as paid tickets)
+let transporter: nodemailer.Transporter | null = null
+
+function getTransporter() {
+  if (!transporter) {
+    const user = process.env.GMAIL_USER
+    const pass = process.env.GMAIL_APP_PASSWORD
+
+    if (!user || !pass) {
+      throw new Error('Missing Gmail credentials')
+    }
+
+    transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: { user, pass },
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 10000,
+    })
+  }
+  return transporter
+}
+
+// Email sending function using Gmail (same as paid tickets)
+async function sendFreeTicketEmail(params: {
+  email: string
+  name: string
+  eventTitle: string
+  eventDate: string
+  venue: string
+  ticketCount: number
+  ticketType: string
+  ticketId: string
+  qrCodeDataUrl: string
+}) {
+  const gmailUser = process.env.GMAIL_USER
+
+  if (!gmailUser) {
+    throw new Error('Missing Gmail credentials')
+  }
+
+  const formattedDate = params.eventDate ? new Date(params.eventDate).toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  }) : 'Date to be announced'
+
+  const formattedTime = params.eventDate ? new Date(params.eventDate).toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit'
+  }) : 'Time to be announced'
+
+  const emailHtml = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <title>Your Free Ticket - CACK-pass</title>
+      <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f5f5f5; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; background-color: #ffffff; border-radius: 16px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
+        .header { text-align: center; padding: 30px 20px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); border-radius: 12px 12px 0 0; color: white; margin: -20px -20px 0 -20px; }
+        .header h1 { margin: 0; font-size: 28px; }
+        .content { padding: 30px 20px; }
+        .ticket-card { background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 12px; padding: 20px; margin: 20px 0; border-left: 4px solid #10b981; }
+        .ticket-detail { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #dee2e6; }
+        .ticket-detail:last-child { border-bottom: none; }
+        .label { font-weight: 600; color: #495057; }
+        .value { color: #212529; }
+        .qr-code { text-align: center; margin: 20px 0; padding: 20px; background: white; border-radius: 12px; }
+        .qr-code img { max-width: 200px; height: auto; }
+        .button { display: inline-block; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; margin-top: 20px; font-weight: 600; }
+        .footer { text-align: center; padding: 20px; font-size: 12px; color: #6c757d; border-top: 1px solid #dee2e6; margin-top: 20px; }
+        .info-box { background: #d1fae5; border-left: 4px solid #10b981; padding: 15px; margin: 20px 0; border-radius: 8px; }
+        .info-box h4 { margin: 0 0 10px 0; color: #065f46; }
+        .info-box ul { margin: 0; padding-left: 20px; color: #065f46; }
+        .free-badge { background: #10b981; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; display: inline-block; margin-bottom: 10px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>🎫 Your Free Ticket is Ready!</h1>
+          <p>Thank you for claiming your free ticket</p>
+        </div>
+        <div class="content">
+          <div style="text-align: center;"><span class="free-badge">✨ FREE TICKET ✨</span></div>
+          <h2>Hello ${params.name}! 👋</h2>
+          <p>Your free ticket${params.ticketCount > 1 ? 's have' : ' has'} been successfully claimed. Here are your event details:</p>
+          <div class="ticket-card">
+            <div class="ticket-detail"><span class="label">🎪 Event:</span><span class="value"><strong>${params.eventTitle}</strong></span></div>
+            <div class="ticket-detail"><span class="label">📅 Date:</span><span class="value">${formattedDate}</span></div>
+            <div class="ticket-detail"><span class="label">⏰ Time:</span><span class="value">${formattedTime}</span></div>
+            <div class="ticket-detail"><span class="label">📍 Venue:</span><span class="value">${params.venue || 'Online Event'}</span></div>
+            <div class="ticket-detail"><span class="label">🎟️ Ticket Type:</span><span class="value">${params.ticketType}</span></div>
+            <div class="ticket-detail"><span class="label">🔢 Quantity:</span><span class="value">${params.ticketCount} ticket${params.ticketCount > 1 ? 's' : ''}</span></div>
+            <div class="ticket-detail"><span class="label">💰 Amount:</span><span class="value"><strong style="color: #10b981;">FREE</strong></span></div>
+            <div class="ticket-detail"><span class="label">🆔 Ticket ID:</span><span class="value">${params.ticketId}</span></div>
+          </div>
+          ${params.qrCodeDataUrl ? `<div class="qr-code"><h3>Your Digital Ticket</h3><img src="${params.qrCodeDataUrl}" alt="Ticket QR Code" /><p>Scan this QR code at the event entrance</p></div>` : ''}
+          <div style="text-align: center;"><a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard/tickets" class="button">View My Tickets</a></div>
+          <div class="info-box">
+            <h4>⚠️ Important Information</h4>
+            <ul>
+              <li>Please arrive at least 30 minutes before the event starts</li>
+              <li>Bring a valid ID matching the name on the ticket</li>
+              <li>Show your QR code at the entrance</li>
+              <li>This is a free ticket - no payment required</li>
+            </ul>
+          </div>
+        </div>
+        <div class="footer">
+          <p>© ${new Date().getFullYear()} CACK-pass. All rights reserved.</p>
+          <p>Need help? Contact us at <a href="mailto:support@cackpass.com">support@cackpass.com</a></p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `
+
+  const transporter = getTransporter()
+  const mailOptions = {
+    from: `"CACK-pass" <${gmailUser}>`,
+    to: params.email,
+    subject: `🎫 Your FREE Ticket for ${params.eventTitle} - CACK-pass`,
+    html: emailHtml,
+  }
+
+  const info = await transporter.sendMail(mailOptions)
+  return info
+}
 
 // Type declaration for global
 declare global {
@@ -126,7 +260,7 @@ export async function POST(request: NextRequest) {
     
     const { eventId, ticketTypeId, quantity = 1 } = body
     
-    // ✅ FIXED: Only require eventId for free tickets
+    // Only require eventId for free tickets
     if (!eventId) {
       return NextResponse.json(
         { 
@@ -139,11 +273,11 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 2) {
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 30) {
       return NextResponse.json(
         { 
           success: false, 
-          error: 'Quantity must be between 1 and 2',
+          error: 'Quantity must be between 1 and 30',
           code: 'INVALID_QUANTITY',
           requestId
         },
@@ -278,7 +412,7 @@ export async function POST(request: NextRequest) {
     const TicketType = mongoose.models.TicketType || mongoose.model('TicketType', new mongoose.Schema({}), 'tickettypes')
     const Ticket = mongoose.models.Ticket || mongoose.model('Ticket', new mongoose.Schema({}), 'tickets')
     
-    // ✅ FIXED: Validate event first
+    // Validate event first
     const event = await Event.findById(eventId).lean()
     
     if (!event) {
@@ -293,7 +427,7 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    // ✅ FIXED: Check if event is free
+    // Check if event is free
     if (!event.isFree) {
       return NextResponse.json(
         { 
@@ -306,7 +440,7 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    // ✅ FIXED: Handle ticket type for free events
+    // Handle ticket type for free events
     let ticketType
     let finalTicketTypeId = ticketTypeId
     
@@ -340,7 +474,7 @@ export async function POST(request: NextRequest) {
         )
       }
     } else {
-      // ✅ FIXED: For free events without ticketTypeId, find or create a free ticket type
+      // For free events without ticketTypeId, find or create a free ticket type
       console.log(`🔍 [${requestId}] No ticketTypeId provided, looking for free ticket type for event ${eventId}`)
       
       // Look for existing free ticket type for this event
@@ -359,7 +493,7 @@ export async function POST(request: NextRequest) {
           name: { type: String, default: 'Free Admission' },
           category: { type: String, default: 'General Admission' },
           price: { type: Number, default: 0 },
-          maxSupply: { type: Number, default: 0 }, // 0 = unlimited
+          maxSupply: { type: Number, default: 0 },
           currentSupply: { type: Number, default: 0 },
           isActive: { type: Boolean, default: true },
           createdAt: { type: Date, default: Date.now },
@@ -371,7 +505,7 @@ export async function POST(request: NextRequest) {
         const newTicketType = await FreeTicketType.create({
           eventId: eventId,
           name: 'Free Admission',
-          category: 'GeneralAdmission',
+          category: 'General Admission', // ✅ Fixed: Space between words
           price: 0,
           maxSupply: 0,
           currentSupply: 0,
@@ -415,18 +549,18 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    // Check if user already has tickets for this event
+    // ✅ Check if user already has tickets for this event - MAX 30
     const existingTickets = await Ticket.countDocuments({
       userId: user._id,
       eventId,
       status: { $in: ['active', 'used'] }
     })
     
-    if (existingTickets >= 3) {
+    if (existingTickets >= 30) {
       return NextResponse.json(
         { 
           success: false, 
-          error: 'Maximum 3 tickets per event allowed',
+          error: `Maximum 30 tickets per event allowed. You already have ${existingTickets} tickets.`,
           code: 'MAX_TICKETS_REACHED',
           existing: existingTickets,
           requestId
@@ -438,12 +572,29 @@ export async function POST(request: NextRequest) {
     // Generate unique ticket ID
     const ticketId = `FREE-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`
     
-    // Generate QR code data
-    const verificationCode = crypto.randomBytes(12).toString('hex')
-    const qrCodeData = `cackpass://ticket/${ticketId}/${verificationCode}`
-    
-    // Generate QR code image URL (using a free QR code API)
-    const qrCodeImageUrl = generateQRCodeUrl(qrCodeData)
+    // Generate QR code locally (same as paid tickets)
+    let qrCodeDataUrl = ''
+    try {
+      const qrData = JSON.stringify({
+        ticketId: ticketId,
+        eventTitle: event.title,
+        quantity: quantity,
+        email: user.email,
+        date: new Date(event.startDate).toLocaleDateString(),
+        venue: event.venue || 'Online Event'
+      })
+      
+      qrCodeDataUrl = await QRCode.toDataURL(qrData, {
+        width: 200,
+        margin: 2,
+        color: {
+          dark: '#10b981',
+          light: '#ffffff'
+        }
+      })
+    } catch (qrError) {
+      console.error('QR code generation failed:', qrError)
+    }
     
     // Create ticket record
     const ticketData = {
@@ -454,6 +605,9 @@ export async function POST(request: NextRequest) {
       quantity,
       totalAmount: 0,
       status: 'active',
+      customerEmail: user.email,
+      customerName: user.firstName || user.username || 'User',
+      ticketNumber: ticketId,
       metadata: {
         emailSent: false,
         emailAddress: user.email,
@@ -461,9 +615,7 @@ export async function POST(request: NextRequest) {
         isFree: true,
         source: 'free_ticket_api',
         userName: user.firstName || user.username || 'User',
-        qrCodeData: qrCodeData,
-        qrCodeImageUrl: qrCodeImageUrl,
-        verificationCode: verificationCode
+        qrCodeDataUrl: qrCodeDataUrl
       },
       expiresAt: new Date(event.endDate),
       createdAt: new Date(),
@@ -481,31 +633,27 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    // Send email notification with QR code
+    // ✅ Send email using Gmail (same as paid tickets)
     let emailSent = false
-    let emailError: string | null = null
+    
+    console.log(`\n📧 ========== SENDING FREE TICKET EMAIL ==========`)
+    console.log(`📧 To: ${user.email}`)
+    console.log(`📧 Event: ${event.title}`)
     
     try {
-      await sendTicketEmail({
-        to: user.email,
-        ticketId: ticket.ticketId,
-        eventName: event.title,
-        eventDate: formatEventDate(event.startDate),
-        eventTime: formatEventTime(event.startDate),
+      await sendFreeTicketEmail({
+        email: user.email,
+        name: user.firstName || user.username || user.email.split('@')[0],
+        eventTitle: event.title,
+        eventDate: event.startDate,
         venue: event.venue || 'Online Event',
-        quantity,
-        userName: user.firstName || user.username || 'User',
+        ticketCount: quantity,
         ticketType: ticketType.name,
-        qrCodeImageUrl: qrCodeImageUrl,
-        qrCodeData: qrCodeData,
-        ticketDetails: {
-          eventId: event._id.toString(),
-          ticketId: ticket.ticketId,
-          purchaseDate: new Date().toLocaleDateString(),
-          status: 'Confirmed'
-        }
+        ticketId: ticket.ticketId,
+        qrCodeDataUrl: qrCodeDataUrl
       })
       
+      console.log(`✅ Email sent successfully to ${user.email}`)
       emailSent = true
       
       // Update ticket with email sent status
@@ -514,11 +662,9 @@ export async function POST(request: NextRequest) {
         'metadata.sentAt': new Date()
       })
       
-      console.log(`📧 [${requestId}] Email sent to ${user.email}`)
-      
-    } catch (error: any) {
-      console.error(`❌ [${requestId}] Email sending failed:`, error)
-      emailError = error.message || 'Email sending failed'
+    } catch (emailError: any) {
+      console.error(`❌ EMAIL FAILED:`, emailError.message)
+      emailSent = false
     }
     
     const responseTime = Date.now() - startTime
@@ -539,24 +685,20 @@ export async function POST(request: NextRequest) {
         ticketTypeId: finalTicketTypeId,
         quantity,
         price: 0,
-        currency: 'USDC',
+        currency: 'FREE',
         status: 'active',
-        qrCode: qrCodeData,
-        qrCodeImageUrl: qrCodeImageUrl
+        qrCodeDataUrl: qrCodeDataUrl
       },
       user: {
         email: user.email,
         name: user.firstName || user.username,
-        emailSent,
-        emailError: emailError || undefined
+        emailSent: emailSent
       },
       event: {
         title: event.title,
-        date: formatEventDate(event.startDate),
+        date: new Date(event.startDate).toLocaleDateString(),
         venue: event.venue
       },
-      qrCode: qrCodeData,
-      qrCodeImageUrl: qrCodeImageUrl,
       message: emailSent 
         ? `Free ticket with QR code sent to ${user.email}! Check your inbox.`
         : `Free ticket created! Ticket ID: ${ticket.ticketId}`,
@@ -592,482 +734,6 @@ export async function POST(request: NextRequest) {
       },
       { status: 500 }
     )
-  }
-}
-
-// Helper function to generate QR code URL using a free QR code API
-function generateQRCodeUrl(data: string): string {
-  // Encode the data for URL
-  const encodedData = encodeURIComponent(data)
-  
-  // Using QRCode Monkey API (free, no API key required)
-  // You can also use Google Charts API or other QR code services
-  return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodedData}&margin=10`
-  
-  // Alternative: Google Charts API
-  // return `https://chart.googleapis.com/chart?chs=200x200&cht=qr&chl=${encodedData}&choe=UTF-8`
-}
-
-// Helper function to format event date
-function formatEventDate(dateString: string | Date): string {
-  const date = new Date(dateString)
-  return date.toLocaleDateString('en-US', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric'
-  })
-}
-
-// Helper function to format event time
-function formatEventTime(dateString: string | Date): string {
-  const date = new Date(dateString)
-  return date.toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true
-  })
-}
-
-// Email sending function with QR code
-async function sendTicketEmail({
-  to,
-  ticketId,
-  eventName,
-  eventDate,
-  eventTime,
-  venue,
-  quantity,
-  userName,
-  ticketType,
-  qrCodeImageUrl,
-  qrCodeData,
-  ticketDetails
-}: {
-  to: string
-  ticketId: string
-  eventName: string
-  eventDate: string
-  eventTime: string
-  venue: string
-  quantity: number
-  userName: string
-  ticketType: string
-  qrCodeImageUrl: string
-  qrCodeData: string
-  ticketDetails: {
-    eventId: string
-    ticketId: string
-    purchaseDate: string
-    status: string
-  }
-}) {
-  // Use your email service
-  if (process.env.NODE_ENV === 'test') {
-    console.log(`📧 [TEST] Would send email to ${to} for ticket ${ticketId}`)
-    return
-  }
-  
-  if (!process.env.RESEND_API_KEY) {
-    console.warn('⚠️ RESEND_API_KEY not configured. Skipping email send.')
-    return
-  }
-  
-  try {
-    const resendResponse = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: 'CACK-pass <tickets@cackpass.com>',
-        to: [to],
-        subject: `🎫 Your Ticket for ${eventName}`,
-        html: `
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Your CACK-pass Ticket</title>
-            <style>
-              /* Reset and base styles */
-              * {
-                margin: 0;
-                padding: 0;
-                box-sizing: border-box;
-              }
-              
-              body {
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-                line-height: 1.6;
-                color: #333;
-                background-color: #f9fafb;
-                padding: 20px;
-              }
-              
-              .container {
-                max-width: 600px;
-                margin: 0 auto;
-                background: white;
-                border-radius: 12px;
-                overflow: hidden;
-                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-              }
-              
-              /* Header */
-              .header {
-                background: linear-gradient(135deg, #4f46e5, #7c3aed);
-                color: white;
-                padding: 30px 20px;
-                text-align: center;
-                border-bottom: 4px solid #3730a3;
-              }
-              
-              .header h1 {
-                font-size: 28px;
-                font-weight: 700;
-                margin-bottom: 8px;
-              }
-              
-              .header p {
-                opacity: 0.9;
-                font-size: 16px;
-              }
-              
-              /* Content */
-              .content {
-                padding: 40px;
-              }
-              
-              .greeting {
-                font-size: 18px;
-                margin-bottom: 30px;
-                color: #4b5563;
-              }
-              
-              .greeting strong {
-                color: #111827;
-              }
-              
-              /* Ticket Card */
-              .ticket-card {
-                background: linear-gradient(135deg, #f8fafc, #f1f5f9);
-                border-radius: 12px;
-                padding: 25px;
-                margin-bottom: 30px;
-                border: 1px solid #e2e8f0;
-              }
-              
-              .ticket-header {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                margin-bottom: 20px;
-                padding-bottom: 15px;
-                border-bottom: 2px dashed #cbd5e1;
-              }
-              
-              .ticket-id {
-                font-size: 20px;
-                font-weight: 700;
-                color: #4f46e5;
-              }
-              
-              .ticket-status {
-                background: #10b981;
-                color: white;
-                padding: 6px 12px;
-                border-radius: 20px;
-                font-size: 14px;
-                font-weight: 600;
-              }
-              
-              /* QR Code Section */
-              .qr-section {
-                text-align: center;
-                margin: 30px 0;
-                padding: 25px;
-                background: white;
-                border-radius: 10px;
-                border: 1px solid #e5e7eb;
-              }
-              
-              .qr-title {
-                font-size: 18px;
-                font-weight: 600;
-                color: #1f2937;
-                margin-bottom: 15px;
-              }
-              
-              .qr-code {
-                max-width: 200px;
-                margin: 0 auto 15px;
-              }
-              
-              .qr-code img {
-                width: 100%;
-                height: auto;
-                border: 1px solid #e5e7eb;
-                border-radius: 8px;
-                padding: 10px;
-                background: white;
-              }
-              
-              .qr-data {
-                font-family: 'Courier New', monospace;
-                font-size: 12px;
-                color: #6b7280;
-                word-break: break-all;
-                background: #f9fafb;
-                padding: 10px;
-                border-radius: 6px;
-                margin-top: 10px;
-              }
-              
-              /* Details Grid */
-              .details-grid {
-                display: grid;
-                grid-template-columns: repeat(2, 1fr);
-                gap: 20px;
-                margin-bottom: 30px;
-              }
-              
-              .detail-item {
-                background: white;
-                padding: 15px;
-                border-radius: 8px;
-                border: 1px solid #e5e7eb;
-              }
-              
-              .detail-label {
-                font-size: 12px;
-                color: #6b7280;
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
-                margin-bottom: 5px;
-              }
-              
-              .detail-value {
-                font-size: 16px;
-                font-weight: 600;
-                color: #1f2937;
-              }
-              
-              /* Instructions */
-              .instructions {
-                background: #f0f9ff;
-                border-radius: 10px;
-                padding: 25px;
-                margin-top: 30px;
-                border-left: 4px solid #0ea5e9;
-              }
-              
-              .instructions h3 {
-                color: #0369a1;
-                margin-bottom: 15px;
-                font-size: 18px;
-              }
-              
-              .instructions ol {
-                margin-left: 20px;
-                color: #475569;
-              }
-              
-              .instructions li {
-                margin-bottom: 10px;
-              }
-              
-              /* Footer */
-              .footer {
-                text-align: center;
-                padding: 25px;
-                color: #6b7280;
-                font-size: 14px;
-                border-top: 1px solid #e5e7eb;
-                background: #f9fafb;
-              }
-              
-              .footer a {
-                color: #4f46e5;
-                text-decoration: none;
-              }
-              
-              .footer a:hover {
-                text-decoration: underline;
-              }
-              
-              .support {
-                margin-top: 15px;
-                font-size: 13px;
-              }
-              
-              /* Responsive */
-              @media (max-width: 480px) {
-                .content {
-                  padding: 20px;
-                }
-                
-                .details-grid {
-                  grid-template-columns: 1fr;
-                }
-                
-                .ticket-header {
-                  flex-direction: column;
-                  gap: 10px;
-                  text-align: center;
-                }
-              }
-            </style>
-          </head>
-          <body>
-            <div class="container">
-              <!-- Header -->
-              <div class="header">
-                <h1>🎫 Your Digital Ticket</h1>
-                <p>CACK-pass - Digital Event Tickets</p>
-              </div>
-              
-              <!-- Content -->
-              <div class="content">
-                <!-- Greeting -->
-                <div class="greeting">
-                  Hello <strong>${userName}</strong>,<br>
-                  Your ticket for <strong>${eventName}</strong> has been confirmed!
-                </div>
-                
-                <!-- Ticket Card -->
-                <div class="ticket-card">
-                  <div class="ticket-header">
-                    <div class="ticket-id">Ticket ID: ${ticketId}</div>
-                    <div class="ticket-status">CONFIRMED</div>
-                  </div>
-                  
-                  <!-- QR Code Section -->
-                  <div class="qr-section">
-                    <div class="qr-title">Scan QR Code at Entrance</div>
-                    <div class="qr-code">
-                      <img src="${qrCodeImageUrl}" alt="QR Code for Ticket ${ticketId}" />
-                    </div>
-                    <div class="qr-data">${qrCodeData}</div>
-                    <p style="font-size: 13px; color: #6b7280; margin-top: 10px;">
-                      Show this QR code at the event entrance for scanning
-                    </p>
-                  </div>
-                  
-                  <!-- Event Details Grid -->
-                  <div class="details-grid">
-                    <div class="detail-item">
-                      <div class="detail-label">Event</div>
-                      <div class="detail-value">${eventName}</div>
-                    </div>
-                    
-                    <div class="detail-item">
-                      <div class="detail-label">Date & Time</div>
-                      <div class="detail-value">${eventDate}<br>${eventTime}</div>
-                    </div>
-                    
-                    <div class="detail-item">
-                      <div class="detail-label">Venue</div>
-                      <div class="detail-value">${venue}</div>
-                    </div>
-                    
-                    <div class="detail-item">
-                      <div class="detail-label">Ticket Type</div>
-                      <div class="detail-value">${ticketType}</div>
-                    </div>
-                    
-                    <div class="detail-item">
-                      <div class="detail-label">Quantity</div>
-                      <div class="detail-value">${quantity} Ticket${quantity > 1 ? 's' : ''}</div>
-                    </div>
-                    
-                    <div class="detail-item">
-                      <div class="detail-label">Purchase Date</div>
-                      <div class="detail-value">${ticketDetails.purchaseDate}</div>
-                    </div>
-                  </div>
-                </div>
-                
-                <!-- Instructions -->
-                <div class="instructions">
-                  <h3>📋 Next Steps</h3>
-                  <ol>
-                    <li><strong>Save this email</strong> - Keep it handy for event day</li>
-                    <li><strong>Bring your QR code</strong> - Show it on your phone or print it</li>
-                    <li><strong>Arrive early</strong> - Please arrive 30 minutes before the event starts</li>
-                    <li><strong>Have ID ready</strong> - Bring valid photo identification</li>
-                    <li><strong>Check event updates</strong> - Watch for emails from the organizer</li>
-                  </ol>
-                </div>
-              </div>
-              
-              <!-- Footer -->
-              <div class="footer">
-                <p>
-                  This is your official ticket for <strong>${eventName}</strong>.<br>
-                  Do not share this QR code with others.
-                </p>
-                
-                <div class="support">
-                  Need help? Contact our support team at 
-                  <a href="mailto:support@cackpass.com">support@cackpass.com</a>
-                </div>
-                
-                <p style="margin-top: 20px; font-size: 12px; color: #9ca3af;">
-                  CACK-pass Digital Tickets • Secure Blockchain Verification
-                </p>
-              </div>
-            </div>
-          </body>
-          </html>
-        `,
-        // Optional: Add text version for email clients that don't support HTML
-        text: `
-          YOUR TICKET CONFIRMATION - ${eventName}
-          
-          Hello ${userName},
-          
-          Your ticket for "${eventName}" has been confirmed!
-          
-          TICKET DETAILS:
-          - Ticket ID: ${ticketId}
-          - Event: ${eventName}
-          - Date: ${eventDate}
-          - Time: ${eventTime}
-          - Venue: ${venue}
-          - Ticket Type: ${ticketType}
-          - Quantity: ${quantity} Ticket${quantity > 1 ? 's' : ''}
-          - Status: CONFIRMED
-          
-          QR CODE DATA: ${qrCodeData}
-          
-          IMPORTANT INSTRUCTIONS:
-          1. Save this email for event day
-          2. Show the QR code on your phone at the entrance
-          3. Arrive 30 minutes before the event starts
-          4. Bring valid photo identification
-          5. Check for updates from the organizer
-          
-          Need help? Contact: support@cackpass.com
-          
-          CACK-pass Digital Tickets
-          Secure Blockchain Verification
-        `
-      }),
-    })
-    
-    if (!resendResponse.ok) {
-      const error = await resendResponse.json()
-      throw new Error(`Resend error: ${error.message}`)
-    }
-    
-    console.log(`✅ Email with QR code sent via Resend to ${to}`)
-    
-  } catch (error) {
-    console.error('❌ Resend email error:', error)
-    throw error
   }
 }
 

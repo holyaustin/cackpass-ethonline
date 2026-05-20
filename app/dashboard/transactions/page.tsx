@@ -1,18 +1,17 @@
-// /app/dashboard/transactions/page.tsx - FIXED VERSION
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, lazy, Suspense, useCallback } from 'react'
 import { usePrivy } from '@privy-io/react-auth'
 import { 
   Filter, Search, Download, Calendar, 
-  ArrowUpRight, ArrowDownRight, CreditCard, 
-  ExternalLink, Clock, CheckCircle, XCircle,
+  CreditCard, ExternalLink, Clock, CheckCircle, XCircle,
   Ticket, Wallet, Loader2, Eye, Receipt,
-  Hash, Coins, User, Building, Tag
+  Hash, Coins, Tag
 } from 'lucide-react'
-import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { toast } from 'sonner'
-import { format } from 'date-fns'
+
+// Lazy load date-fns only when needed
+const loadDateFns = () => import('date-fns');
 
 interface Transaction {
   _id: string
@@ -29,7 +28,6 @@ interface Transaction {
   transactionHash?: string
   createdAt: string
   updatedAt: string
-  // Populated fields
   event?: {
     _id: string
     title: string
@@ -57,38 +55,48 @@ interface PaginationInfo {
   hasPrevPage: boolean
 }
 
-// Helper function to get wallet address from Privy user
+// Loading skeleton component
+const TransactionSkeleton = () => (
+  <div className="glass-card rounded-2xl p-6 animate-pulse">
+    <div className="flex items-start gap-4">
+      <div className="w-12 h-12 rounded-xl bg-gray-200 dark:bg-gray-700"></div>
+      <div className="flex-1 space-y-3">
+        <div className="h-5 w-3/4 bg-gray-200 dark:bg-gray-700 rounded"></div>
+        <div className="h-4 w-1/2 bg-gray-200 dark:bg-gray-700 rounded"></div>
+        <div className="h-4 w-1/4 bg-gray-200 dark:bg-gray-700 rounded"></div>
+      </div>
+    </div>
+  </div>
+);
+
+// Helper to get wallet address
 function getWalletAddressFromUser(user: any): string | null {
   if (!user) return null
   
-  console.log('🔍 Checking Privy user for wallet:', {
-    userId: user.id,
-    hasDirectWallet: !!user.wallet,
-    walletType: user.wallet?.address,
-    linkedAccountsCount: user.linkedAccounts?.length || 0,
-  })
-  
-  // Method 1: Check direct wallet object (for embedded wallets)
   if (user.wallet?.address && typeof user.wallet.address === 'string') {
-    console.log('✅ Found direct wallet address:', user.wallet.address)
     return user.wallet.address
   }
   
-  // Method 2: Check linked accounts for wallet types
   const linkedAccounts = user.linkedAccounts || []
-  
-  // Look for wallet accounts in linked accounts
   for (const account of linkedAccounts) {
     if (account.type === 'wallet' || account.type === 'smart_wallet') {
       if (account.address && typeof account.address === 'string') {
-        console.log('✅ Found wallet in linked accounts:', account.address)
         return account.address
       }
     }
   }
   
-  console.log('❌ No wallet found in user object')
   return null
+}
+
+// Format date - lazy loaded
+async function formatDate(dateString: string, formatStr: string): Promise<string> {
+  try {
+    const { format } = await loadDateFns();
+    return format(new Date(dateString), formatStr);
+  } catch {
+    return new Date(dateString).toLocaleDateString();
+  }
 }
 
 export default function TransactionsPage() {
@@ -108,38 +116,39 @@ export default function TransactionsPage() {
   })
   const [walletAddress, setWalletAddress] = useState<string | null>(null)
   const [hasCheckedWallet, setHasCheckedWallet] = useState(false)
+  const [formattedDates, setFormattedDates] = useState<{ [key: string]: string }>({})
 
-  // Extract wallet address when user is authenticated - FIXED
+  // Extract wallet address
   useEffect(() => {
     if (authenticated && ready && user) {
-      console.log('🔄 Extracting wallet address from Privy user...')
       const address = getWalletAddressFromUser(user)
-      console.log('✅ Wallet address extracted:', address)
       setWalletAddress(address)
       setHasCheckedWallet(true)
     } else if (ready) {
-      // If ready but not authenticated, mark as checked
       setHasCheckedWallet(true)
     }
   }, [authenticated, ready, user])
 
-  // Fetch transactions when wallet address or filters change - FIXED
+  // Format dates for all transactions
   useEffect(() => {
-    // Only run if we've checked for wallet address
-    if (!hasCheckedWallet) return
+    const formatAllDates = async () => {
+      if (transactions.length === 0) return;
+      
+      const dates: { [key: string]: string } = {};
+      
+      for (const tx of transactions) {
+        dates[`${tx._id}-created`] = await formatDate(tx.createdAt, 'MMM d, yyyy h:mm a');
+        dates[`${tx._id}-updated`] = await formatDate(tx.updatedAt, 'MMM d, yyyy');
+      }
+      
+      setFormattedDates(dates);
+    };
     
-    if (walletAddress) {
-      console.log('💰 Fetching transactions for wallet:', walletAddress)
-      fetchTransactions(1, true)
-    } else if (authenticated && ready && hasCheckedWallet) {
-      // User is authenticated but no wallet found - ONLY show error after checking
-      console.log('❌ No wallet found after check')
-      setIsLoading(false)
-      // Remove the toast.error() here - we'll handle it in the UI
-    }
-  }, [walletAddress, filter, search, authenticated, ready, hasCheckedWallet])
+    formatAllDates();
+  }, [transactions]);
 
-  const fetchTransactions = async (page = 1, reset = false) => {
+  // Fetch transactions
+  const fetchTransactions = useCallback(async (page = 1, reset = false) => {
     if (!walletAddress) return
 
     try {
@@ -157,8 +166,6 @@ export default function TransactionsPage() {
         walletAddress: walletAddress
       })
 
-      console.log('📡 Fetching transactions for wallet:', walletAddress)
-      
       const response = await fetch(`/api/transactions?${params}`)
       
       if (!response.ok) {
@@ -172,8 +179,6 @@ export default function TransactionsPage() {
         throw new Error(data.error || 'Failed to fetch transactions')
       }
 
-      console.log('✅ Transactions fetched:', data.transactions.length)
-      
       if (reset || page === 1) {
         setTransactions(data.transactions || [])
       } else {
@@ -198,7 +203,18 @@ export default function TransactionsPage() {
       setIsLoading(false)
       setIsLoadingMore(false)
     }
-  }
+  }, [walletAddress, filter, search])
+
+  // Initial fetch
+  useEffect(() => {
+    if (!hasCheckedWallet) return
+    
+    if (walletAddress) {
+      fetchTransactions(1, true)
+    } else if (authenticated && ready && hasCheckedWallet) {
+      setIsLoading(false)
+    }
+  }, [walletAddress, filter, search, authenticated, ready, hasCheckedWallet, fetchTransactions])
 
   const loadMore = () => {
     if (pagination.hasNextPage && !isLoadingMore) {
@@ -206,17 +222,18 @@ export default function TransactionsPage() {
     }
   }
 
-  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSearch = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setSearch(e.target.value)
-  }
+  }, [])
 
-  const handleFilterChange = (newFilter: 'all' | 'completed' | 'pending' | 'failed') => {
+  const handleFilterChange = useCallback((newFilter: 'all' | 'completed' | 'pending' | 'failed') => {
     setFilter(newFilter)
     setCurrentPage(1)
-  }
+  }, [])
 
-  const exportTransactions = () => {
-    // Create CSV data
+  const exportTransactions = useCallback(async () => {
+    const { format } = await loadDateFns();
+    
     const headers = ['Date', 'Event', 'Ticket Type', 'Quantity', 'Amount', 'Currency', 'Payment Method', 'Status']
     const csvData = transactions.map(tx => [
       format(new Date(tx.createdAt), 'yyyy-MM-dd HH:mm:ss'),
@@ -231,7 +248,6 @@ export default function TransactionsPage() {
 
     const csv = [headers, ...csvData].map(row => row.join(',')).join('\n')
     
-    // Create and download file
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -243,54 +259,38 @@ export default function TransactionsPage() {
     window.URL.revokeObjectURL(url)
     
     toast.success('Transactions exported successfully!')
-  }
+  }, [transactions])
 
   const getStatusIcon = (status: Transaction['paymentStatus']) => {
     switch (status) {
-      case 'completed':
-        return <CheckCircle className="h-4 w-4 text-green-500" />
-      case 'pending':
-        return <Clock className="h-4 w-4 text-yellow-500" />
-      case 'failed':
-        return <XCircle className="h-4 w-4 text-red-500" />
-      case 'refunded':
-        return <ArrowUpRight className="h-4 w-4 text-blue-500" />
-      default:
-        return <Clock className="h-4 w-4 text-gray-500" />
+      case 'completed': return <CheckCircle className="h-4 w-4 text-green-500" />
+      case 'pending': return <Clock className="h-4 w-4 text-yellow-500" />
+      case 'failed': return <XCircle className="h-4 w-4 text-red-500" />
+      case 'refunded': return <CheckCircle className="h-4 w-4 text-blue-500" />
+      default: return <Clock className="h-4 w-4 text-gray-500" />
     }
   }
 
   const getStatusColor = (status: Transaction['paymentStatus']) => {
     switch (status) {
-      case 'completed':
-        return 'bg-green-500/10 text-green-600 dark:text-green-400 border-green-200 dark:border-green-900'
-      case 'pending':
-        return 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-200 dark:border-yellow-900'
-      case 'failed':
-        return 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-200 dark:border-red-900'
-      case 'refunded':
-        return 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-900'
-      default:
-        return 'bg-gray-500/10 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-900'
+      case 'completed': return 'bg-green-500/10 text-green-600 dark:text-green-400 border-green-200 dark:border-green-900'
+      case 'pending': return 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-200 dark:border-yellow-900'
+      case 'failed': return 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-200 dark:border-red-900'
+      case 'refunded': return 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-900'
+      default: return 'bg-gray-500/10 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-900'
     }
   }
 
   const getPaymentMethodIcon = (method: Transaction['paymentMethod']) => {
     switch (method) {
-      case 'crypto':
-        return <Coins className="h-4 w-4" />
-      case 'paystack':
-        return <CreditCard className="h-4 w-4" />
-      case 'free':
-        return <Ticket className="h-4 w-4" />
-      default:
-        return <CreditCard className="h-4 w-4" />
+      case 'crypto': return <Coins className="h-4 w-4" />
+      case 'paystack': return <CreditCard className="h-4 w-4" />
+      case 'free': return <Ticket className="h-4 w-4" />
+      default: return <CreditCard className="h-4 w-4" />
     }
   }
 
   const viewTransactionDetails = (transaction: Transaction) => {
-    console.log('View transaction details:', transaction)
-    
     toast.info(`Transaction ${transaction._id.slice(-8)}`, {
       description: `${transaction.quantity} × ${transaction.ticketType?.name || 'Ticket'} - ${transaction.paymentStatus}`,
       duration: 3000
@@ -302,16 +302,11 @@ export default function TransactionsPage() {
       toast.error('No transaction hash available')
       return
     }
-    
-    const explorerUrl = `https://blockscout.lisk.com/tx/${txHash}`
-    window.open(explorerUrl, '_blank')
+    window.open(`https://blockscout.lisk.com/tx/${txHash}`, '_blank')
   }
 
-  if (!ready) return <LoadingSpinner fullScreen />
-  if (!authenticated) return <div className="p-8 text-center">Please sign in to view transactions</div>
-
-  // Check if we're still loading or checking for wallet
-  if (!hasCheckedWallet) {
+  // Loading state
+  if (!ready || !hasCheckedWallet) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
         <div className="text-center">
@@ -321,43 +316,33 @@ export default function TransactionsPage() {
               <Wallet className="h-8 w-8 text-primary animate-pulse" />
             </div>
           </div>
-          <p className="text-gray-600 dark:text-gray-400">Checking wallet connection...</p>
+          <p className="text-gray-600 dark:text-gray-400">Loading...</p>
         </div>
       </div>
     )
   }
 
-  // Only show no wallet error after we've actually checked
-  if (!walletAddress && authenticated && ready && hasCheckedWallet) {
+  // Not authenticated
+  if (!authenticated) {
+    return <div className="p-8 text-center">Please sign in to view transactions</div>
+  }
+
+  // No wallet
+  if (!walletAddress) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
         <div className="text-center p-8 max-w-md">
           <Wallet className="h-16 w-16 text-gray-300 mx-auto mb-4" />
           <h3 className="text-xl font-semibold mb-2">No Wallet Connected</h3>
           <p className="text-gray-600 dark:text-gray-400 mb-6">
-            We couldn't find a connected wallet address. Please ensure you have a connected wallet via Privy.
+            Please connect a wallet to view your transactions.
           </p>
-          <div className="space-y-3">
-            <button
-              onClick={() => window.location.reload()}
-              className="btn-primary px-6 py-3 w-full"
-            >
-              Refresh Page
-            </button>
-            <button
-              onClick={() => {
-                // Try to reconnect wallet
-                if (window.ethereum) {
-                  window.ethereum.request({ method: 'eth_requestAccounts' })
-                    .then(() => window.location.reload())
-                    .catch(console.error)
-                }
-              }}
-              className="px-6 py-3 border border-gray-300 dark:border-gray-600 rounded-lg w-full"
-            >
-              Reconnect Wallet
-            </button>
-          </div>
+          <button
+            onClick={() => window.location.reload()}
+            className="btn-primary px-6 py-3 w-full"
+          >
+            Refresh Page
+          </button>
         </div>
       </div>
     )
@@ -405,7 +390,7 @@ export default function TransactionsPage() {
                 <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
                 <input
                   type="text"
-                  placeholder="Search transactions by event, ticket type, or ID..."
+                  placeholder="Search transactions..."
                   value={search}
                   onChange={handleSearch}
                   className="w-full pl-12 pr-4 py-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-primary"
@@ -413,16 +398,14 @@ export default function TransactionsPage() {
               </div>
             </div>
             
-            <div className="flex gap-3">
-              <button
-                onClick={exportTransactions}
-                disabled={transactions.length === 0}
-                className="px-4 py-3 border border-gray-200 dark:border-gray-700 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Download className="h-4 w-4" />
-                <span className="hidden sm:inline">Export</span>
-              </button>
-            </div>
+            <button
+              onClick={exportTransactions}
+              disabled={transactions.length === 0}
+              className="px-4 py-3 border border-gray-200 dark:border-gray-700 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center gap-2 disabled:opacity-50"
+            >
+              <Download className="h-4 w-4" />
+              <span className="hidden sm:inline">Export</span>
+            </button>
           </div>
 
           {/* Status Filters */}
@@ -446,11 +429,7 @@ export default function TransactionsPage() {
         {/* Transactions List */}
         {isLoading ? (
           <div className="space-y-3">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="glass-card rounded-2xl p-6 animate-pulse">
-                <div className="h-20 bg-gray-200 dark:bg-gray-700 rounded-xl"></div>
-              </div>
-            ))}
+            {[1, 2, 3].map((i) => <TransactionSkeleton key={i} />)}
           </div>
         ) : filteredTransactions.length > 0 ? (
           <>
@@ -458,7 +437,7 @@ export default function TransactionsPage() {
               {filteredTransactions.map((transaction) => (
                 <div key={transaction._id} className="glass-card rounded-2xl p-4 hover:shadow-sm transition-all">
                   <div className="flex items-start justify-between">
-                    <div className="flex items-start gap-4">
+                    <div className="flex items-start gap-4 flex-1">
                       <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${getStatusColor(transaction.paymentStatus)}`}>
                         {getStatusIcon(transaction.paymentStatus)}
                       </div>
@@ -471,28 +450,21 @@ export default function TransactionsPage() {
                             <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600 dark:text-gray-400 mb-2">
                               <span className="flex items-center gap-1">
                                 <Ticket className="h-3 w-3" />
-                                {transaction.ticketType?.name || 'General Ticket'}
-                              </span>
-                              <span className="flex items-center gap-1">
-                                <Tag className="h-3 w-3" />
-                                {transaction.ticketType?.category || 'Standard'}
+                                {transaction.ticketType?.name || 'General'}
                               </span>
                               <span className="flex items-center gap-1">
                                 <Calendar className="h-3 w-3" />
-                                {format(new Date(transaction.createdAt), 'MMM d, yyyy h:mm a')}
+                                {formattedDates[`${transaction._id}-created`] || 'Loading...'}
                               </span>
                             </div>
                           </div>
                           
                           <div className="text-right">
-                            <div className={`text-xl font-bold ${
-                              transaction.paymentStatus === 'refunded' ? 'text-blue-500' : 'text-primary'
-                            }`}>
-                              {transaction.paymentStatus === 'refunded' ? '+' : '-'}
+                            <div className="text-xl font-bold text-primary">
                               {transaction.totalAmount} {transaction.currency}
                             </div>
                             <div className="text-sm text-gray-500">
-                              {transaction.quantity} × {transaction.ticketType?.price || 0} {transaction.currency}
+                              {transaction.quantity} × {transaction.ticketType?.price || 0}
                             </div>
                           </div>
                         </div>
@@ -500,27 +472,18 @@ export default function TransactionsPage() {
                         <div className="flex flex-wrap items-center justify-between gap-3">
                           <div className="flex flex-wrap gap-2">
                             <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(transaction.paymentStatus)}`}>
-                              {transaction.paymentStatus.charAt(0).toUpperCase() + transaction.paymentStatus.slice(1)}
+                              {transaction.paymentStatus.toUpperCase()}
                             </span>
-                            <span className="px-3 py-1 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-full text-xs font-medium flex items-center gap-1">
+                            <span className="px-3 py-1 bg-gray-100 dark:bg-gray-800 rounded-full text-xs font-medium flex items-center gap-1">
                               {getPaymentMethodIcon(transaction.paymentMethod)}
-                              {transaction.paymentMethod.charAt(0).toUpperCase() + transaction.paymentMethod.slice(1)}
+                              {transaction.paymentMethod.toUpperCase()}
                             </span>
-                            {transaction.transactionHash && (
-                              <button
-                                onClick={() => viewOnExplorer(transaction.transactionHash)}
-                                className="px-3 py-1 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-full text-xs font-medium flex items-center gap-1 hover:bg-blue-500/20 transition-colors"
-                              >
-                                <Hash className="h-3 w-3" />
-                                Blockchain
-                              </button>
-                            )}
                           </div>
                           
                           <div className="flex gap-2">
                             <button
                               onClick={() => viewTransactionDetails(transaction)}
-                              className="px-3 py-1 text-primary text-sm font-medium flex items-center gap-1 hover:bg-primary/10 rounded-lg transition-colors"
+                              className="px-3 py-1 text-primary text-sm font-medium flex items-center gap-1 hover:bg-primary/10 rounded-lg"
                             >
                               <Eye className="h-3 w-3" />
                               Details
@@ -528,33 +491,12 @@ export default function TransactionsPage() {
                             {transaction.transactionHash && (
                               <button
                                 onClick={() => viewOnExplorer(transaction.transactionHash)}
-                                className="px-3 py-1 text-primary text-sm font-medium flex items-center gap-1 hover:bg-primary/10 rounded-lg transition-colors"
-                                title="View on blockchain explorer"
+                                className="px-3 py-1 text-primary text-sm font-medium flex items-center gap-1 hover:bg-primary/10 rounded-lg"
                               >
                                 <ExternalLink className="h-3 w-3" />
                                 Explorer
                               </button>
                             )}
-                          </div>
-                        </div>
-                        
-                        {/* Additional Information */}
-                        <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-gray-500">
-                            <div className="flex items-center gap-1">
-                              <span>Order ID:</span>
-                              <span className="font-mono">{transaction._id.slice(-8)}</span>
-                            </div>
-                            {transaction.paymentReference && (
-                              <div className="flex items-center gap-1">
-                                <span>Ref:</span>
-                                <span className="font-mono">{transaction.paymentReference.slice(0, 8)}</span>
-                              </div>
-                            )}
-                            <div className="flex items-center gap-1">
-                              <span>Updated:</span>
-                              <span>{format(new Date(transaction.updatedAt), 'MMM d, yyyy')}</span>
-                            </div>
                           </div>
                         </div>
                       </div>
@@ -564,40 +506,7 @@ export default function TransactionsPage() {
               ))}
             </div>
             
-            {/* Pagination */}
-            {pagination.totalPages > 1 && (
-              <div className="flex items-center justify-between mt-8">
-                <div className="text-sm text-gray-600 dark:text-gray-400">
-                  Showing {transactions.length} of {pagination.totalItems} transactions
-                </div>
-                
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => fetchTransactions(pagination.page - 1)}
-                    disabled={pagination.page <= 1 || isLoadingMore}
-                    className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                  >
-                    Previous
-                  </button>
-                  
-                  <div className="flex items-center px-4">
-                    <span className="text-sm">
-                      Page {pagination.page} of {pagination.totalPages}
-                    </span>
-                  </div>
-                  
-                  <button
-                    onClick={() => fetchTransactions(pagination.page + 1)}
-                    disabled={!pagination.hasNextPage || isLoadingMore}
-                    className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                  >
-                    Next
-                  </button>
-                </div>
-              </div>
-            )}
-            
-            {/* Load More Button */}
+            {/* Load More */}
             {pagination.hasNextPage && (
               <div className="text-center mt-8">
                 <button
@@ -611,7 +520,7 @@ export default function TransactionsPage() {
                       Loading...
                     </>
                   ) : (
-                    'Load More Transactions'
+                    'Load More'
                   )}
                 </button>
               </div>
@@ -621,53 +530,12 @@ export default function TransactionsPage() {
           <div className="text-center py-12 glass-card rounded-2xl">
             <Receipt className="h-16 w-16 mx-auto text-gray-300 mb-4" />
             <h3 className="text-xl font-semibold mb-2">No transactions found</h3>
-            <p className="text-gray-600 dark:text-gray-400 mb-6 max-w-md mx-auto">
-              {search 
-                ? 'No transactions match your search. Try a different search term.'
-                : filter !== 'all'
-                ? `You have no ${filter} transactions.`
-                : 'You haven\'t made any transactions yet. Purchase tickets to see them here.'
-              }
+            <p className="text-gray-600 dark:text-gray-400 mb-6">
+              {search ? 'Try a different search' : 'No transactions yet'}
             </p>
-            {!search && filter === 'all' && (
-              <a href="/events" className="btn-primary px-6 py-3">
-                Browse Events
-              </a>
-            )}
-          </div>
-        )}
-
-        {/* Stats Summary */}
-        {transactions.length > 0 && (
-          <div className="mt-8 grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="glass-card rounded-2xl p-4">
-              <p className="text-sm text-gray-600 dark:text-gray-400">Total Transactions</p>
-              <p className="text-2xl font-bold mt-1">{pagination.totalItems}</p>
-            </div>
-            <div className="glass-card rounded-2xl p-4">
-              <p className="text-sm text-gray-600 dark:text-gray-400">Total Spent</p>
-              <p className="text-2xl font-bold mt-1">
-                {transactions
-                  .filter(t => t.paymentStatus === 'completed' && t.paymentMethod !== 'free')
-                  .reduce((sum, tx) => sum + tx.totalAmount, 0)
-                  .toFixed(2)} 
-              </p>
-            </div>
-            <div className="glass-card rounded-2xl p-4">
-              <p className="text-sm text-gray-600 dark:text-gray-400">Completed</p>
-              <p className="text-2xl font-bold mt-1">
-                {transactions.filter(t => t.paymentStatus === 'completed').length}
-              </p>
-            </div>
-            <div className="glass-card rounded-2xl p-4">
-              <p className="text-sm text-gray-600 dark:text-gray-400">Average Order</p>
-              <p className="text-2xl font-bold mt-1">
-                {transactions.length > 0 
-                  ? (transactions.reduce((sum, tx) => sum + tx.totalAmount, 0) / transactions.length).toFixed(2)
-                  : '0.00'
-                }
-              </p>
-            </div>
+            <a href="/events" className="btn-primary px-6 py-3">
+              Browse Events
+            </a>
           </div>
         )}
       </div>

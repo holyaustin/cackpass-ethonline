@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { usePrivy } from '@privy-io/react-auth';
 import {
@@ -8,7 +8,6 @@ import {
   CheckCircle,
   XCircle,
   ArrowLeft,
-  Camera,
   AlertCircle,
   Calendar,
   Clock,
@@ -18,7 +17,15 @@ import {
   Home,
   RefreshCw,
 } from 'lucide-react';
-import jsQR from 'jsqr';
+
+// Lazy load jsQR library only when needed
+let jsQRModule: any = null;
+const loadJsQR = async () => {
+  if (!jsQRModule) {
+    jsQRModule = await import('jsqr');
+  }
+  return jsQRModule.default;
+};
 
 type VerificationStatus =
   | 'success'
@@ -37,6 +44,13 @@ interface VerificationResult {
   ticketNumber?: string;
 }
 
+// Loading spinner component
+const LoadingState = () => (
+  <div className="min-h-screen flex items-center justify-center">
+    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+  </div>
+);
+
 export default function ScanPage() {
   const { id: eventId } = useParams();
   const router = useRouter();
@@ -48,6 +62,7 @@ export default function ScanPage() {
   const [modalResult, setModalResult] = useState<VerificationResult | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
+  const [jsQRLoaded, setJsQRLoaded] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -62,7 +77,20 @@ export default function ScanPage() {
     console.log(`[SCAN] ${timestamp}: ${msg}`);
   };
 
-  // Authorization check (unchanged)
+  // Load jsQR library when component mounts
+  useEffect(() => {
+    loadJsQR()
+      .then(() => {
+        logDebug('jsQR library loaded successfully');
+        setJsQRLoaded(true);
+      })
+      .catch((error) => {
+        console.error('Failed to load jsQR:', error);
+        setCameraError('Failed to load QR scanner library. Please refresh the page.');
+      });
+  }, []);
+
+  // Authorization check
   useEffect(() => {
     const checkAuth = async () => {
       if (!ready || !authenticated) {
@@ -124,7 +152,7 @@ export default function ScanPage() {
     setCameraReady(false);
   }, []);
 
-  // QR processing (mostly unchanged, but uses updated refs)
+  // QR processing
   const processQrCode = useCallback(
     async (scannedText: string) => {
       logDebug(`✅ QR detected: ${scannedText.substring(0, 80)}...`);
@@ -232,8 +260,8 @@ export default function ScanPage() {
     [eventId, user?.id, eventTitle, mapErrorToStatus]
   );
 
-  // Start scanning loop (improved with isScanningRef)
-  const startScanLoop = useCallback(() => {
+  // Start scanning loop
+  const startScanLoop = useCallback(async () => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas) {
@@ -244,6 +272,13 @@ export default function ScanPage() {
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) {
       logDebug('startScanLoop: no 2d context');
+      return;
+    }
+
+    // Load jsQR if not loaded
+    const jsQR = await loadJsQR();
+    if (!jsQR) {
+      logDebug('jsQR not loaded');
       return;
     }
 
@@ -282,7 +317,7 @@ export default function ScanPage() {
       }
 
       const code = jsQR(imageData.data, imageData.width, imageData.height, {
-        inversionAttempts: 'attemptBoth', // better mobile detection
+        inversionAttempts: 'attemptBoth',
       });
 
       if (code?.data) {
@@ -302,12 +337,18 @@ export default function ScanPage() {
     animationId.current = requestAnimationFrame(tick);
   }, [processQrCode]);
 
-  // Initialize camera with robust constraints and proper loading
+  // Initialize camera
   const initCamera = useCallback(async () => {
     if (isInitialisingRef.current) {
       logDebug('Camera already initialising, skipping');
       return;
     }
+    
+    if (!jsQRLoaded) {
+      logDebug('Waiting for jsQR to load...');
+      return;
+    }
+    
     isInitialisingRef.current = true;
     logDebug('Initializing camera...');
 
@@ -332,7 +373,7 @@ export default function ScanPage() {
     // Small delay to let browser settle
     await new Promise(resolve => setTimeout(resolve, 80));
 
-    // Try constraints in order: exact environment, then environment, then any
+    // Try constraints in order
     let stream: MediaStream | null = null;
     const constraintsList = [
       { video: { facingMode: { exact: 'environment' } } },
@@ -345,7 +386,7 @@ export default function ScanPage() {
         logDebug(`Trying constraint: ${JSON.stringify(constraint)}`);
         stream = await navigator.mediaDevices.getUserMedia(constraint);
         const track = stream.getVideoTracks()[0];
-        logDebug(`Stream obtained: label=${track?.label}, settings=${JSON.stringify(track?.getSettings())}`);
+        logDebug(`Stream obtained: label=${track?.label}`);
         break;
       } catch (err) {
         logDebug(`Constraint failed: ${err}`);
@@ -370,7 +411,7 @@ export default function ScanPage() {
     videoRef.current.srcObject = stream;
     logDebug('srcObject assigned, waiting for loadeddata');
 
-    // Wait for loadeddata (with timeout)
+    // Wait for loadeddata
     await new Promise<void>((resolve) => {
       const vid = videoRef.current!;
       const onLoaded = () => {
@@ -379,7 +420,6 @@ export default function ScanPage() {
         resolve();
       };
       vid.addEventListener('loadeddata', onLoaded);
-      // Fallback timeout (5 seconds)
       setTimeout(() => {
         vid.removeEventListener('loadeddata', onLoaded);
         logDebug('loadeddata timeout, proceeding anyway');
@@ -387,13 +427,12 @@ export default function ScanPage() {
       }, 5000);
     });
 
-    // Play video (only after loadeddata)
+    // Play video
     try {
       await videoRef.current.play();
       logDebug('play() succeeded');
     } catch (playErr: any) {
       logDebug(`play() error: ${playErr.name} - ${playErr.message}`);
-      // If video is not paused, it's probably fine (iOS autoplay restrictions)
       if (videoRef.current?.paused) {
         setCameraError('Could not start camera preview. Tap "Try Again" or interact with the page first.');
         isInitialisingRef.current = false;
@@ -412,19 +451,19 @@ export default function ScanPage() {
     setCameraReady(true);
     isInitialisingRef.current = false;
     startScanLoop();
-  }, [startScanLoop]);
+  }, [startScanLoop, jsQRLoaded]);
 
-  // Initial camera start when authorized
+  // Initial camera start when authorized and jsQR loaded
   useEffect(() => {
-    if (!authorized) return;
-    logDebug('Authorized, initializing camera');
+    if (!authorized || !jsQRLoaded) return;
+    logDebug('Authorized and jsQR loaded, initializing camera');
     const timer = setTimeout(() => initCamera(), 100);
     return () => {
       clearTimeout(timer);
       stopCamera();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authorized]);
+  }, [authorized, jsQRLoaded]);
 
   // Handle "Scan Again"
   const handleScanAgain = () => {
@@ -552,11 +591,7 @@ export default function ScanPage() {
   };
 
   if (!ready || authorized === null) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
+    return <LoadingState />;
   }
   if (!authorized) return null;
 
@@ -595,7 +630,6 @@ export default function ScanPage() {
           </div>
         )}
 
-        {/* Video container – hidden on error */}
         <div
           className="bg-black rounded-xl overflow-hidden aspect-square relative"
           style={{ display: cameraError ? 'none' : 'block' }}
@@ -609,10 +643,12 @@ export default function ScanPage() {
           />
           <canvas ref={canvasRef} className="hidden" />
 
-          {!cameraReady && !cameraError && (
+          {(!cameraReady || !jsQRLoaded) && !cameraError && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 gap-3">
               <Loader2 className="h-10 w-10 animate-spin text-white" />
-              <p className="text-white text-sm">Starting camera…</p>
+              <p className="text-white text-sm">
+                {!jsQRLoaded ? 'Loading scanner...' : 'Starting camera…'}
+              </p>
             </div>
           )}
 
@@ -623,7 +659,7 @@ export default function ScanPage() {
             </div>
           )}
 
-          {cameraReady && !processing && (
+          {cameraReady && jsQRLoaded && !processing && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <div className="w-56 h-56 relative">
                 <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-white rounded-tl-lg" />
@@ -636,7 +672,7 @@ export default function ScanPage() {
         </div>
 
         <p className="text-center text-gray-600 dark:text-gray-400 text-sm mt-4">
-          {cameraReady ? 'Position the QR code inside the frame to scan' : 'Waiting for camera…'}
+          {cameraReady && jsQRLoaded ? 'Position the QR code inside the frame to scan' : 'Initializing scanner…'}
         </p>
       </div>
 
