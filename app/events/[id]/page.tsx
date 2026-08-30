@@ -1206,18 +1206,20 @@ const handlePayWithCard = useCallback(async (overrideEmail?: string) => {
                     {!event.isFree && selectedTicketType && selectedTicketType.price > 0 && (
                       <div className="mb-4">
                         <label className="block text-sm font-medium mb-2">Discount Code</label>
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            value={discountCode}
-                            onChange={(e) => setDiscountCode(e.target.value.toUpperCase())}
-                            placeholder="Enter code"
-                            className="flex-1 px-4 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
-                          />
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <div className="flex-1 min-w-0">
+                            <input
+                              type="text"
+                              value={discountCode}
+                              onChange={(e) => setDiscountCode(e.target.value.toUpperCase())}
+                              placeholder="Enter code"
+                              className="w-full px-4 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary"
+                            />
+                          </div>
                           <button
                             onClick={applyDiscount}
                             disabled={isVerifyingDiscount || !discountCode}
-                            className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50"
+                            className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50 whitespace-nowrap flex-shrink-0"
                           >
                             {isVerifyingDiscount ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Apply'}
                           </button>
