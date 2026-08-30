@@ -8,7 +8,7 @@ import {
   Heart, ChevronLeft, Tag, Globe, Shield, 
   QrCode, Loader2, CreditCard, Wallet, 
   CheckCircle, AlertCircle, User, Mail, 
-  Settings, Percent, X, Star, Share2
+  Settings, Percent, X, Star, Share2, AtSign
 } from 'lucide-react'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
@@ -26,6 +26,12 @@ const ShareDropdown = dynamic(() =>
   import('@/components/common/ShareDropdown').then(mod => ({ default: mod.default })),
   { ssr: false, loading: () => <button className="p-2 hover:bg-gray-100 rounded-lg"><Share2 className="h-5 w-5 text-gray-400" /></button> }
 )
+
+declare global {
+  interface Window {
+    FlutterwaveCheckout: (config: any) => void;
+  }
+}
 
 // Skeleton components for better UX
 const EventHeaderSkeleton = () => (
@@ -52,12 +58,6 @@ const TicketCardSkeleton = () => (
     </div>
   </div>
 )
-
-declare global {
-  interface Window {
-    PaystackPop: any
-  }
-}
 
 interface TicketTypeData {
   _id: string
@@ -276,18 +276,22 @@ function EventPageContent() {
   const [event, setEvent] = useState<EventDataWithId | null>(null)
   const [ticketTypes, setTicketTypes] = useState<TicketTypeData[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [isLoadingTickets, setIsLoadingTickets] = useState(false)
   const [selectedQuantity, setSelectedQuantity] = useState(1)
   const [selectedTicketType, setSelectedTicketType] = useState<TicketTypeData | null>(null)
   const [imageError, setImageError] = useState(false)
   const [isFavorite, setIsFavorite] = useState(false)
   const [isGettingFreeTicket, setIsGettingFreeTicket] = useState(false)
   const [isProcessingPayment, setIsProcessingPayment] = useState(false)
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'paystack' | 'crypto'>('paystack')
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'flutterwave' | 'crypto'>('flutterwave')
   const [userEmail, setUserEmail] = useState<string | null>(null)
   const [isFetchingEmail, setIsFetchingEmail] = useState(false)
   const [isOrganizer, setIsOrganizer] = useState(false)
-  const [paystackLoaded, setPaystackLoaded] = useState(false)
+  const [flutterwaveLoaded, setFlutterwaveLoaded] = useState(false);
+  
+  // Guest checkout state
+  const [guestEmail, setGuestEmail] = useState('')
+  const [showGuestEmailModal, setShowGuestEmailModal] = useState(false)
+  const [isSubmittingGuestEmail, setIsSubmittingGuestEmail] = useState(false)
   
   // Discount management state
   const [showDiscountModal, setShowDiscountModal] = useState(false)
@@ -310,16 +314,25 @@ function EventPageContent() {
   const walletAddress = getWalletAddress(user)
   const isLoggedIn = authenticated && ready
 
-  // Lazy load Paystack script only when needed
   useEffect(() => {
-    if (!paystackLoaded && selectedPaymentMethod === 'paystack' && !event?.isFree) {
-      const script = document.createElement('script')
-      script.src = 'https://js.paystack.co/v2/inline.js'
-      script.async = true
-      script.onload = () => setPaystackLoaded(true)
-      document.body.appendChild(script)
-    }
-  }, [paystackLoaded, selectedPaymentMethod, event?.isFree])
+  // Load Flutterwave script only once
+  if (!document.querySelector('script[src*="checkout.flutterwave.com/v3.js"]')) {
+    const script = document.createElement('script');
+    script.src = 'https://checkout.flutterwave.com/v3.js';
+    script.async = true;
+    script.onload = () => {
+      console.log('✅ Flutterwave script loaded');
+      setFlutterwaveLoaded(true);
+    };
+    script.onerror = () => {
+      console.error('❌ Failed to load Flutterwave script');
+      toast.error('Payment service loading failed. Please refresh and try again.');
+    };
+    document.body.appendChild(script);
+  } else {
+    setFlutterwaveLoaded(true);
+  }
+}, []);
 
   // Fetch logged-in user's email - delayed to not block render
   useEffect(() => {
@@ -512,201 +525,215 @@ function EventPageContent() {
     }
   }, [discountCode, selectedTicketType, eventId, selectedQuantity])
 
-const handleGetFreeTicket = useCallback(async () => {
-  if (!isLoggedIn) {
-    toast.error('Please login to get a free ticket')
-    login()
-    return
-  }
-  if (!userEmail) {
-    toast.error('Please complete your profile with an email address first')
-    router.push('/complete-profile')
-    return
-  }
-  if (!selectedTicketType) {
-    toast.error('Please select a ticket type')
-    return
-  }
-  
-  try {
-    setIsGettingFreeTicket(true)
-    
-    // Get the authentication token from Privy
-    let authToken = null
-    
-    // Try to get token from Privy's getAccessToken method
-    if (typeof window !== 'undefined' && (window as any).privy?.getAccessToken) {
-      try {
-        authToken = await (window as any).privy.getAccessToken()
-        console.log('🔐 Got token from window.privy.getAccessToken()')
-      } catch (e) {
-        console.log('Could not get token from window.privy')
-      }
+  const handleGetFreeTicket = useCallback(async () => {
+    // For free tickets, we still need an email
+    if (!userEmail && !guestEmail) {
+      setShowGuestEmailModal(true)
+      return
     }
     
-    // Alternative: Get token from localStorage if Privy stores it there
-    if (!authToken) {
-      const privyUser = localStorage.getItem('privy:user')
-      if (privyUser) {
+    const emailToUse = userEmail || guestEmail
+    
+    try {
+      setIsGettingFreeTicket(true)
+      
+      // Get the authentication token from Privy if available
+      let authToken = null
+      
+      if (typeof window !== 'undefined' && (window as any).privy?.getAccessToken) {
         try {
-          const parsed = JSON.parse(privyUser)
-          if (parsed.token) authToken = parsed.token
-          console.log('🔐 Got token from localStorage')
-        } catch (e) {}
-      }
-    }
-    
-    // Alternative: Get token from cookie
-    if (!authToken) {
-      const cookies = document.cookie.split(';')
-      for (const cookie of cookies) {
-        const [name, value] = cookie.trim().split('=')
-        if (name === 'privy-token' || name === 'privy_token' || name === 'privy:token') {
-          authToken = value
-          console.log('🔐 Got token from cookie')
-          break
+          authToken = await (window as any).privy.getAccessToken()
+          console.log('🔐 Got token from window.privy.getAccessToken()')
+        } catch (e) {
+          console.log('Could not get token from window.privy')
         }
       }
-    }
-    
-    const headers: HeadersInit = {
-      'Content-Type': 'application/json',
-    }
-    
-    if (authToken) {
-      headers['Authorization'] = `Bearer ${authToken}`
-      console.log('🔐 [FREE] Sending request with auth token')
-    } else {
-      console.warn('⚠️ [FREE] No auth token found, request may fail')
-    }
-    
-    const response = await fetch('/api/tickets/free', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        eventId: eventId,
-        quantity: selectedQuantity,
-        userEmail: userEmail,
-        userName: userEmail.split('@')[0] || 'User'
-      })
-    })
-    
-    const data = await response.json()
-    if (!response.ok) throw new Error(data.error || 'Failed to get free ticket')
-    
-    if (data.success) {
-      toast.success('Free ticket created successfully! Redirecting...')
-      // ✅ Redirect to success page with ticket ID as reference
-      setTimeout(() => {
-        router.push(`/payment/success?reference=${data.ticket?.id || 'free-ticket'}&free=true&email=${encodeURIComponent(userEmail)}`)
-      }, 1500)
-    }
-  } catch (error) {
-    console.error('Error getting free ticket:', error)
-    toast.error(error instanceof Error ? error.message : 'Failed to get free ticket')
-  } finally {
-    setIsGettingFreeTicket(false)
-  }
-}, [isLoggedIn, userEmail, selectedTicketType, eventId, selectedQuantity, login, router])
-
-  const handlePayWithCard = useCallback(async () => {
-    if (!isLoggedIn) {
-      toast.error('Please login to purchase tickets')
-      login()
-      return
-    }
-    if (!userEmail) {
-      toast.error('Please complete your profile with an email address first')
-      router.push('/complete-profile')
-      return
-    }
-    if (!selectedTicketType) {
-      toast.error('Please select a ticket type')
-      return
-    }
-    
-    let totalPrice = selectedTicketType.price * selectedQuantity
-    let discountCodeValue = discountCode.trim()
-    let discountPercent = 0
-    let discountAmountValue = 0
-
-    if (appliedDiscount) {
-      discountPercent = appliedDiscount.percent
-      discountAmountValue = appliedDiscount.amount
-      totalPrice = totalPrice - discountAmountValue
-    }
-
-    try {
-      setIsProcessingPayment(true)
-      const response = await fetch('/api/payments/paystack/initialize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          eventId,
-          ticketTypeId: selectedTicketType._id,
-          quantity: selectedQuantity,
-          amount: totalPrice,
-          originalAmount: selectedTicketType.price * selectedQuantity,
-          email: userEmail,
-          userName: userEmail.split('@')[0] || 'User',
-          discountCode: discountCodeValue,
-          discountPercent,
-          discountAmount: discountAmountValue,
-        })
-      })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.message || data.error || 'Failed to initialize payment')
       
-      if (window.PaystackPop && data.access_code) {
-        const paystack = new window.PaystackPop()
-        paystack.resumeTransaction(data.access_code, {
-          onSuccess: async (transaction: any) => {
-            toast.loading('Verifying payment...')
-            try {
-              const verifyResponse = await fetch(`/api/payments/paystack/verify?reference=${transaction.reference}`)
-              const verifyData = await verifyResponse.json()
-              toast.dismiss()
-              if (verifyData.success) {
-                toast.success('Payment successful! Redirecting...')
-                setTimeout(() => {
-                  window.location.href = `/payment/success?reference=${transaction.reference}`
-                }, 1500)
-              } else {
-                toast.error('Payment verification failed. Please contact support.')
-              }
-            } catch (verifyError) {
-              toast.dismiss()
-              console.error('Verification error:', verifyError)
-              toast.error('Payment verification failed. Please contact support.')
-            }
-            setIsProcessingPayment(false)
-          },
-          onCancel: () => {
-            toast.info('Payment cancelled')
-            setIsProcessingPayment(false)
-          },
-          onError: (error: any) => {
-            console.error('Paystack error:', error)
-            toast.error('Payment failed. Please try again.')
-            setIsProcessingPayment(false)
-          }
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      }
+      
+      if (authToken) {
+        headers['Authorization'] = `Bearer ${authToken}`
+        console.log('🔐 [FREE] Sending request with auth token')
+      }
+      
+      const response = await fetch('/api/tickets/free', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          eventId: eventId,
+          quantity: selectedQuantity,
+          userEmail: emailToUse,
+          userName: emailToUse.split('@')[0] || 'User',
+          isGuest: !userEmail
         })
-      } else if (data.authorization_url) {
-        window.location.href = data.authorization_url
-      } else {
-        throw new Error('No payment URL received')
+      })
+      
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Failed to get free ticket')
+      
+      if (data.success) {
+        toast.success('Free ticket created successfully! Redirecting...')
+        setTimeout(() => {
+          router.push(`/payment/success?reference=${data.ticket?.id || 'free-ticket'}&free=true&email=${encodeURIComponent(emailToUse)}`)
+        }, 1500)
       }
     } catch (error) {
-      console.error('Paystack payment error:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to process payment')
-      setIsProcessingPayment(false)
+      console.error('Error getting free ticket:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to get free ticket')
+    } finally {
+      setIsGettingFreeTicket(false)
     }
-  }, [isLoggedIn, userEmail, selectedTicketType, selectedQuantity, discountCode, appliedDiscount, eventId, login, router])
+  }, [userEmail, guestEmail, eventId, selectedQuantity, router])
+
+  // Updated handlePayWithCard to accept optional email parameter
+const handlePayWithCard = useCallback(async (overrideEmail?: string) => {
+  const emailToUse = overrideEmail || userEmail || guestEmail;
+  
+  if (!emailToUse) {
+    setShowGuestEmailModal(true);
+    return;
+  }
+  
+  if (!selectedTicketType) {
+    toast.error('Please select a ticket type');
+    return;
+  }
+  
+  let totalPrice = selectedTicketType.price * selectedQuantity;
+  let discountCodeValue = discountCode.trim();
+  let discountPercent = 0;
+  let discountAmountValue = 0;
+
+  if (appliedDiscount) {
+    discountPercent = appliedDiscount.percent;
+    discountAmountValue = appliedDiscount.amount;
+    totalPrice = totalPrice - discountAmountValue;
+  }
+
+  try {
+    setIsProcessingPayment(true);
+    
+    const response = await fetch('/api/payments/flutterwave/initialize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        eventId,
+        ticketTypeId: selectedTicketType._id,
+        quantity: selectedQuantity,
+        amount: totalPrice,
+        originalAmount: selectedTicketType.price * selectedQuantity,
+        email: emailToUse,
+        userName: emailToUse.split('@')[0] || 'User',
+        discountCode: discountCodeValue,
+        discountPercent,
+        discountAmount: discountAmountValue,
+        isGuest: !userEmail,
+      })
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to initialize payment');
+    }
+    
+    // Use inline modal instead of redirect
+    if (data.success && data.transaction) {
+      // Check if Flutterwave is loaded
+      if (typeof window !== 'undefined' && window.FlutterwaveCheckout) {
+        // Open the inline modal
+        window.FlutterwaveCheckout({
+          public_key: process.env.NEXT_PUBLIC_FLW_PUBLIC_KEY || 'FLWPUBK_TEST-xxxxxxxxxxxxxxxxxxxxx-X',
+          tx_ref: data.transaction.tx_ref,
+          amount: data.transaction.amount,
+          currency: data.transaction.currency || 'NGN',
+          payment_options: 'card,ussd,banktransfer,account',
+          meta: data.transaction.meta || {},
+          customer: {
+            email: data.transaction.customer.email,
+            name: data.transaction.customer.name,
+          },
+          callback: function (response: any) {
+            console.log('✅ Payment callback:', response);
+            // Include the transaction_id in the redirect URL
+            const redirectUrl = `/payment/success?reference=${data.reference}&provider=flutterwave&transaction_id=${response.transaction_id}`;
+            window.location.href = redirectUrl;
+          },
+
+          onclose: function () {
+            console.log('🔒 Payment modal closed');
+            setIsProcessingPayment(false);
+          },
+          customizations: {
+            title: 'CACK-pass',
+            description: 'Event Ticket Purchase',
+            logo: `${window.location.origin}/logoosm.png`,
+          },
+        });
+      } else {
+        // Fallback to redirect if modal not available
+        console.warn('⚠️ Flutterwave modal not loaded, falling back to redirect');
+        if (data.authorization_url) {
+          window.location.href = data.authorization_url;
+        } else {
+          throw new Error('No payment method available');
+        }
+      }
+    } else {
+      // Fallback to redirect
+      if (data.authorization_url) {
+        window.location.href = data.authorization_url;
+      } else {
+        throw new Error('No payment URL received');
+      }
+    }
+  } catch (error) {
+    console.error('❌ Payment error:', error);
+    toast.error(error instanceof Error ? error.message : 'Failed to process payment');
+    setIsProcessingPayment(false);
+  }
+}, [userEmail, guestEmail, selectedTicketType, selectedQuantity, discountCode, appliedDiscount, eventId]);
 
   const handlePayWithCrypto = useCallback(() => {
     toast.info('🚀 Crypto payments are coming soon! Stay tuned for updates.')
   }, [])
 
+
+  // Handle guest email submission
+  const handleGuestEmailSubmit = useCallback(async () => {
+  if (!guestEmail.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestEmail)) {
+    toast.error('Please enter a valid email address')
+    return
+  }
+  
+  setIsSubmittingGuestEmail(true)
+  try {
+    // Store the email in state
+    setUserEmail(guestEmail)
+    setShowGuestEmailModal(false)
+    
+    // Proceed with payment after a small delay to ensure state updates
+    setTimeout(async () => {
+      if (selectedPaymentMethod === 'flutterwave') {
+        await handlePayWithCard(guestEmail)
+      } else if (selectedPaymentMethod === 'crypto') {
+        handlePayWithCrypto()
+      } else {
+        // Free ticket
+        await handleGetFreeTicket()
+      }
+    }, 100)
+  } catch (error) {
+    console.error('Error with guest email:', error)
+    toast.error('Failed to proceed with guest checkout')
+  } finally {
+    setIsSubmittingGuestEmail(false)
+  }
+}, [guestEmail, selectedPaymentMethod, handlePayWithCard, handlePayWithCrypto, handleGetFreeTicket])
+
+  
   const handleTicketTypeSelect = useCallback((ticketType: TicketTypeData) => {
     setSelectedTicketType(ticketType)
     setSelectedQuantity(1)
@@ -802,6 +829,65 @@ const handleGetFreeTicket = useCallback(async () => {
 
   const isPastEvent = event?.endDate ? new Date(event.endDate) < new Date() : false
 
+  // Guest Email Modal
+  const GuestEmailModal = () => (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80" onClick={() => !isSubmittingGuestEmail && setShowGuestEmailModal(false)}>
+      <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="text-center mb-6">
+          <div className="w-16 h-16 mx-auto mb-4 bg-primary/10 rounded-full flex items-center justify-center">
+            <AtSign className="h-8 w-8 text-primary" />
+          </div>
+          <h2 className="text-2xl font-bold mb-2">Enter Your Email</h2>
+          <p className="text-gray-600 dark:text-gray-400">
+            We'll send your ticket confirmation to this email address
+          </p>
+        </div>
+        
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-2">Email Address</label>
+            <div className="relative">
+              <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+              <input
+                type="email"
+                value={guestEmail}
+                onChange={(e) => setGuestEmail(e.target.value)}
+                placeholder="you@example.com"
+                className="w-full pl-12 pr-4 py-3 border rounded-xl dark:bg-gray-700 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary"
+                disabled={isSubmittingGuestEmail}
+                autoFocus
+              />
+            </div>
+          </div>
+          
+          <div className="flex gap-3">
+            <button
+              onClick={() => setShowGuestEmailModal(false)}
+              className="flex-1 py-3 border border-gray-300 dark:border-gray-600 rounded-xl font-medium hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              disabled={isSubmittingGuestEmail}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleGuestEmailSubmit}
+              disabled={isSubmittingGuestEmail || !guestEmail.trim()}
+              className="flex-1 py-3 bg-primary text-white rounded-xl font-medium hover:bg-primary-dark disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {isSubmittingGuestEmail ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                'Continue'
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+
   // Show skeleton while loading
   if (isLoading) {
     return (
@@ -851,6 +937,9 @@ const handleGetFreeTicket = useCallback(async () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-950">
+      {/* Guest Email Modal */}
+      {showGuestEmailModal && <GuestEmailModal />}
+
       {/* Back Navigation */}
       <div className="sticky top-0 z-40 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800">
         <div className="container mx-auto px-4 py-4">
@@ -1141,75 +1230,50 @@ const handleGetFreeTicket = useCallback(async () => {
                       </div>
                     )}
                     
-                    {/* PAID EVENT - Payment Buttons */}
+                    {/* PAID EVENT - Payment Buttons - NO LOGIN REQUIRED */}
                     {!event.isFree && selectedTicketType && selectedTicketType.price > 0 && (
                       <div className="space-y-4">
-                        {!isLoggedIn ? (
+                        <div className="flex gap-3 mb-4">
                           <button 
-                            onClick={() => login()} 
-                            className="w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-2 text-base bg-primary hover:bg-primary-dark text-white transition-all"
+                            onClick={() => setSelectedPaymentMethod('flutterwave')} 
+                            className={`flex-1 py-3 rounded-xl font-medium flex items-center justify-center gap-2 transition-all ${
+                              selectedPaymentMethod === 'flutterwave' 
+                                ? 'bg-primary text-white' 
+                                : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200'
+                            }`}
                           >
-                            <User className="h-5 w-5" />Login to Purchase
+                            <CreditCard className="h-4 w-4" />Card Payment
                           </button>
-                        ) : !userEmail && !isFetchingEmail ? (
                           <button 
-                            onClick={() => router.push('/complete-profile')} 
-                            className="w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-2 text-base bg-yellow-500 hover:bg-yellow-600 text-white transition-all"
+                            onClick={() => setSelectedPaymentMethod('crypto')} 
+                            className={`flex-1 py-3 rounded-xl font-medium flex items-center justify-center gap-2 transition-all ${
+                              selectedPaymentMethod === 'crypto' 
+                                ? 'bg-primary text-white' 
+                                : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200'
+                            }`}
                           >
-                            <Mail className="h-5 w-5" />Complete Profile
+                            <Wallet className="h-4 w-4" />Crypto
                           </button>
-                        ) : isFetchingEmail ? (
+                        </div>
+                        
+                        {selectedPaymentMethod === 'flutterwave' && (
                           <button 
-                            disabled 
-                            className="w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-2 text-base bg-gray-400 text-white cursor-not-allowed"
+                            onClick={() => handlePayWithCard()} 
+                            disabled={isProcessingPayment} 
+                            className="w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
                           >
-                            <Loader2 className="h-5 w-5 animate-spin" />Loading...
+                            {isProcessingPayment ? <Loader2 className="h-5 w-5 animate-spin" /> : <CreditCard className="h-5 w-5" />}
+                            {isProcessingPayment ? 'Processing...' : `Pay ₦${Number(getTotalPrice()).toLocaleString()}`}
                           </button>
-                        ) : (
-                          <>
-                            <div className="flex gap-3 mb-4">
-                              <button 
-                                onClick={() => setSelectedPaymentMethod('paystack')} 
-                                className={`flex-1 py-3 rounded-xl font-medium flex items-center justify-center gap-2 transition-all ${
-                                  selectedPaymentMethod === 'paystack' 
-                                    ? 'bg-primary text-white' 
-                                    : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200'
-                                }`}
-                              >
-                                <CreditCard className="h-4 w-4" />Card
-                              </button>
-                              <button 
-                                onClick={() => setSelectedPaymentMethod('crypto')} 
-                                className={`flex-1 py-3 rounded-xl font-medium flex items-center justify-center gap-2 transition-all ${
-                                  selectedPaymentMethod === 'crypto' 
-                                    ? 'bg-primary text-white' 
-                                    : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200'
-                                }`}
-                              >
-                                <Wallet className="h-4 w-4" />Crypto
-                              </button>
-                            </div>
-                            
-                            {selectedPaymentMethod === 'paystack' && (
-                              <button 
-                                onClick={handlePayWithCard} 
-                                disabled={isProcessingPayment} 
-                                className="w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
-                              >
-                                {isProcessingPayment ? <Loader2 className="h-5 w-5 animate-spin" /> : <CreditCard className="h-5 w-5" />}
-                                {isProcessingPayment ? 'Processing...' : `Pay ₦${Number(getTotalPrice()).toLocaleString()}`}
-                              </button>
-                            )}
-                            
-                            {selectedPaymentMethod === 'crypto' && (
-                              <button 
-                                onClick={handlePayWithCrypto} 
-                                className="w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
-                              >
-                                <Wallet className="h-5 w-5" />Pay with Crypto (Soon)
-                              </button>
-                            )}
-                          </>
+                        )}
+                        
+                        {selectedPaymentMethod === 'crypto' && (
+                          <button 
+                            onClick={handlePayWithCrypto} 
+                            className="w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
+                          >
+                            <Wallet className="h-5 w-5" />Pay with Crypto (Soon)
+                          </button>
                         )}
                       </div>
                     )}

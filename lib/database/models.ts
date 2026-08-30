@@ -128,7 +128,7 @@ const OrderSchema = new mongoose.Schema({
   quantity: { type: Number, required: true, min: 1 },
   totalAmount: { type: Number, required: true, min: 0 },
   currency: { type: String, enum: ['NGN', 'USD', 'ETH', 'USDC'], default: 'NGN' },
-  paymentMethod: { type: String, enum: ['paystack', 'wallet', 'free'], required: true },
+  paymentMethod: { type: String, enum: ['paystack', 'flutterwave', 'wallet', 'free'], required: true },
   paymentStatus: { type: String, enum: ['pending', 'paid', 'failed', 'refunded'], default: 'pending' },
   paymentReference: String,
   mintStatus: { type: String, enum: ['pending', 'minted', 'failed'], default: 'pending' },
@@ -141,7 +141,7 @@ const OrderSchema = new mongoose.Schema({
 
 // Payment Schema - NO field-level indexes
 const PaymentSchema = new mongoose.Schema({
-  paymentMethod: { type: String, enum: ['wallet', 'paystack', 'crypto', 'free'], required: true },
+  paymentMethod: { type: String, enum: ['wallet', 'paystack', 'flutterwave', 'crypto', 'free'], required: true },
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: false },
   walletAddress: { 
     type: String,

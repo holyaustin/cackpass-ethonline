@@ -1,4 +1,4 @@
-// /components/tickets/PurchaseModal.tsx - COMPLETE FIXED VERSION
+// /components/tickets/PurchaseModal.tsx 
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
@@ -49,7 +49,7 @@ interface PurchaseModalProps {
 }
 
 interface PaymentMethod {
-  id: 'wallet' | 'flutterwave'
+  id: 'wallet' | 'paystack'
   name: string
   description: string
   icon: React.ReactNode
@@ -95,7 +95,7 @@ export default function PurchaseModal({
   quantity = 1
 }: PurchaseModalProps) {
   const { user, authenticated, ready, getAccessToken } = usePrivy()
-  const [selectedMethod, setSelectedMethod] = useState<'wallet' | 'flutterwave'>('wallet')
+  const [selectedMethod, setSelectedMethod] = useState<'wallet' | 'paystack'>('wallet')
   const [isProcessing, setIsProcessing] = useState(false)
   const [step, setStep] = useState<'method' | 'confirm' | 'processing' | 'success'>('method')
   const [walletAddress, setWalletAddress] = useState<string | null>(null)
@@ -125,16 +125,16 @@ export default function PurchaseModal({
               setHasEmbeddedWallet(true)
             } else {
               setHasEmbeddedWallet(false)
-              setSelectedMethod('flutterwave')
+              setSelectedMethod('paystack')
             }
           } else {
             setHasEmbeddedWallet(false)
-            setSelectedMethod('flutterwave')
+            setSelectedMethod('paystack')
           }
         } catch (error) {
           console.error('Failed to fetch user data:', error)
           setHasEmbeddedWallet(false)
-          setSelectedMethod('flutterwave')
+          setSelectedMethod('paystack')
         }
       }
       
@@ -168,9 +168,9 @@ export default function PurchaseModal({
       icon: <Wallet className="h-5 w-5" />
     },
     {
-      id: 'flutterwave',
-      name: 'Flutterwave Payment',
-      description: 'Pay with card, bank transfer, or USSD',
+      id: 'paystack',
+      name: 'PayStack Payment',
+      description: 'Pay with credit/debit card, bank transfer or USSD',
       icon: <CreditCard className="h-5 w-5" />
     }
   ]
@@ -191,135 +191,6 @@ export default function PurchaseModal({
       return 'TBD'
     }
   }, [])
-
-  // ===== WALLET PAYMENT FUNCTION (UNCHANGED) =====
-  const processWalletPayment = async (eventId: string) => {
-    if (!walletAddress) {
-      throw new Error('Wallet address not found')
-    }
-
-    try {
-      console.log('Starting wallet payment process for event:', eventId)
-      
-      // First get payment approval
-      const approvalResponse = await fetch('/api/payment/approval', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': userToken ? `Bearer ${userToken}` : ''
-        },
-        body: JSON.stringify({
-          walletAddress,
-          eventId: eventId,
-          onChainId: event.onChainId,
-          amount: quantity,
-          price: totalAmount,
-          method: 'wallet'
-        })
-      })
-
-      const approvalData = await approvalResponse.json()
-
-      if (!approvalResponse.ok || !approvalData.success) {
-        console.error('Approval failed:', approvalData)
-        throw new Error(approvalData.error || 'Failed to get payment approval')
-      }
-
-      console.log('Approval received:', approvalData)
-      setApprovalData(approvalData)
-
-      const ticketTypeId = ticketType?._id || ticketType?.id
-
-      // Process the payment
-      const paymentPayload = {
-        paymentMethod: 'wallet',
-        approvalId: approvalData.approvalId,
-        signature: approvalData.signature,
-        walletAddress: walletAddress,
-        amount: totalAmount,
-        currency: event.currency || 'USD',
-        eventId: eventId,
-        quantity: quantity,
-        ticketTypeId: ticketTypeId,
-        signatureData: approvalData.signatureData || null,
-        validUntil: approvalData.validUntil || null
-      }
-
-      console.log('Sending payment payload:', paymentPayload)
-
-      const paymentResponse = await fetch('/api/payment/process', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': userToken ? `Bearer ${userToken}` : ''
-        },
-        body: JSON.stringify(paymentPayload)
-      })
-
-      const paymentData = await paymentResponse.json()
-
-      if (!paymentResponse.ok || !paymentData.success) {
-        console.error('Payment failed:', paymentData)
-        throw new Error(paymentData.error || paymentData.details || 'Payment processing failed')
-      }
-
-      console.log('Payment successful:', paymentData)
-      
-      return {
-        ...paymentData,
-        approvalData: approvalData
-      }
-
-    } catch (error) {
-      console.error('Wallet payment error:', error)
-      throw error
-    }
-  }
-
-  // ===== FLUTTERWAVE PAYMENT FUNCTION (REPLACES PAYSTACK) =====
-  const processFlutterwavePayment = async (eventId: string) => {
-    const ticketTypeId = ticketType?._id || ticketType?.id
-
-    try {
-      console.log('Starting Flutterwave payment for event:', eventId)
-      
-      const response = await fetch('/api/payments/flutterwave/initialize', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': userToken ? `Bearer ${userToken}` : ''
-        },
-        body: JSON.stringify({
-          eventId: eventId,
-          ticketTypeId: ticketTypeId,
-          quantity: quantity,
-          amount: totalAmount,
-          email: user?.email?.address || '',
-          userName: user?.email?.address?.split('@')[0] || 'User',
-        })
-      })
-
-      const data = await response.json()
-
-      if (!response.ok || !data.success) {
-        console.error('Flutterwave payment failed:', data)
-        throw new Error(data.error || data.details || 'Flutterwave payment failed')
-      }
-
-      console.log('Flutterwave payment initiated:', data)
-      
-      // If Flutterwave returns a payment URL, redirect to it
-      if (data.authorization_url) {
-        window.location.href = data.authorization_url
-        return { success: true, requiresRedirect: true }
-      }
-
-      return data
-    } catch (error) {
-      console.error('Flutterwave payment error:', error)
-      throw error
-    }
-  }
 
   // ===== MAIN PAYMENT HANDLER =====
   const handlePayment = async () => {
@@ -344,10 +215,10 @@ export default function PurchaseModal({
       if (selectedMethod === 'wallet') {
         paymentResult = await processWalletPayment(eventId)
       } else {
-        paymentResult = await processFlutterwavePayment(eventId)
+        paymentResult = await processPaystackPayment(eventId)
       }
 
-      // Handle redirect
+      // Handle Paystack redirect
       if (paymentResult.requiresRedirect) {
         toast.info('Redirecting to payment gateway...')
         return
@@ -386,6 +257,137 @@ export default function PurchaseModal({
       setStep('method')
     } finally {
       setIsProcessing(false)
+    }
+  }
+
+  // ===== WALLET PAYMENT FUNCTION =====
+  const processWalletPayment = async (eventId: string) => {
+    if (!walletAddress) {
+      throw new Error('Wallet address not found')
+    }
+
+    try {
+      console.log('Starting wallet payment process for event:', eventId)
+      
+      // First get payment approval
+      const approvalResponse = await fetch('/api/payment/approval', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': userToken ? `Bearer ${userToken}` : ''
+        },
+        body: JSON.stringify({
+          walletAddress,
+          eventId: eventId,
+          onChainId: event.onChainId,
+          amount: quantity,
+          price: totalAmount,
+          method: 'wallet'
+        })
+      })
+
+      const approvalData = await approvalResponse.json()
+
+      if (!approvalResponse.ok || !approvalData.success) {
+        console.error('Approval failed:', approvalData)
+        throw new Error(approvalData.error || 'Failed to get payment approval')
+      }
+
+      console.log('Approval received:', approvalData)
+      setApprovalData(approvalData) // Store for later use
+
+      const ticketTypeId = ticketType?._id || ticketType?.id
+
+      // Process the payment
+      const paymentPayload = {
+        paymentMethod: 'wallet',
+        approvalId: approvalData.approvalId,
+        signature: approvalData.signature,
+        walletAddress: walletAddress,
+        amount: totalAmount,
+        currency: event.currency || 'USD',
+        eventId: eventId,
+        quantity: quantity,
+        ticketTypeId: ticketTypeId,
+        signatureData: approvalData.signatureData || null,
+        validUntil: approvalData.validUntil || null
+      }
+
+      console.log('Sending payment payload:', paymentPayload)
+
+      const paymentResponse = await fetch('/api/payment/process', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': userToken ? `Bearer ${userToken}` : ''
+        },
+        body: JSON.stringify(paymentPayload)
+      })
+
+      const paymentData = await paymentResponse.json()
+
+      if (!paymentResponse.ok || !paymentData.success) {
+        console.error('Payment failed:', paymentData)
+        throw new Error(paymentData.error || paymentData.details || 'Payment processing failed')
+      }
+
+      console.log('Payment successful:', paymentData)
+      
+      // Return both paymentId and approval data for minting
+      return {
+        ...paymentData,
+        approvalData: approvalData // Include approval data for minting
+      }
+
+    } catch (error) {
+      console.error('Wallet payment error:', error)
+      throw error
+    }
+  }
+
+  // ===== PAYSTACK PAYMENT FUNCTION =====
+  const processPaystackPayment = async (eventId: string) => {
+    const ticketTypeId = ticketType?._id || ticketType?.id
+
+    try {
+      console.log('Starting Paystack payment for event:', eventId)
+      
+      const response = await fetch('/api/payment/process', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': userToken ? `Bearer ${userToken}` : ''
+        },
+        body: JSON.stringify({
+          paymentMethod: 'paystack',
+          walletAddress: walletAddress || 'paystack-payment',
+          amount: totalAmount,
+          currency: event.currency || 'NGN',
+          eventId: eventId,
+          quantity: quantity,
+          ticketTypeId: ticketTypeId
+        })
+      })
+
+      const data = await response.json()
+
+      if (!response.ok || !data.success) {
+        console.error('Paystack payment failed:', data)
+        throw new Error(data.error || data.details || 'Paystack payment failed')
+      }
+
+      console.log('Paystack payment initiated:', data)
+      
+      // If Paystack returns a payment URL, redirect to it
+      if (data.paymentUrl && data.requiresRedirect) {
+        window.location.href = data.paymentUrl
+        return { success: true, requiresRedirect: true }
+      }
+
+      return data
+    } catch (error) {
+      console.error('Paystack payment error:', error)
+      throw error
     }
   }
 
@@ -591,44 +593,63 @@ export default function PurchaseModal({
                 <h3 className="font-semibold mb-3">Select Payment Method</h3>
                 
                 <div className="space-y-3">
-                  {paymentMethods.map((method) => (
+                  {paymentMethods.map((method, index) => (
                     <button
                       key={method.id}
-                      onClick={() => setSelectedMethod(method.id)}
+                      onClick={() => {
+                        // Deactivate the second button (index 1) - Paystack button
+                        if (index === 1) {
+                          // Optional: Show a toast or message
+                          toast.error('PayStack payments are temporarily unavailable. Please use wallet payment.');
+                          return;
+                        }
+                        setSelectedMethod(method.id);
+                      }}
                       disabled={method.id === 'wallet' && !hasEmbeddedWallet}
                       className={`w-full p-4 rounded-xl border flex items-start gap-3 text-left transition-all ${
                         selectedMethod === method.id
                           ? 'border-primary bg-primary/5'
                           : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
-                      } ${(method.id === 'wallet' && !hasEmbeddedWallet) ? 'opacity-60 cursor-not-allowed' : ''}`}
+                      } ${(method.id === 'wallet' && !hasEmbeddedWallet) || index === 1 ? 'opacity-60 cursor-not-allowed' : ''}`}
                     >
                       <div className={`p-2 rounded-lg ${
-                        selectedMethod === method.id
+                        selectedMethod === method.id && index !== 1
                           ? 'bg-primary text-white' 
-                          : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
+                          : (index === 1 ? 'bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-500' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400')
                       }`}>
                         {method.icon}
                       </div>
                       <div className="flex-1">
                         <div className="font-semibold flex items-center gap-2">
                           {method.name}
-                          {method.id === 'wallet' && !hasEmbeddedWallet && (
-                            <span className="text-xs text-amber-600">(Connect wallet)</span>
+                          {index === 1 && (
+                            <span className="px-2 py-0.5 bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-xs rounded-full">
+                              Coming Soon
+                            </span>
                           )}
                         </div>
                         <div className="text-sm text-gray-600 dark:text-gray-400">
                           {method.description}
                           {method.id === 'wallet' && !hasEmbeddedWallet && (
                             <div className="mt-1">
+                            </div>
+                          )}
+                          {index === 1 && (
+                            <div className="mt-1">
                               <span className="text-amber-600 dark:text-amber-400 text-xs">
-                                No embedded wallet found. Please use card payment.
+                                Card payments are temporarily unavailable. Please use wallet payment.
                               </span>
                             </div>
                           )}
                         </div>
                       </div>
-                      {selectedMethod === method.id && (
+                      {selectedMethod === method.id && index !== 1 && (
                         <CheckCircle className="h-5 w-5 text-primary flex-shrink-0 mt-1" />
+                      )}
+                      {index === 1 && (
+                        <div className="flex-shrink-0 mt-1">
+                          <AlertCircle className="h-5 w-5 text-gray-400" />
+                        </div>
                       )}
                     </button>
                   ))}
@@ -692,9 +713,9 @@ export default function PurchaseModal({
                       {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
                     </div>
                   )}
-                  {selectedMethod === 'flutterwave' && (
+                  {selectedMethod === 'paystack' && (
                     <div className="text-xs text-gray-500 bg-gray-100 dark:bg-gray-800 p-2 rounded-lg mt-2">
-                      You'll be redirected to Flutterwave to complete payment
+                      You'll be redirected to Paystack to complete payment
                     </div>
                   )}
                 </div>
@@ -744,7 +765,7 @@ export default function PurchaseModal({
                 {selectedMethod === 'wallet' ? (
                   <p>• Approving payment with your wallet</p>
                 ) : (
-                  <p>• Processing Flutterwave payment</p>
+                  <p>• Processing Paystack payment</p>
                 )}
                 <p>• Creating your ticket</p>
                 <p>• Securing on blockchain</p>

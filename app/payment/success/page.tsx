@@ -66,49 +66,78 @@ export default function PaymentSuccessPage() {
 
   const verifyPayment = async (ref: string) => {
     try {
-      console.log('🔍 Verifying payment for reference:', ref)
+      console.log('🔍 Verifying payment for reference:', ref);
       
-      const response = await fetch(`/api/payments/paystack/verify?reference=${ref}`)
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Verification failed')
+      // Get the transaction_id from URL if available
+      const urlParams = new URLSearchParams(window.location.search);
+      const transactionId = urlParams.get('transaction_id');
+      
+      // Build the verification URL
+      let verifyUrl = `/api/payments/flutterwave/verify?reference=${ref}`;
+      if (transactionId) {
+        verifyUrl += `&transaction_id=${transactionId}`;
       }
+      
+      console.log('📡 Verification URL:', verifyUrl);
+      
+      const response = await fetch(verifyUrl);
+      
+      // Check if response is ok
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Verification response error:', response.status, errorText);
+        
+        // Try to parse as JSON
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { error: errorText || 'Verification failed' };
+        }
+        
+        throw new Error(errorData.error || 'Verification failed');
+      }
+      
+      const data = await response.json();
+      console.log('📥 Verification response data:', data);
 
       if (!data.success) {
-        throw new Error('Payment verification failed')
+        console.error('❌ Verification failed:', data);
+        throw new Error(data.error || 'Payment verification failed');
       }
 
-      console.log('✅ Payment verified successfully:', data)
+      console.log('✅ Payment verified successfully:', data);
       
+      // Set the payment details
       setPaymentDetails({
         reference: ref,
         amount: data.amount || 0,
         tickets: data.tickets || [],
         userEmail: data.userEmail,
         event: data.event
-      })
+      });
       
-      const wasEmailSent = data.emailSent === true
-      setEmailSent(wasEmailSent)
+      // Track email status
+      const wasEmailSent = data.emailSent === true;
+      setEmailSent(wasEmailSent);
       
-      if (data.emailSent === true) {
-        toast.success('🎫 Ticket details sent to your email!')
-      } else if (data.emailSent === false && data.userEmail) {
-        toast.success('Ticket created successfully!')
+      if (wasEmailSent) {
+        toast.success('🎫 Ticket details sent to your email!');
+      } else if (data.emailError) {
+        toast.warning('Payment successful! Tickets available in your dashboard.');
+        console.warn('Email sending failed:', data.emailError);
       } else {
-        if (data.tickets && data.tickets.length > 0) {
-          toast.success('Tickets created successfully! Check your dashboard.')
-        }
+        toast.success('Tickets created successfully!');
       }
       
-      setIsLoading(false)
+      setIsLoading(false);
     } catch (err: any) {
-      console.error('❌ Verification error:', err)
-      setError(err.message || 'Failed to verify payment')
-      setIsLoading(false)
+      console.error('❌ Verification error:', err);
+      setError(err.message || 'Failed to verify payment');
+      setIsLoading(false);
     }
-  }
+  };
+
 
   if (isLoading) {
     return (
