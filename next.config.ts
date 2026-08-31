@@ -1,11 +1,12 @@
 import type { NextConfig } from 'next';
+import withPWAInit from '@ducanh2912/next-pwa';
+import withBundleAnalyzerInit from '@next/bundle-analyzer';
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   
-  // ✅ ADDED: Experimental optimizations
+  // Experimental optimizations
   experimental: {
-    // Limits the size of chunks stored in memory during active file changes
     webpackMemoryOptimizations: true,
     optimizePackageImports: [
       'lucide-react',
@@ -19,7 +20,7 @@ const nextConfig: NextConfig = {
     ],
   },
   
-  // ✅ ADDED: Move heavy deps to external (reduces server bundle)
+  // Excludes heavy backend tools from the frontend bundle
   serverExternalPackages: [
     'nodemailer',
     'qrcode',
@@ -33,31 +34,47 @@ const nextConfig: NextConfig = {
     'fast-sha256',
     '@stablelib/base64',
   ],
-    // Note: Turbopack currently has limited support for some plugins; 
-  // if analysis fails, try removing this line temporarily.
+
   turbopack: {},
+  
+
+  // Image Optimization configuration
   images: {
     remotePatterns: [
       {
         protocol: 'https',
-        hostname: '**',
+        // ✅ Dynamically extracts 'cyan-heavy-kangaroo-977.mypinata.cloud' from your env variable
+        hostname: process.env.NEXT_PUBLIC_GATEWAY_URL 
+          ? new URL(process.env.NEXT_PUBLIC_GATEWAY_URL).hostname 
+          : 'cyan-heavy-kangaroo-977.mypinata.cloud', // Fallback just in case env is missing during builds
+        pathname: '/ipfs/**',
       },
+      // ✅ ADDED: Authorized Imgur Asset Pipeline Wrapper
+      {
+        protocol: 'https',
+        hostname: 'i.imgur.com',
+        pathname: '/**', // Safely allow assets under the root folder path
+      },
+      
     ],
+    formats: ['image/avif', 'image/webp'],
   },
-  // No CSP headers
 };
 
-const withPWA = require('next-pwa')({
+// Modern Next 16 PWA Initialization
+const withPWA = withPWAInit({
   dest: 'public',
   disable: process.env.NODE_ENV === 'development',
   register: true,
-  skipWaiting: true,
+  // ✅ FIX: Move skipWaiting inside workboxOptions
+  workboxOptions: {
+    skipWaiting: true,
+  },
 });
 
-// Initialize the Bundle Analyzer plugin
-const withBundleAnalyzer = require('@next/bundle-analyzer')({
+const withBundleAnalyzer = withBundleAnalyzerInit({
   enabled: process.env.ANALYZE === 'true',
 });
 
-// Wrap the config with both plugins
-module.exports = withBundleAnalyzer(withPWA(nextConfig));
+export default withBundleAnalyzer(withPWA(nextConfig));
+

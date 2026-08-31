@@ -669,7 +669,7 @@ const handlePayWithCard = useCallback(async (overrideEmail?: string) => {
           customizations: {
             title: 'CACK-pass',
             description: 'Event Ticket Purchase',
-            logo: `${window.location.origin}/logoosm.png`,
+            logo: 'https://i.imgur.com/hWwzPMF.png', // 🚀 Verified direct image URL
           },
         });
       } else {

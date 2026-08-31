@@ -8,10 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "clean": "rm -rf .next node_modules && npm install --legacy-peer-deps",
-    "analyze": "ANALYZE=true next build"
+    "analyze": "ANALYZE=true next build --webpack"
   },
   "dependencies": {
-    "@ducanh2912/next-pwa": "^10.2.9",
     "@hookform/resolvers": "^5.2.2",
     "@paystack/paystack-sdk": "^1.0.1",
     "@privy-io/react-auth": "^3.10.1",
@@ -27,6 +26,7 @@
     "@vercel/speed-insights": "^2.0.0",
     "@zxing/library": "^0.21.3",
     "axios": "^1.13.5",
+    "crypto": "^1.0.1",
     "date-fns": "^4.1.0",
     "dotenv": "^17.2.3",
     "ethers": "^6.16.0",
@@ -37,6 +37,7 @@
     "mongodb": "^7.0.0",
     "mongoose": "^9.1.2",
     "next": "^16.1.6",
+    "next-pwa": "^5.6.0",
     "nodemailer": "^7.0.13",
     "pinata": "^2.5.2",
     "qrcode": "^1.5.4",
@@ -59,7 +60,6 @@
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@types/webpack": "^5.28.5",
     "eslint": "^9",
     "eslint-config-next": "16.0.6",
     "tailwindcss": "^4",
