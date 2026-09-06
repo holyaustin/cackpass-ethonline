@@ -4,7 +4,7 @@
 ## 🚀 Quick Start
 
 ```bash
-git clone https://github.com/CACK-pass/frontend
+git clone https://github.com/holyaustin/frontend
 cd cack-pass
 npm install
 cp .env.example .env.local
@@ -263,6 +263,3 @@ https://blockscout.lisk.com/address/0xcc68Ce1342B91cC9A1F97e8863c77465910f2e63
 https://blockscout.lisk.com/address/0x589C1494089889C077d7AbBA17B40575E961cC8c
 https://blockscout.lisk.com/address/0x7b954082151F7a44B2E42Ef9225393ea4f16c482
 https://blockscout.lisk.com/address/0x49e7127A28c153CC69e196344799E873303a8424
-
-
-http://localhost:3000/events/698f769cc31ef91a73dabec7
