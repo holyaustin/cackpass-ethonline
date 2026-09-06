@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Hardhat
+artifacts/
+cache/
+typechain-types/
+
+# Build and dist
+dist/
+build/
+
+# Deployment artifacts
+deployments/**/*.json
+deployments/**/*.abi.json
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Gas reporting
+gas-report.txt
+
+# Coverage
+coverage/
+.nyc_output/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Testing
+.mocha
+.coverage
