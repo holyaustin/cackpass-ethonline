@@ -4,7 +4,7 @@
 ## 🚀 Quick Start
 
 ```bash
-git clone https://github.com/holyaustin/frontend
+git clone https://github.com/holyaustin/cackpass-ethonline.git
 cd cack-pass
 npm install
 cp .env.example .env.local
