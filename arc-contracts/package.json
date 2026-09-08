@@ -4,8 +4,10 @@
   "description": "CackPass USDC Payment Smart Contract for Arc Blockchain",
   "main": "index.js",
   "scripts": {
-    "compile": "hardhat compile",
-    "test": "hardhat test",
+    "compile": "npx hardhat compile",
+    "test": "npx hardhat test",
+    "test:arc": "npx hardhat test --network arcTestnet",
+    "deploy": "npx hardhat run scripts/deploy.ts --network arcTestnet",
     "test:coverage": "hardhat coverage",
     "deploy:testnet": "hardhat run scripts/deploy.js --network arcTestnet",
     "deploy:local": "hardhat run scripts/deploy.js --network localhost",
