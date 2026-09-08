@@ -1,9 +1,11 @@
 import { HardhatUserConfig } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
 import "@nomicfoundation/hardhat-verify";
+import "@typechain/hardhat"; // ✅ ADD THIS
 import * as dotenv from "dotenv";
 
 dotenv.config();
+
 
 // Arc Testnet Configuration
 // Based on: https://docs.arc.io/arc/references/connect-to-arc

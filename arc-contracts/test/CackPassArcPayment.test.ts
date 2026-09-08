@@ -12,7 +12,7 @@ describe("CackPassArcPayment", function () {
   // Test constants
   const PAYMENT_ID = ethers.id("test-payment-1");
   const EVENT_ID = ethers.id("event-123");
-  const REFERENCE = "TEST-REF-001";
+  const PAYMENT_REFERENCE = "TEST-REF-001";  // ✅ FIXED: renamed from REFERENCE
   const AMOUNT = ethers.parseUnits("100", 18); // 100 USDC (18 decimals on Arc)
   const TICKET_QUANTITY = 2;
 
@@ -41,7 +41,7 @@ describe("CackPassArcPayment", function () {
       await contract.connect(payer).initializePayment(
         PAYMENT_ID,
         AMOUNT,
-        REFERENCE,
+        PAYMENT_REFERENCE,
         EVENT_ID,
         TICKET_QUANTITY
       );
@@ -49,7 +49,7 @@ describe("CackPassArcPayment", function () {
       const payment = await contract.getPayment(PAYMENT_ID);
       expect(payment.payer).to.equal(payer.address);
       expect(payment.amount).to.equal(AMOUNT);
-      expect(payment.reference).to.equal(REFERENCE);
+      expect(payment.paymentReference).to.equal(PAYMENT_REFERENCE);
       expect(payment.status).to.equal(0); // Pending
       expect(payment.ticketQuantity).to.equal(TICKET_QUANTITY);
     });
@@ -58,19 +58,19 @@ describe("CackPassArcPayment", function () {
       await expect(contract.connect(payer).initializePayment(
         PAYMENT_ID,
         AMOUNT,
-        REFERENCE,
+        PAYMENT_REFERENCE,
         EVENT_ID,
         TICKET_QUANTITY
       ))
       .to.emit(contract, "PaymentInitiated")
-      .withArgs(PAYMENT_ID, payer.address, AMOUNT, REFERENCE, anyValue);
+      .withArgs(PAYMENT_ID, payer.address, AMOUNT, PAYMENT_REFERENCE, anyValue);
     });
 
     it("Should reject duplicate payment IDs", async function () {
       await contract.connect(payer).initializePayment(
         PAYMENT_ID,
         AMOUNT,
-        REFERENCE,
+        PAYMENT_REFERENCE,
         EVENT_ID,
         TICKET_QUANTITY
       );
@@ -78,7 +78,7 @@ describe("CackPassArcPayment", function () {
       await expect(contract.connect(payer).initializePayment(
         PAYMENT_ID,
         AMOUNT,
-        REFERENCE,
+        PAYMENT_REFERENCE,
         EVENT_ID,
         TICKET_QUANTITY
       )).to.be.revertedWith("Payment already exists");
@@ -88,7 +88,7 @@ describe("CackPassArcPayment", function () {
       await expect(contract.connect(payer).initializePayment(
         PAYMENT_ID,
         0,
-        REFERENCE,
+        PAYMENT_REFERENCE,
         EVENT_ID,
         TICKET_QUANTITY
       )).to.be.revertedWith("Amount must be greater than 0");
@@ -98,7 +98,7 @@ describe("CackPassArcPayment", function () {
       await contract.connect(payer).initializePayment(
         PAYMENT_ID,
         AMOUNT,
-        REFERENCE,
+        PAYMENT_REFERENCE,
         EVENT_ID,
         TICKET_QUANTITY
       );
@@ -113,7 +113,7 @@ describe("CackPassArcPayment", function () {
       await contract.connect(payer).initializePayment(
         PAYMENT_ID,
         AMOUNT,
-        REFERENCE,
+        PAYMENT_REFERENCE,
         EVENT_ID,
         TICKET_QUANTITY
       );
@@ -130,7 +130,7 @@ describe("CackPassArcPayment", function () {
     it("Should emit PaymentConfirmed event", async function () {
       await expect(contract.confirmPayment(PAYMENT_ID))
         .to.emit(contract, "PaymentConfirmed")
-        .withArgs(PAYMENT_ID, payer.address, AMOUNT, REFERENCE, anyValue);
+        .withArgs(PAYMENT_ID, payer.address, AMOUNT, PAYMENT_REFERENCE, anyValue);
     });
 
     it("Should prevent non-owners from confirming", async function () {
@@ -158,7 +158,7 @@ describe("CackPassArcPayment", function () {
       await contract.connect(payer).initializePayment(
         PAYMENT_ID,
         AMOUNT,
-        REFERENCE,
+        PAYMENT_REFERENCE,
         EVENT_ID,
         TICKET_QUANTITY
       );
