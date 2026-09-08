@@ -48,7 +48,7 @@ contract CackPassArcPayment {
         address payer;
         uint256 amount;
         uint256 fee;
-        string paymentReference;  // ✅ FIXED: renamed from 'reference'
+        string paymentReference;
         PaymentStatus status;
         uint256 createdAt;
         uint256 confirmedAt;
@@ -77,12 +77,13 @@ contract CackPassArcPayment {
         _;
     }
 
-    modifier paymentExists(bytes32 paymentId) {
+    // ✅ FIXED: Renamed from 'paymentExists' to avoid name conflict
+    modifier onlyIfPaymentExists(bytes32 paymentId) {
         require(payments[paymentId].payer != address(0), "Payment does not exist");
         _;
     }
 
-    modifier paymentStatus(bytes32 paymentId, PaymentStatus expectedStatus) {
+    modifier onlyIfPaymentStatus(bytes32 paymentId, PaymentStatus expectedStatus) {
         require(payments[paymentId].status == expectedStatus, "Invalid payment status");
         _;
     }
@@ -142,8 +143,8 @@ contract CackPassArcPayment {
     function confirmPayment(bytes32 paymentId) 
         external 
         onlyPlatformOwner 
-        paymentExists(paymentId) 
-        paymentStatus(paymentId, PaymentStatus.Pending) 
+        onlyIfPaymentExists(paymentId)      // ✅ UPDATED
+        onlyIfPaymentStatus(paymentId, PaymentStatus.Pending)  // ✅ UPDATED
     {
         Payment storage payment = payments[paymentId];
         payment.status = PaymentStatus.Confirmed;
@@ -166,8 +167,8 @@ contract CackPassArcPayment {
     function failPayment(bytes32 paymentId, string calldata reason) 
         external 
         onlyPlatformOwner 
-        paymentExists(paymentId) 
-        paymentStatus(paymentId, PaymentStatus.Pending) 
+        onlyIfPaymentExists(paymentId)      // ✅ UPDATED
+        onlyIfPaymentStatus(paymentId, PaymentStatus.Pending)  // ✅ UPDATED
     {
         payments[paymentId].status = PaymentStatus.Failed;
         
@@ -184,7 +185,7 @@ contract CackPassArcPayment {
     function getPayment(bytes32 paymentId) 
         external 
         view 
-        paymentExists(paymentId) 
+        onlyIfPaymentExists(paymentId)      // ✅ UPDATED
         returns (Payment memory) 
     {
         return payments[paymentId];
@@ -197,7 +198,7 @@ contract CackPassArcPayment {
     function getPaymentStatus(bytes32 paymentId) 
         external 
         view 
-        paymentExists(paymentId) 
+        onlyIfPaymentExists(paymentId)      // ✅ UPDATED
         returns (string memory) 
     {
         PaymentStatus status = payments[paymentId].status;
