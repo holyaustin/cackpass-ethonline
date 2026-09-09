@@ -79,15 +79,12 @@ export async function POST(request: NextRequest) {
           error: `Only ${available} tickets available` 
         }, { status: 400 });
       }
-      // Reserve tickets
-      ticketType.currentSupply += quantity;
-      await ticketType.save();
     } else {
       isVirtual = true;
       realTicketTypeId = event._id;
     }
 
-    // 4. Calculate final amount
+    // 4. Calculate final amount with discount
     let finalAmount = amount;
     let discountInfo = null;
 
@@ -118,7 +115,7 @@ export async function POST(request: NextRequest) {
     const paymentId = generatePaymentId();
     const reference = paymentId.replace('0x', '').slice(0, 16);
 
-    // 6. Initialize payment on Arc blockchain
+    // 6. Initialize payment on Arc blockchain (creates pending record)
     console.log('⛓️ Initializing payment on Arc blockchain...');
     const privateKey = process.env.GASLESS_PRIVATE_KEY;
     if (!privateKey) {
@@ -137,11 +134,6 @@ export async function POST(request: NextRequest) {
     );
 
     if (!onChainResult.success) {
-      // Rollback ticket supply
-      if (!isVirtual && ticketType) {
-        ticketType.currentSupply -= quantity;
-        await ticketType.save();
-      }
       return NextResponse.json({ 
         error: 'Failed to initialize on-chain payment',
         details: onChainResult.error,
@@ -209,7 +201,6 @@ export async function POST(request: NextRequest) {
 
     console.log(`✅ Payment initialized. Reference: CACK-${reference}, Amount: ${finalAmount}`);
 
-    // 8. Return response with payment details
     return NextResponse.json({
       success: true,
       paymentId: paymentId,

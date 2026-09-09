@@ -5,8 +5,8 @@ import { useState } from 'react';
 import { Loader2, Wallet } from 'lucide-react';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
-import { usePrivy } from '@privy-io/react-auth';
-import { ethers } from 'ethers';
+import { useWallets } from '@privy-io/react-auth';
+import { sendUSDCWithAppKit } from '@/lib/arc/app-kit';
 
 interface ArcPaymentButtonProps {
   eventId: string;
@@ -33,7 +33,7 @@ export function ArcPaymentButton({
 }: ArcPaymentButtonProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const router = useRouter();
-  const { user } = usePrivy();
+  const { wallets } = useWallets();
 
   const handlePayment = async () => {
     if (disabled || isProcessing) return;
@@ -44,16 +44,23 @@ export function ArcPaymentButton({
       return;
     }
 
+    // Get the embedded wallet
+    const embeddedWallet = wallets.find(w => w.walletClientType === 'privy');
+    if (!embeddedWallet) {
+      toast.error('Please connect your wallet first');
+      return;
+    }
+
     setIsProcessing(true);
     const loadingToast = toast.loading('Initializing USDC payment...');
 
     try {
-      // 1. Initialize payment on backend
+      // ============================================================
+      // STEP 1: Initialize payment on backend (creates on-chain record)
+      // ============================================================
       const response = await fetch('/api/payments/arc/initialize', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           eventId,
           ticketTypeId,
@@ -67,82 +74,44 @@ export function ArcPaymentButton({
       const data = await response.json();
       toast.dismiss(loadingToast);
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Payment initialization failed');
-      }
-
-      if (!data.success) {
+      if (!response.ok || !data.success) {
         throw new Error(data.error || 'Payment initialization failed');
       }
 
       console.log('✅ Payment initialized:', data);
+      console.log('📝 On-chain payment ID:', data.paymentId);
 
-      // 2. Get user's wallet address from Privy
-      const walletAddress = user?.wallet?.address;
-      if (!walletAddress) {
-        throw new Error('No wallet connected. Please connect your wallet.');
-      }
-
-      // 3. Send USDC to the contract
-      toast.loading('Waiting for USDC transfer approval...');
-
-      // Get provider from user's wallet
-      if (!window.ethereum) {
-        throw new Error('No Ethereum provider found. Please install a wallet.');
-      }
-
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const signer = await provider.getSigner();
-
-      // USDC contract on Arc Testnet
-      const USDC_ADDRESS = '0xF56D154E8A75C81f7bAC1F83E1C634F6A53C9e8E';
-      const CONTRACT_ADDRESS = '0x084622e6970BBcBA510454C6145313c2993ED9E4';
-
-      const usdcAbi = [
-        'function transfer(address to, uint256 amount) external returns (bool)',
-        'function approve(address spender, uint256 amount) external returns (bool)',
-        'function allowance(address owner, address spender) external view returns (uint256)',
-      ];
-
-      const usdcContract = new ethers.Contract(USDC_ADDRESS, usdcAbi, signer);
-      
-      // Convert amount to USDC units (18 decimals on Arc)
-      const amountWei = ethers.parseUnits(amount.toString(), 18);
-      
-      // Check if user has enough USDC
-      const balance = await usdcContract.balanceOf(walletAddress);
-      if (balance < amountWei) {
-        throw new Error(`Insufficient USDC balance. You have ${ethers.formatUnits(balance, 18)} USDC.`);
-      }
-
-      // Check allowance
-      const allowance = await usdcContract.allowance(walletAddress, CONTRACT_ADDRESS);
-      
-      // If allowance is not enough, request approval
-      if (allowance < amountWei) {
-        toast.loading('Please approve USDC transfer...');
-        
-        const approveTx = await usdcContract.approve(CONTRACT_ADDRESS, amountWei);
-        await approveTx.wait();
-        console.log('✅ USDC approved:', approveTx.hash);
-      }
-
+      // ============================================================
+      // STEP 2: Send USDC using App Kits
+      // ============================================================
       toast.loading('Sending USDC payment...');
 
-      // Transfer USDC to contract
-      const transferTx = await usdcContract.transfer(CONTRACT_ADDRESS, amountWei);
-      await transferTx.wait();
-      console.log('✅ USDC transferred:', transferTx.hash);
+      const contractAddress = process.env.NEXT_PUBLIC_ARC_CONTRACT_ADDRESS || '0x084622e6970BBcBA510454C6145313c2993ED9E4';
 
+      const result = await sendUSDCWithAppKit(
+        embeddedWallet,
+        contractAddress,
+        amount.toString()
+      );
+
+      console.log('✅ USDC sent:', result);
       toast.dismiss();
 
-      // 4. Redirect to success page with reference
-      toast.success('Payment successful! Redirecting...');
+      // ============================================================
+      // STEP 3: Redirect to success page for verification
+      // ============================================================
+      toast.success('Payment successful! Verifying...');
+
+      // The verify endpoint will:
+      // 1. Check the contract for the payment status
+      // 2. Call confirmPayment() on the contract with the tx hash
+      // 3. Create tickets and send email
       
-      // Small delay to let the success page load
       setTimeout(() => {
-        router.push(`/payment/success?reference=${data.reference}&provider=arc`);
+        router.push(`/payment/success?reference=${data.reference}&provider=arc&transaction_id=${result.txHash || result.hash}`);
       }, 1500);
+
+      if (onSuccess) onSuccess();
 
     } catch (error: any) {
       toast.dismiss();
@@ -163,13 +132,18 @@ export function ArcPaymentButton({
   return (
     <button
       onClick={handlePayment}
-      disabled={isProcessing || disabled}
+      disabled={isProcessing || disabled || !wallets.length}
       className={`w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-3 text-lg bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white disabled:opacity-50 transition-all ${className}`}
     >
       {isProcessing ? (
         <>
           <Loader2 className="h-5 w-5 animate-spin" />
           Processing...
+        </>
+      ) : !wallets.length ? (
+        <>
+          <Wallet className="h-5 w-5" />
+          Connect Wallet to Pay
         </>
       ) : (
         <>

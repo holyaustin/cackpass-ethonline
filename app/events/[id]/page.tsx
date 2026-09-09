@@ -17,6 +17,7 @@ import { usePrivy } from '@privy-io/react-auth'
 import { format } from 'date-fns'
 import { ArcPaymentButton } from '@/components/payments/ArcPaymentButton';
 
+
 // Lazy load heavy components
 const LoadingSpinner = dynamic(() => 
   import('@/components/common/LoadingSpinner').then(mod => ({ default: mod.LoadingSpinner })),
@@ -1245,7 +1246,7 @@ const handlePayWithCard = useCallback(async (overrideEmail?: string) => {
                                 : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200'
                             }`}
                           >
-                            <CreditCard className="h-4 w-4" />Card Payment
+                            <CreditCard className="h-4 w-4" /> Card Payment
                           </button>
                           <button 
                             onClick={() => setSelectedPaymentMethod('crypto')} 
@@ -1255,13 +1256,13 @@ const handlePayWithCard = useCallback(async (overrideEmail?: string) => {
                                 : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200'
                             }`}
                           >
-                            <Wallet className="h-4 w-4" /> USDC Payment
+                            <Wallet className="h-4 w-4" /> USDC
                           </button>
                         </div>
                         
                         {selectedPaymentMethod === 'flutterwave' && (
                           <button 
-                            onClick={() => handlePayWithCard()} 
+                            onClick={handlePayWithCard} 
                             disabled={isProcessingPayment} 
                             className="w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
                           >

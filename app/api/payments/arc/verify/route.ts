@@ -183,6 +183,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const reference = searchParams.get('reference');
+    const usdcTxHash = searchParams.get('transaction_id'); // USDC transfer hash from App Kits
 
     if (!reference) {
       return NextResponse.json({ error: 'Missing reference' }, { status: 400 });
@@ -237,13 +238,17 @@ export async function GET(request: NextRequest) {
 
     console.log(`📊 On-chain payment status: ${onChainPayment.payment.status}`);
 
-    // 3. If payment is not confirmed yet, try to confirm it
-    if (onChainPayment.payment.status === 'pending') {
-      console.log(`⏳ Payment is pending, attempting to confirm...`);
+    // 3. If payment is still pending and we have the USDC tx hash, confirm it
+    if (onChainPayment.payment.status === 'pending' && usdcTxHash) {
+      console.log(`⏳ Payment is pending, confirming with USDC tx: ${usdcTxHash}`);
       
       const privateKey = process.env.GASLESS_PRIVATE_KEY;
       if (privateKey) {
-        const confirmResult = await confirmOnChainPayment(paymentId, privateKey);
+        const confirmResult = await confirmOnChainPayment(
+          paymentId, 
+          usdcTxHash, 
+          privateKey
+        );
         if (confirmResult.success) {
           console.log(`✅ Payment confirmed on-chain: ${confirmResult.transactionHash}`);
           // Refresh payment data
@@ -266,7 +271,7 @@ export async function GET(request: NextRequest) {
       }, { status: 400 });
     }
 
-    console.log(`✅ Payment confirmed on-chain`);
+    console.log(`✅ Payment confirmed on-chain with proof: ${onChainPayment.payment.txHash}`);
 
     // 5. Get user and event
     let userEmail = payment.customerEmail || '';
@@ -280,7 +285,7 @@ export async function GET(request: NextRequest) {
 
     // 6. Update payment status
     payment.paymentStatus = 'completed';
-    payment.transactionHash = onChainPayment.payment.paymentId || reference;
+    payment.transactionHash = onChainPayment.payment.txHash || reference;
     await payment.save();
     console.log(`✅ Payment marked as completed`);
 
@@ -339,7 +344,7 @@ export async function GET(request: NextRequest) {
           metadata: {
             arcPayment: true,
             onChainPaymentId: paymentId,
-            transactionHash: onChainPayment.payment.paymentId,
+            transactionHash: onChainPayment.payment.txHash,
           }
         });
         tickets.push(ticket);
@@ -395,6 +400,7 @@ export async function GET(request: NextRequest) {
     console.log(`✅ Reference: ${reference}`);
     console.log(`✅ Tickets: ${tickets.length}`);
     console.log(`✅ Email: ${emailSent ? 'SENT ✅' : 'FAILED ❌'}`);
+    console.log(`✅ On-chain proof: ${onChainPayment.payment.txHash}`);
     console.log(`📊 ticketsSold: ${finalTicketsSold}/${finalEvent?.capacity || 'unlimited'}`);
     console.log(`========================================\n`);
 
@@ -407,6 +413,7 @@ export async function GET(request: NextRequest) {
       emailSent: emailSent,
       amount: payment.amount,
       userEmail: userEmail,
+      transactionHash: onChainPayment.payment.txHash,
       event: {
         ticketsSold: finalTicketsSold,
         capacity: finalEvent?.capacity

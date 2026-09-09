@@ -2,56 +2,28 @@
 "server only"
 
 import { ethers } from 'ethers';
+import { ARC_CONFIG } from './app-kit';
 
-// Arc Testnet Configuration
-export const ARC_CONFIG = {
-  rpcUrl: process.env.ARC_RPC_URL || 'https://rpc.testnet.arc.io',
-  chainId: 5042002, // Arc Testnet Chain ID
-  usdcDecimals: 18, // USDC uses 18 decimals on Arc
-  contractAddress: process.env.ARC_CONTRACT_ADDRESS || '0x084622e6970BBcBA510454C6145313c2993ED9E4',
-  // USDC token address on Arc Testnet
-  usdcAddress: '0xF56D154E8A75C81f7bAC1F83E1C634F6A53C9e8E',
-};
-
-// ABI for CackPassArcPayment contract
+// Contract ABI for payment proof
 export const CackPassArcPaymentABI = [
   // Events
   "event PaymentInitiated(bytes32 indexed paymentId, address indexed payer, uint256 amount, string reference, uint256 timestamp)",
-  "event PaymentConfirmed(bytes32 indexed paymentId, address indexed payer, uint256 amount, string reference, uint256 timestamp)",
+  "event PaymentConfirmed(bytes32 indexed paymentId, address indexed payer, uint256 amount, string reference, uint256 timestamp, string txHash)",
   "event PaymentFailed(bytes32 indexed paymentId, address indexed payer, string reason, uint256 timestamp)",
   
   // Functions
   "function initializePayment(bytes32 paymentId, uint256 amount, string memory reference, bytes32 eventId, uint256 ticketQuantity) external",
-  "function confirmPayment(bytes32 paymentId) external",
+  "function confirmPayment(bytes32 paymentId, string memory txHash) external",
   "function failPayment(bytes32 paymentId, string memory reason) external",
-  "function getPayment(bytes32 paymentId) external view returns (tuple(bytes32 paymentId, address payer, uint256 amount, uint256 fee, string reference, string status, uint256 createdAt, uint256 confirmedAt, bytes32 eventId, uint256 ticketQuantity))",
+  "function getPayment(bytes32 paymentId) external view returns (tuple(bytes32 paymentId, address payer, uint256 amount, uint256 fee, string reference, string status, uint256 createdAt, uint256 confirmedAt, bytes32 eventId, uint256 ticketQuantity, string txHash))",
   "function getPaymentStatus(bytes32 paymentId) external view returns (string memory)",
   "function platformOwner() external view returns (address)",
   "function platformFeeBps() external view returns (uint256)",
 ];
 
-// USDC Token ABI (minimal for transfer)
-export const USDC_ABI = [
-  "function transfer(address to, uint256 amount) external returns (bool)",
-  "function approve(address spender, uint256 amount) external returns (bool)",
-  "function allowance(address owner, address spender) external view returns (uint256)",
-  "function balanceOf(address owner) external view returns (uint256)",
-  "function decimals() external view returns (uint8)",
-];
-
-// Get Arc provider (no API key needed!)
+// Get provider (no API key needed!)
 export function getArcProvider() {
   return new ethers.JsonRpcProvider(ARC_CONFIG.rpcUrl);
-}
-
-// Get contract instance (read-only)
-export function getArcContract() {
-  const provider = getArcProvider();
-  return new ethers.Contract(
-    ARC_CONFIG.contractAddress,
-    CackPassArcPaymentABI,
-    provider
-  );
 }
 
 // Get contract with signer (for write operations)
@@ -65,14 +37,13 @@ export function getArcContractWithSigner(privateKey: string) {
   );
 }
 
-// Get USDC contract with signer
-export function getUsdcContractWithSigner(privateKey: string) {
+// Get contract instance (read-only)
+export function getArcContract() {
   const provider = getArcProvider();
-  const wallet = new ethers.Wallet(privateKey, provider);
   return new ethers.Contract(
-    ARC_CONFIG.usdcAddress,
-    USDC_ABI,
-    wallet
+    ARC_CONFIG.contractAddress,
+    CackPassArcPaymentABI,
+    provider
   );
 }
 
@@ -88,7 +59,7 @@ export function paymentIdToBytes32(paymentId: string): string {
   return ethers.id(paymentId);
 }
 
-// Initialize payment on-chain
+// Initialize payment on-chain (called by backend)
 export async function initializeOnChainPayment(
   paymentId: string,
   amount: number,
@@ -135,16 +106,17 @@ export async function initializeOnChainPayment(
   }
 }
 
-// Confirm payment on-chain (platform owner only)
+// ✅ NEW: Confirm payment on-chain with transaction proof
 export async function confirmOnChainPayment(
   paymentId: string,
+  usdcTransferTxHash: string,
   privateKey: string
 ) {
   try {
     const contract = getArcContractWithSigner(privateKey);
     const paymentIdBytes = paymentIdToBytes32(paymentId);
     
-    const tx = await contract.confirmPayment(paymentIdBytes, {
+    const tx = await contract.confirmPayment(paymentIdBytes, usdcTransferTxHash, {
       gasLimit: 200000,
     });
     
@@ -166,28 +138,7 @@ export async function confirmOnChainPayment(
   }
 }
 
-// Get payment status from blockchain
-export async function getOnChainPaymentStatus(paymentId: string) {
-  try {
-    const contract = getArcContract();
-    const paymentIdBytes = paymentIdToBytes32(paymentId);
-    
-    const status = await contract.getPaymentStatus(paymentIdBytes);
-    return {
-      success: true,
-      status: status,
-    };
-  } catch (error: any) {
-    console.error('❌ Failed to get payment status:', error);
-    return {
-      success: false,
-      error: error.message,
-      status: 'error',
-    };
-  }
-}
-
-// Get full payment details
+// Get payment details from blockchain
 export async function getOnChainPayment(paymentId: string) {
   try {
     const contract = getArcContract();
@@ -208,6 +159,7 @@ export async function getOnChainPayment(paymentId: string) {
         confirmedAt: Number(payment.confirmedAt),
         eventId: payment.eventId,
         ticketQuantity: Number(payment.ticketQuantity),
+        txHash: payment.txHash || '',
       },
     };
   } catch (error: any) {
