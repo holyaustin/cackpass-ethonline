@@ -420,3 +420,71 @@ Start using:
 ```bash
 npx hardhat run scripts/interact.js --network arcTestnet info
 ```
+
+
+
+
+npm run deploy
+
+> cack-pass-arc-payment@1.0.0 deploy
+> npx hardhat run scripts/deploy.ts --network arcTestnet
+
+
+🚀 =========================================
+   CACKPASS ARC PAYMENT CONTRACT DEPLOYMENT
+   =========================================
+
+📡 Deployer Address: 0x2c3b2B2325610a6814f2f822D0bF4DAB8CF16e16
+💰 Deployer Balance: 20.0 USDC
+🔗 Network: arcTestnet
+⛓️  Chain ID: 5042002
+📦 Balance (wei): 20000000000000000000
+
+⏳ Deploying CackPassArcPayment contract...
+✅ Contract deployed to: 0x084622e6970BBcBA510454C6145313c2993ED9E4
+📝 Deployment TX: 0xcf960ead7c4406d59c8ee3cf41e2e1295ef32a16f1fb8d162527eca570e0f202
+🔗 Explorer: https://testnet.arcscan.app/tx/0xcf960ead7c4406d59c8ee3cf41e2e1295ef32a16f1fb8d162527eca570e0f202
+
+📋 Contract Details:
+   Address: 0x084622e6970BBcBA510454C6145313c2993ED9E4
+   Platform Owner: 0x2c3b2B2325610a6814f2f822D0bF4DAB8CF16e16
+   Platform Fee: 200 bps (2%)
+   Block Number: 61151189
+
+💾 Deployment info saved to: /home/augustineonuora/Dapps-Empty/2026/Sep2026/cackpass-ethonline/arc-contracts/deployments/arc-1788911894020.json
+
+🔍 Verifying contract on Arc Explorer...
+   ⏳ Waiting 30 seconds for block confirmation...
+[WARNING] Network and explorer-specific api keys are deprecated in favour of the new Etherscan v2 api. Support for v1 is expected to end by May 31st, 2025. To migrate, please specify a single Etherscan.io api key the apiKey config value.
+Successfully submitted source code for contract
+contracts/CackPassArcPayment.sol:CackPassArcPayment at 0x084622e6970BBcBA510454C6145313c2993ED9E4
+for verification on the block explorer. Waiting for verification result...
+
+Successfully verified contract CackPassArcPayment on the block explorer.
+https://testnet.arcscan.app/address/0x084622e6970BBcBA510454C6145313c2993ED9E4#code
+
+✅ Contract verified successfully!
+🔗 https://testnet.arcscan.app/address/0x084622e6970BBcBA510454C6145313c2993ED9E4#code
+
+🧪 Testing contract functions...
+   ✅ Platform owner: 0x2c3b2B2325610a6814f2f822D0bF4DAB8CF16e16
+   ✅ Platform fee: 2%
+
+   📝 Creating test payment...
+   ✅ Test payment created: 0x0d0f682ef69f43a616f4a64b19d7976ad95592c4e0b2aa3020a729e8ff5735ed
+   📊 Status: pending
+
+🎉 =========================================
+   DEPLOYMENT COMPLETE!
+   =========================================
+
+📌 Contract Address: 0x084622e6970BBcBA510454C6145313c2993ED9E4
+🔗 Explorer: https://testnet.arcscan.app/address/0x084622e6970BBcBA510454C6145313c2993ED9E4
+
+📚 Next Steps:
+   1. Add the contract address to your .env:
+      ARC_CONTRACT_ADDRESS=0x084622e6970BBcBA510454C6145313c2993ED9E4
+   2. Update your frontend with the new address
+   3. Test the integration with your CACK-pass app
+
+✅ Done!
