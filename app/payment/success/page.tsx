@@ -74,10 +74,13 @@ export default function PaymentSuccessPage() {
       const provider = urlParams.get('provider');
       const transactionId = urlParams.get('transaction_id');
       
-      // ✅ Build verification URL based on provider
+      // Build verification URL based on provider
       let verifyUrl;
       if (provider === 'arc') {
         verifyUrl = `/api/payments/arc/verify?reference=${ref}`;
+        if (transactionId) {
+          verifyUrl += `&transaction_id=${transactionId}`;
+        }
       } else {
         // Flutterwave (default)
         verifyUrl = `/api/payments/flutterwave/verify?reference=${ref}`;
@@ -91,12 +94,10 @@ export default function PaymentSuccessPage() {
       
       const response = await fetch(verifyUrl);
       
-      // Check if response is ok
       if (!response.ok) {
         const errorText = await response.text();
         console.error('❌ Verification response error:', response.status, errorText);
         
-        // Try to parse as JSON
         let errorData;
         try {
           errorData = JSON.parse(errorText);
@@ -117,7 +118,6 @@ export default function PaymentSuccessPage() {
 
       console.log('✅ Payment verified successfully:', data);
       
-      // Set the payment details
       setPaymentDetails({
         reference: ref,
         amount: data.amount || 0,
@@ -126,7 +126,6 @@ export default function PaymentSuccessPage() {
         event: data.event
       });
       
-      // Track email status
       const wasEmailSent = data.emailSent === true;
       setEmailSent(wasEmailSent);
       
