@@ -15,6 +15,7 @@ import dynamic from 'next/dynamic'
 import { toast } from 'sonner'
 import { usePrivy } from '@privy-io/react-auth'
 import { format } from 'date-fns'
+import { ArcPaymentButton } from '@/components/payments/ArcPaymentButton';
 
 // Lazy load heavy components
 const LoadingSpinner = dynamic(() => 
@@ -1254,7 +1255,7 @@ const handlePayWithCard = useCallback(async (overrideEmail?: string) => {
                                 : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200'
                             }`}
                           >
-                            <Wallet className="h-4 w-4" />Crypto
+                            <Wallet className="h-4 w-4" /> USDC Payment
                           </button>
                         </div>
                         
@@ -1270,12 +1271,18 @@ const handlePayWithCard = useCallback(async (overrideEmail?: string) => {
                         )}
                         
                         {selectedPaymentMethod === 'crypto' && (
-                          <button 
-                            onClick={handlePayWithCrypto} 
-                            className="w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
-                          >
-                            <Wallet className="h-5 w-5" />Pay with Crypto (Soon)
-                          </button>
+                          <ArcPaymentButton
+                            eventId={eventId}
+                            ticketTypeId={selectedTicketType._id}
+                            quantity={selectedQuantity}
+                            amount={Number(getTotalPrice())}
+                            email={userEmail || guestEmail || ''}
+                            userName={(userEmail || guestEmail || '').split('@')[0] || 'User'}
+                            onSuccess={() => {
+                              toast.info('Payment initiated. Check your email for confirmation.');
+                            }}
+                            disabled={isProcessingPayment}
+                          />
                         )}
                       </div>
                     )}
