@@ -64,21 +64,30 @@ export default function PaymentSuccessPage() {
     }
   }, [searchParams, router])
 
+  // ✅ CHANGED: Updated verifyPayment to handle both Flutterwave and Arc
   const verifyPayment = async (ref: string) => {
     try {
       console.log('🔍 Verifying payment for reference:', ref);
       
-      // Get the transaction_id from URL if available
+      // Get the provider from URL
       const urlParams = new URLSearchParams(window.location.search);
+      const provider = urlParams.get('provider');
       const transactionId = urlParams.get('transaction_id');
       
-      // Build the verification URL
-      let verifyUrl = `/api/payments/flutterwave/verify?reference=${ref}`;
-      if (transactionId) {
-        verifyUrl += `&transaction_id=${transactionId}`;
+      // ✅ Build verification URL based on provider
+      let verifyUrl;
+      if (provider === 'arc') {
+        verifyUrl = `/api/payments/arc/verify?reference=${ref}`;
+      } else {
+        // Flutterwave (default)
+        verifyUrl = `/api/payments/flutterwave/verify?reference=${ref}`;
+        if (transactionId) {
+          verifyUrl += `&transaction_id=${transactionId}`;
+        }
       }
       
       console.log('📡 Verification URL:', verifyUrl);
+      console.log('📡 Provider:', provider || 'flutterwave (default)');
       
       const response = await fetch(verifyUrl);
       
@@ -137,7 +146,6 @@ export default function PaymentSuccessPage() {
       setIsLoading(false);
     }
   };
-
 
   if (isLoading) {
     return (
