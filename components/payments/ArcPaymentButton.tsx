@@ -38,13 +38,11 @@ export function ArcPaymentButton({
   const handlePayment = async () => {
     if (disabled || isProcessing) return;
 
-    // Validate email
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       toast.error('Please enter a valid email address');
       return;
     }
 
-    // Get the embedded wallet
     const embeddedWallet = wallets.find(w => w.walletClientType === 'privy');
     if (!embeddedWallet) {
       toast.error('Please connect your wallet first');
@@ -55,9 +53,7 @@ export function ArcPaymentButton({
     const loadingToast = toast.loading('Initializing USDC payment...');
 
     try {
-      // ============================================================
-      // STEP 1: Initialize payment on backend (creates on-chain record)
-      // ============================================================
+      // STEP 1: Initialize payment on backend
       const response = await fetch('/api/payments/arc/initialize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -79,17 +75,15 @@ export function ArcPaymentButton({
       }
 
       console.log('✅ Payment initialized:', data);
-      console.log('📝 On-chain payment ID:', data.paymentId);
 
-      // ============================================================
       // STEP 2: Send USDC using App Kits
-      // ============================================================
       toast.loading('Sending USDC payment...');
 
+      const provider = await embeddedWallet.getEthereumProvider();
       const contractAddress = process.env.NEXT_PUBLIC_ARC_CONTRACT_ADDRESS || '0x084622e6970BBcBA510454C6145313c2993ED9E4';
 
       const result = await sendUSDCWithAppKit(
-        embeddedWallet,
+        provider,
         contractAddress,
         amount.toString()
       );
@@ -97,18 +91,19 @@ export function ArcPaymentButton({
       console.log('✅ USDC sent:', result);
       toast.dismiss();
 
-      // ============================================================
-      // STEP 3: Redirect to success page for verification
-      // ============================================================
+      // ✅ FIXED: Safely extract transaction hash from result
+      // The SendResult type may have different structures
+      const txHash = 
+        (result as any)?.transactionHash || 
+        (result as any)?.txHash || 
+        (result as any)?.hash ||
+        'completed';
+
+      // STEP 3: Redirect to success page
       toast.success('Payment successful! Verifying...');
 
-      // The verify endpoint will:
-      // 1. Check the contract for the payment status
-      // 2. Call confirmPayment() on the contract with the tx hash
-      // 3. Create tickets and send email
-      
       setTimeout(() => {
-        router.push(`/payment/success?reference=${data.reference}&provider=arc&transaction_id=${result.txHash || result.hash}`);
+        router.push(`/payment/success?reference=${data.reference}&provider=arc&transaction_id=${txHash}`);
       }, 1500);
 
       if (onSuccess) onSuccess();
@@ -117,7 +112,6 @@ export function ArcPaymentButton({
       toast.dismiss();
       console.error('❌ Arc payment error:', error);
       
-      // Handle user rejection
       if (error.code === 'ACTION_REJECTED' || error.code === 4001) {
         toast.error('Payment was cancelled');
       } else {

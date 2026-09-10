@@ -2,7 +2,7 @@
 "server only"
 
 import { AppKit } from '@circle-fin/app-kit';
-import { createPrivyAdapter } from '@circle-fin/adapter-privy';
+import { createViemAdapterFromProvider } from '@circle-fin/adapter-viem-v2';
 
 // Arc Testnet Configuration
 export const ARC_CONFIG = {
@@ -13,39 +13,31 @@ export const ARC_CONFIG = {
   usdcAddress: '0xF56D154E8A75C81f7bAC1F83E1C634F6A53C9e8E',
 };
 
-// Create App Kit instance with Privy wallet
-export async function createAppKit(wallet: any) {
-  const adapter = createPrivyAdapter(wallet);
-  return new AppKit({ adapter });
-}
+// ✅ FIXED: Define the chain as a const string literal
+const ARC_TESTNET_CHAIN = 'Arc_Testnet' as const;
 
 // Send USDC using App Kits
 export async function sendUSDCWithAppKit(
-  wallet: any,
+  provider: any,
   to: string,
-  amount: string,
-  chain: string = 'Arc_Testnet'
+  amount: string
 ) {
-  const kit = await createAppKit(wallet);
+  // Create adapter from provider
+  const adapter = await createViemAdapterFromProvider(provider);
   
+  // Initialize AppKit WITHOUT adapter (per App Kit SDK reference)
+  const kit = new AppKit();
+  
+  // ✅ FIXED: Use the const chain literal and pass adapter in `from`
   const result = await kit.send({
-    from: { adapter: kit.adapter, chain },
+    from: { 
+      adapter, 
+      chain: ARC_TESTNET_CHAIN  // Type-safe chain identifier
+    },
     to: to,
     amount: amount,
     token: 'USDC',
   });
   
   return result;
-}
-
-// Get balance using App Kits
-export async function getUSDCBalance(wallet: any, chain: string = 'Arc_Testnet') {
-  const kit = await createAppKit(wallet);
-  
-  const balance = await kit.getBalance({
-    wallet: { adapter: kit.adapter, chain },
-    token: 'USDC',
-  });
-  
-  return balance;
 }

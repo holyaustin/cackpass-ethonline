@@ -6,7 +6,6 @@ import mongoose from 'mongoose';
 import { 
   generatePaymentId, 
   initializeOnChainPayment,
-  ARC_CONFIG,
 } from '@/lib/arc/client';
 
 export async function POST(request: NextRequest) {

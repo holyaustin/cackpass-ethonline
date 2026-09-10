@@ -21,6 +21,26 @@ export const CackPassArcPaymentABI = [
   "function platformFeeBps() external view returns (uint256)",
 ];
 
+export interface OnChainPaymentData {
+  paymentId: string;
+  payer: string;
+  amount: string;
+  fee: string;
+  reference: string;
+  status: string;
+  createdAt: number;
+  confirmedAt: number;
+  eventId: string;
+  ticketQuantity: number;
+  txHash: string;
+}
+
+export interface OnChainPaymentResult {
+  success: boolean;
+  payment?: OnChainPaymentData;
+  error?: string;
+}
+
 // Get provider (no API key needed!)
 export function getArcProvider() {
   return new ethers.JsonRpcProvider(ARC_CONFIG.rpcUrl);
@@ -139,7 +159,7 @@ export async function confirmOnChainPayment(
 }
 
 // Get payment details from blockchain
-export async function getOnChainPayment(paymentId: string) {
+export async function getOnChainPayment(paymentId: string): Promise<OnChainPaymentResult> {
   try {
     const contract = getArcContract();
     const paymentIdBytes = paymentIdToBytes32(paymentId);
