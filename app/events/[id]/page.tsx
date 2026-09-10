@@ -1262,7 +1262,7 @@ const handlePayWithCard = useCallback(async (overrideEmail?: string) => {
                         
                         {selectedPaymentMethod === 'flutterwave' && (
                           <button 
-                            onClick={handlePayWithCard} 
+                            onClick={() => handlePayWithCard()} 
                             disabled={isProcessingPayment} 
                             className="w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
                           >
