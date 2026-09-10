@@ -38,6 +38,7 @@
     "**/*.mts"
 , "scripts/add-ticket-types-to-existing-events.js"  ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "arc-contracts"
   ]
 }
