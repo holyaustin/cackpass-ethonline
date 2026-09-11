@@ -10,7 +10,7 @@ export const ARC_CONFIG = {
   chainId: 5042002,
   usdcDecimals: 18,
   contractAddress: process.env.ARC_CONTRACT_ADDRESS || '0x084622e6970BBcBA510454C6145313c2993ED9E4',
-  usdcAddress: '0xF56D154E8A75C81f7bAC1F83E1C634F6A53C9e8E',
+    usdcAddress: process.env.NEXT_PUBLIC_ARC_USDC_ADDRESS || '0x3600000000000000000000000000000000000000',
 };
 
 // ✅ FIXED: Define the chain as a const string literal

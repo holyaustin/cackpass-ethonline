@@ -18,16 +18,20 @@ const LoadingSpinner = dynamic(() =>
   { ssr: false }
 )
 
+const ARC_CONFIG = {
+  RPC_URL: 'https://rpc.testnet.arc.io',
+  BLOCKSCOUT_API: 'https://testnet.arcscan.app/api/v2',
+  CHAIN_ID: 5042002,
+}
+
+// Arc Testnet USDC address
+const ARC_USDC_ADDRESS = '0xF56D154E8A75C81f7bAC1F83E1C634F6A53C9e8E'  // Verify from docs
+
 // USDC ABI - Minimal interface for balanceOf
 const USDC_ABI = [
   "function balanceOf(address owner) view returns (uint256)",
   "function decimals() view returns (uint8)"
 ]
-
-// Lisk Mainnet USDC Contract Address
-const LISK_MAINNET_USDC_ADDRESS = '0xF242275d3a6527d877f2c927a82D9b057609cc71'
-// Lisk Mainnet RPC URL
-const LISK_MAINNET_RPC_URL = 'https://rpc.api.lisk.com'
 
 // Module cache for ethers - lazy load only when needed
 let ethersModuleCache: any = null
@@ -137,16 +141,16 @@ async function fetchUSDCBalance(walletAddress: string): Promise<{
     
     // Dynamically load ethers only when needed
     const { ethers } = await loadEthers()
-    const provider = new ethers.JsonRpcProvider(LISK_MAINNET_RPC_URL)
+    const provider = new ethers.JsonRpcProvider(ARC_CONFIG.RPC_URL)
     
     try {
       const network = await provider.getNetwork()
-      console.log('✅ Connected to Lisk Mainnet:', {
+      console.log('✅ Connected to Arc Testnet:', {
         name: network.name,
         chainId: network.chainId
       })
     } catch (networkError) {
-      console.error('❌ Lisk Mainnet connection error:', networkError)
+      console.error('❌ Arc Testnet connection error:', networkError)
       return {
         usdcBalance: '0.00',
         usdBalance: '0.00',
@@ -156,7 +160,7 @@ async function fetchUSDCBalance(walletAddress: string): Promise<{
     }
     
     const usdcContract = new ethers.Contract(
-      LISK_MAINNET_USDC_ADDRESS,
+      ARC_USDC_ADDRESS,
       USDC_ABI,
       provider
     )
@@ -168,7 +172,7 @@ async function fetchUSDCBalance(walletAddress: string): Promise<{
     ])
     
     const usdcBalance = ethers.formatUnits(rawBalance, decimals)
-    const usdcBalanceFormatted = parseFloat(usdcBalance).toFixed(2)
+    const usdcBalanceFormatted = parseFloat(usdcBalance).toFixed(6)
     const usdBalance = usdcBalanceFormatted
     
     console.log('✅ USDC balance fetched successfully:', {

@@ -1,4 +1,4 @@
-// /components/providers/PrivyInnerProvider.tsx
+// components/providers/PrivyInnerProvider.tsx
 'use client'
 
 import { PrivyProvider } from '@privy-io/react-auth'
@@ -16,13 +16,52 @@ const queryClient = new QueryClient({
   },
 })
 
+// ✅ Arc Testnet Configuration
+const arcTestnet = {
+  id: 5042002,
+  name: 'Arc Testnet',
+  nativeCurrency: { 
+    name: 'USD Coin', 
+    symbol: 'USDC',  // ✅ USDC is the gas token on Arc
+    decimals: 6       // ✅ Arc USDC uses 6 decimals
+  },
+  rpcUrls: {
+    default: { http: ['https://rpc.testnet.arc.io'] },
+    public: { http: ['https://rpc.testnet.arc.io'] },
+  },
+  blockExplorers: {
+    default: { name: 'ArcScan', url: 'https://testnet.arcscan.app' },
+  },
+  testnet: true,
+}
+
+// ✅ Arc Mainnet Configuration (placeholder — update when launched)
+const arcMainnet = {
+  id: 5042001,  // Will be updated when Mainnet launches
+  name: 'Arc',
+  nativeCurrency: { 
+    name: 'USD Coin', 
+    symbol: 'USDC',
+    decimals: 6
+  },
+  rpcUrls: {
+    default: { http: ['https://rpc.arc.io'] },  // Placeholder
+    public: { http: ['https://rpc.arc.io'] },
+  },
+  blockExplorers: {
+    default: { name: 'ArcScan', url: 'https://arcscan.app' },
+  },
+  testnet: false,
+}
+
+// Keep existing chains for compatibility
 const liskSepolia = {
   id: 4202,
   name: 'Lisk Sepolia',
   nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
   rpcUrls: {
-    default: { http: [process.env.NEXT_PUBLIC_RPC_URL || 'https://rpc.sepolia-api.lisk.com'] },
-    public: { http: [process.env.NEXT_PUBLIC_RPC_URL || 'https://rpc.sepolia-api.lisk.com'] },
+    default: { http: ['https://rpc.sepolia-api.lisk.com'] },
+    public: { http: ['https://rpc.sepolia-api.lisk.com'] },
   },
   blockExplorers: {
     default: { name: 'Blockscout', url: 'https://sepolia-blockscout.lisk.com' },
@@ -49,8 +88,10 @@ export default function PrivyInnerProvider({ children }: { children: React.React
           termsAndConditionsUrl: '/terms',
           privacyPolicyUrl: '/privacy',
         },
-        defaultChain: liskSepolia,
-        supportedChains: [liskSepolia, sepolia, mainnet],
+        // ✅ DEFAULT TO ARC TESTNET
+        defaultChain: arcTestnet,
+        // ✅ SUPPORT BOTH ARC TESTNET AND MAINNET + LEGACY
+        supportedChains: [arcTestnet, arcMainnet, liskSepolia, sepolia, mainnet],
         mfa: { noPromptOnMfaRequired: false },
       }}
     >
