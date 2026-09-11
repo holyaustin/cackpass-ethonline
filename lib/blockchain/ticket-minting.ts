@@ -123,7 +123,7 @@ let provider: ethers.JsonRpcProvider | null = null
 
 function getProvider(): ethers.JsonRpcProvider {
   if (!provider) {
-    const rpcUrl = process.env.NEXT_PUBLIC_LISK_RPC_URL || 'https://rpc.sepolia-api.lisk.com'
+    const rpcUrl = process.env.NEXT_PUBLIC_ARC_RPC_URL || 'https://rpc.testnet.arc.network'
     console.log('🔗 Creating RPC provider for:', rpcUrl)
     provider = new ethers.JsonRpcProvider(rpcUrl)
     

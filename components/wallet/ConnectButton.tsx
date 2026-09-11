@@ -78,7 +78,7 @@ export function ConnectButton({ className = '' }: ConnectButtonProps) {
 
   const viewOnExplorer = () => {
     if (!address) return
-    window.open(`https://sepolia-blockscout.lisk.com/address/${address}`, '_blank')
+    window.open(`https://testnet.arcscan.app/address/${address}`, '_blank')
   }
 
   if (!ready) {

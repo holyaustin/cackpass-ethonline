@@ -23,7 +23,7 @@ const arcTestnet = {
   nativeCurrency: { 
     name: 'USD Coin', 
     symbol: 'USDC',  // ✅ USDC is the gas token on Arc
-    decimals: 6       // ✅ Arc USDC uses 6 decimals
+    decimals: 18       // ✅ Arc USDC uses 18 decimals
   },
   rpcUrls: {
     default: { http: ['https://rpc.testnet.arc.io'] },
@@ -42,31 +42,16 @@ const arcMainnet = {
   nativeCurrency: { 
     name: 'USD Coin', 
     symbol: 'USDC',
-    decimals: 6
+    decimals: 18
   },
   rpcUrls: {
     default: { http: ['https://rpc.arc.io'] },  // Placeholder
-    public: { http: ['https://rpc.arc.io'] },
+    public: { http: ['https://rpc.arc.network'] },
   },
   blockExplorers: {
     default: { name: 'ArcScan', url: 'https://arcscan.app' },
   },
   testnet: false,
-}
-
-// Keep existing chains for compatibility
-const liskSepolia = {
-  id: 4202,
-  name: 'Lisk Sepolia',
-  nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
-  rpcUrls: {
-    default: { http: ['https://rpc.sepolia-api.lisk.com'] },
-    public: { http: ['https://rpc.sepolia-api.lisk.com'] },
-  },
-  blockExplorers: {
-    default: { name: 'Blockscout', url: 'https://sepolia-blockscout.lisk.com' },
-  },
-  testnet: true,
 }
 
 export default function PrivyInnerProvider({ children }: { children: React.ReactNode }) {
@@ -91,7 +76,7 @@ export default function PrivyInnerProvider({ children }: { children: React.React
         // ✅ DEFAULT TO ARC TESTNET
         defaultChain: arcTestnet,
         // ✅ SUPPORT BOTH ARC TESTNET AND MAINNET + LEGACY
-        supportedChains: [arcTestnet, arcMainnet, liskSepolia, sepolia, mainnet],
+        supportedChains: [arcTestnet, arcMainnet, mainnet],
         mfa: { noPromptOnMfaRequired: false },
       }}
     >

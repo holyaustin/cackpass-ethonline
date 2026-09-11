@@ -5,20 +5,19 @@ import { CackPassCoreABI } from '@/lib/contracts/abis/CackPassCore'
 import { connectDB } from '@/lib/database/connection'
 import { TicketType, Event } from '@/lib/database/models'
 
-// LISK Mainnet Configuration
-const LISK_MAINNET_CONFIG = {
-  CHAIN_ID: 1135,
-  RPC_URL: 'https://rpc.api.lisk.com',
-  EXPLORER_URL: 'https://blockscout.lisk.com',
+const ARC_TESTNET_CONFIG = {
+  CHAIN_ID: 5042002,
+  RPC_URL: 'https://rpc.testnet.arc.network',
+  EXPLORER_URL: 'https://testnet.arcscan.app',
   GAS_LIMIT: 500000,
-  NATIVE_CURRENCY: 'ETH'
+  NATIVE_CURRENCY: 'USDC'
 } as const
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: NextRequest) {
   try {
-    console.log('🔗 [BLOCKCHAIN API] Creating event on LISK Mainnet')
+    console.log('🔗 [BLOCKCHAIN API] Creating event on Arc Testnet')
     
     // Validate critical environment variables with proper type checking
     const requiredEnvVars = {
@@ -35,7 +34,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: false,
         error: `Missing required environment variables: ${missingVars.join(', ')}`,
-        action: 'Please configure all required environment variables for LISK Mainnet'
+        action: 'Please configure all required environment variables for Arc Testnet'
       }, { status: 500 })
     }
     
@@ -77,14 +76,14 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
     
-    // Setup provider and wallet for LISK Mainnet
-    const rpcUrl = process.env.NEXT_PUBLIC_LISK_RPC_URL || LISK_MAINNET_CONFIG.RPC_URL
-    const provider = new ethers.JsonRpcProvider(rpcUrl, LISK_MAINNET_CONFIG.CHAIN_ID)
+    // Setup provider and wallet for Arc Testnet
+    const rpcUrl = process.env.NEXT_PUBLIC_ARC_RPC_URL || ARC_TESTNET_CONFIG.RPC_URL
+    const provider = new ethers.JsonRpcProvider(rpcUrl, ARC_TESTNET_CONFIG.CHAIN_ID)
     const wallet = new ethers.Wallet(GASLESS_PRIVATE_KEY, provider)
     
     console.log('Gasless wallet:', wallet.address)
     console.log('Contract address:', CONTRACT_ADDRESS)
-    console.log('Network: LISK Mainnet (Chain ID:', LISK_MAINNET_CONFIG.CHAIN_ID, ')')
+    console.log('Network: Arc Testnet (Chain ID:', ARC_TESTNET_CONFIG.CHAIN_ID, ')')
     
     // Check wallet balance
     const balance = await provider.getBalance(wallet.address)
@@ -97,8 +96,8 @@ export async function POST(request: NextRequest) {
         error: 'Gasless wallet has insufficient funds',
         walletAddress: wallet.address,
         balance: balanceInEth,
-        network: 'LISK Mainnet',
-        message: `Please send ${LISK_MAINNET_CONFIG.NATIVE_CURRENCY} to ${wallet.address} on LISK Mainnet`
+        network: 'Arc Testnet',
+        message: `Please send ${ARC_TESTNET_CONFIG.NATIVE_CURRENCY} to ${wallet.address} on Arc Testnet`
       }, { status: 400 })
     }
     
@@ -109,7 +108,7 @@ export async function POST(request: NextRequest) {
       wallet
     )
     
-    console.log('Sending transaction to LISK Mainnet...')
+    console.log('Sending transaction to Arc Testnet...')
     
     // Create event with appropriate gas settings
     const tx = await contract.createEvent(
@@ -118,12 +117,12 @@ export async function POST(request: NextRequest) {
       startTime,
       endTime,
       {
-        gasLimit: LISK_MAINNET_CONFIG.GAS_LIMIT
+        gasLimit: ARC_TESTNET_CONFIG.GAS_LIMIT
       }
     )
     
     console.log('Transaction sent:', tx.hash)
-    console.log('Explorer URL:', `${LISK_MAINNET_CONFIG.EXPLORER_URL}/tx/${tx.hash}`)
+    console.log('Explorer URL:', `${ARC_TESTNET_CONFIG.EXPLORER_URL}/tx/${tx.hash}`)
     
     const receipt = await tx.wait()
     console.log('Transaction confirmed in block:', receipt.blockNumber)
@@ -178,10 +177,10 @@ export async function POST(request: NextRequest) {
       success: true,
       eventId,
       transactionHash: tx.hash,
-      explorerUrl: `${LISK_MAINNET_CONFIG.EXPLORER_URL}/tx/${tx.hash}`,
+      explorerUrl: `${ARC_TESTNET_CONFIG.EXPLORER_URL}/tx/${tx.hash}`,
       gasPaidBy: wallet.address,
-      network: 'LISK Mainnet',
-      chainId: LISK_MAINNET_CONFIG.CHAIN_ID,
+      network: 'Arc Testnet',
+      chainId: ARC_TESTNET_CONFIG.CHAIN_ID,
       // Add database info
       database: {
         ticketTypeCreated: dbTicketTypeId !== null,
@@ -196,7 +195,7 @@ export async function POST(request: NextRequest) {
     })
     
   } catch (error: any) {
-    console.error('❌ LISK Mainnet Blockchain API error:', {
+    console.error('❌ Arc Testnet Blockchain API error:', {
       name: error.name,
       message: error.message,
       code: error.code,
@@ -204,14 +203,14 @@ export async function POST(request: NextRequest) {
     })
     
     // User-friendly error messages
-    let userMessage = 'Transaction failed on LISK Mainnet'
+    let userMessage = 'Transaction failed on Arc Testnet'
     let statusCode = 500
     
     if (error.code === 'INSUFFICIENT_FUNDS') {
-      userMessage = 'Gasless wallet has insufficient funds for LISK Mainnet'
+      userMessage = 'Gasless wallet has insufficient funds for Arc Testnet'
       statusCode = 400
     } else if (error.code === 'NETWORK_ERROR' || error.code === 'TIMEOUT') {
-      userMessage = 'Network error. Please check LISK Mainnet RPC connection.'
+      userMessage = 'Network error. Please check Arc Testnet RPC connection.'
       statusCode = 503
     } else if (error.code === 'CALL_EXCEPTION') {
       userMessage = 'Contract call failed. Check contract address and ABI.'
@@ -228,13 +227,13 @@ export async function POST(request: NextRequest) {
       success: false,
       error: userMessage,
       code: error.code,
-      network: 'LISK Mainnet',
+      network: 'Arc Testnet',
       timestamp: new Date().toISOString()
     }, { status: statusCode })
   }
 }
 
-// GET endpoint to check LISK Mainnet status - FIXED FOR ethers v6
+// GET endpoint to check Arc Testnet status - FIXED FOR ethers v6
 export async function GET(request: NextRequest) {
   try {
     // Check required environment variables
@@ -249,8 +248,8 @@ export async function GET(request: NextRequest) {
       }, { status: 500 })
     }
     
-    const rpcUrl = process.env.NEXT_PUBLIC_LISK_RPC_URL || LISK_MAINNET_CONFIG.RPC_URL
-    const provider = new ethers.JsonRpcProvider(rpcUrl, LISK_MAINNET_CONFIG.CHAIN_ID)
+    const rpcUrl = process.env.NEXT_PUBLIC_ARC_RPC_URL || ARC_TESTNET_CONFIG.RPC_URL
+    const provider = new ethers.JsonRpcProvider(rpcUrl, ARC_TESTNET_CONFIG.CHAIN_ID)
     
     // Get wallet address from private key
     const wallet = new ethers.Wallet(process.env.GASLESS_PRIVATE_KEY)
@@ -296,13 +295,13 @@ export async function GET(request: NextRequest) {
     })
     
   } catch (error: any) {
-    console.error('LISK Mainnet status check error:', error)
+    console.error('Arc Testnet status check error:', error)
     
     return NextResponse.json({
       success: false,
-      error: 'Failed to check LISK Mainnet status',
+      error: 'Failed to check Arc Testnet status',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined,
-      network: 'LISK Mainnet',
+      network: 'Arc Testnet',
       timestamp: new Date().toISOString()
     }, { status: 500 })
   }

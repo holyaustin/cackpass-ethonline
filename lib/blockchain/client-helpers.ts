@@ -70,7 +70,7 @@ export interface EventData {
 
 // ============ CONSTANTS ============
 const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CACKPASS_CORE_ADDRESS!
-const RPC_URL = process.env.NEXT_PUBLIC_LISK_RPC_URL || 'https://rpc.sepolia-api.lisk.com'
+const RPC_URL = process.env.NEXT_PUBLIC_ARC_RPC_URL || 'https://rpc.testnet.arc.network'
 // Add payment receiver address
 const PAYMENT_RECEIVER_ADDRESS = process.env.NEXT_PUBLIC_PAYMENT_RECEIVER_ADDRESS || '0x2c3b2b2325610a6814f2f822d0bf4dab8cf16e16'
 
@@ -736,7 +736,7 @@ export function generateTicketQRData(
  * Get transaction explorer URL
  */
 export function getTransactionExplorerUrl(txHash: string): string {
-  const explorerBase = 'https://blockscout.lisk.com'
+  const explorerBase = 'https://testnet.arcscan.app'
   return `${explorerBase}/tx/${txHash}`
 }
 
@@ -744,7 +744,7 @@ export function getTransactionExplorerUrl(txHash: string): string {
  * Get address explorer URL
  */
 export function getAddressExplorerUrl(address: string): string {
-  const explorerBase = 'https://blockscout.lisk.com'
+  const explorerBase = 'https://testnet.arcscan.app'
   return `${explorerBase}/address/${address}`
 }
 

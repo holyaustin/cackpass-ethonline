@@ -180,7 +180,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Setup blockchain connection
-        const rpcUrl = process.env.NEXT_PUBLIC_LISK_RPC_URL || 'https://rpc.api.lisk.com'
+        const rpcUrl = process.env.NEXT_PUBLIC_ARC_RPC_URL || 'https://rpc.testnet.arc.network'
         const provider = new ethers.JsonRpcProvider(rpcUrl)
         const wallet = new ethers.Wallet(process.env.GASLESS_PRIVATE_KEY, provider)
         

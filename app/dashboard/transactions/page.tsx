@@ -302,7 +302,7 @@ export default function TransactionsPage() {
       toast.error('No transaction hash available')
       return
     }
-    window.open(`https://blockscout.lisk.com/tx/${txHash}`, '_blank')
+    window.open(`https://testnet.arcscan.app/tx/${txHash}`, '_blank')
   }
 
   // Loading state
