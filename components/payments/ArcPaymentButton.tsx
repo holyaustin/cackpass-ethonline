@@ -8,7 +8,6 @@ import { useRouter } from 'next/navigation';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { sendUSDCWithAppKit } from '@/lib/arc/app-kit';
 
-// ✅ NGN ↔ USDC conversion rate
 const NGN_PER_USDC = Number(process.env.NEXT_PUBLIC_NGN_PER_USDC) || 1350
 
 interface ArcPaymentButtonProps {
@@ -41,30 +40,19 @@ export function ArcPaymentButton({
   const { user, authenticated, ready, login } = usePrivy();
   const { wallets } = useWallets();
 
-  // ✅ Track Privy readiness — prevents "useWallets outside PrivyProvider" error
+  // ✅ Ensure Privy is fully ready before rendering the actual button
   useEffect(() => {
     if (ready) {
       setIsPrivyReady(true);
     }
   }, [ready]);
 
-  // ✅ Convert NGN to USDC (6 decimals)
   const usdcAmount = Number((amount / NGN_PER_USDC).toFixed(6))
 
-  // ✅ Find the embedded wallet from useWallets()
+  // ✅ Get the embedded wallet with a fallback
   const embeddedWallet = wallets.find(
     (w) => w.walletClientType === 'privy'
   ) || wallets[0];
-
-  // ✅ Fallback: check user object
-  const userWalletAddress: string | null =
-    (user as any)?.wallet?.address ||
-    (user as any)?.linkedAccounts?.find(
-      (acc: any) => acc?.type === 'wallet' && typeof acc?.address === 'string'
-    )?.address ||
-    null;
-
-  const hasWallet = !!embeddedWallet || !!userWalletAddress;
 
   const handlePayment = async () => {
     if (disabled || isProcessing) return;
@@ -95,13 +83,17 @@ export function ArcPaymentButton({
       return;
     }
 
+    // ✅ CRITICAL: Ensure the embedded wallet is available before proceeding
+    if (!embeddedWallet) {
+      toast.error('Wallet not ready. Please wait a moment and try again.');
+      return;
+    }
+
     setIsProcessing(true);
     const loadingToast = toast.loading('Initializing USDC payment...');
 
     try {
-      // ============================================================
       // STEP 1: Initialize payment on backend
-      // ============================================================
       const response = await fetch('/api/payments/arc/initialize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -125,33 +117,17 @@ export function ArcPaymentButton({
 
       console.log('✅ Payment initialized:', data);
 
-      // ============================================================
-      // STEP 2: Get provider from the Privy embedded wallet
-      // ============================================================
+      // STEP 2: Get the provider from the embedded wallet
       toast.loading('Preparing USDC payment...');
 
-      let provider: any;
+      // ✅ This is now guaranteed to work because we checked embeddedWallet above
+      const provider = await embeddedWallet.getEthereumProvider();
 
-      // ✅ Method 1: Use the wallet from useWallets() — has getEthereumProvider
-      if (embeddedWallet?.getEthereumProvider) {
-        console.log('🔑 Getting provider from embeddedWallet (useWallets)');
-        provider = await embeddedWallet.getEthereumProvider();
+      if (!provider) {
+        throw new Error('Failed to get wallet provider. Please try again.');
       }
-      // ✅ Method 2: Fallback — try user object (some Privy versions)
-      else if ((user as any)?.wallet?.getEthereumProvider) {
-        console.log('🔑 Getting provider from user.wallet');
-        provider = await (user as any).wallet.getEthereumProvider();
-      }
-      // ✅ Method 3: Fallback — try window.ethereum (MetaMask-free browsers)
-      else if (typeof window !== 'undefined' && (window as any).ethereum) {
-        console.log('🔑 Using window.ethereum provider');
-        provider = (window as any).ethereum;
-      }
-      else {
-        throw new Error(
-          'Wallet provider not available. Please refresh the page and try again.'
-        );
-      }
+
+      console.log('✅ Provider obtained from embedded wallet');
 
       toast.loading(`Sending ${usdcAmount} USDC...`);
 
@@ -168,9 +144,7 @@ export function ArcPaymentButton({
       console.log('✅ USDC sent:', result);
       toast.dismiss();
 
-      // ============================================================
       // STEP 3: Redirect to success page
-      // ============================================================
       toast.success('Payment successful! Verifying...');
 
       const txHash =
@@ -205,11 +179,7 @@ export function ArcPaymentButton({
     }
   };
 
-  // ============================================================
-  // BUTTON LABELS
-  // ============================================================
-
-  // ✅ Don't render anything until Privy is ready — prevents useWallets error
+  // Don't render until Privy is ready
   if (!isPrivyReady) {
     return (
       <button
