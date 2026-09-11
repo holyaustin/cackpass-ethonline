@@ -394,14 +394,20 @@ const DiscountCodeSchema = new mongoose.Schema({
 // ========================
 
 // Only create indexes if model is being created for the first time
+// ✅ Safer version
 const createIndexes = (schema: mongoose.Schema, indexes: Array<[any, any?]>) => {
-  // Only create indexes if they don't already exist
-  if (schema.indexes().length === 0) {
-    indexes.forEach(([fields, options]) => {
+  indexes.forEach(([fields, options]) => {
+    try {
       schema.index(fields, options)
-    })
-  }
+    } catch (err: any) {
+      // Ignore duplicate index errors (happens during hot reload in dev)
+      if (!err.message.includes('Duplicate schema index')) {
+        console.warn('Index creation warning:', err.message)
+      }
+    }
+  })
 }
+
 // Indexes createIndexes
 createIndexes(DiscountCodeSchema, [
   [{ code: 1 }, { unique: true }],

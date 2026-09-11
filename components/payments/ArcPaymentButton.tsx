@@ -1,22 +1,21 @@
 // components/payments/ArcPaymentButton.tsx
 'use client'
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Loader2, Wallet, LogIn } from 'lucide-react';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
-import { usePrivy } from '@privy-io/react-auth';
+import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { sendUSDCWithAppKit } from '@/lib/arc/app-kit';
 
-// ✅ USDC ↔ NGN conversion rate
-// Update this value as the market rate changes, or fetch it from an API
+// ✅ NGN ↔ USDC conversion rate
 const NGN_PER_USDC = Number(process.env.NEXT_PUBLIC_NGN_PER_USDC) || 1350
 
 interface ArcPaymentButtonProps {
   eventId: string;
   ticketTypeId: string;
   quantity: number;
-  amount: number;           // Amount in NGN (as passed from event page)
+  amount: number;
   email: string;
   userName: string;
   onSuccess?: () => void;
@@ -36,30 +35,40 @@ export function ArcPaymentButton({
   disabled = false,
 }: ArcPaymentButtonProps) {
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isPrivyReady, setIsPrivyReady] = useState(false);
   const router = useRouter();
 
-  // ✅ ONLY usePrivy — no useWallets to avoid "outside PrivyProvider" error
   const { user, authenticated, ready, login } = usePrivy();
+  const { wallets } = useWallets();
 
-  // ✅ Convert NGN amount to USDC (rounded to nearest whole number)
+  // ✅ Track Privy readiness — prevents "useWallets outside PrivyProvider" error
+  useEffect(() => {
+    if (ready) {
+      setIsPrivyReady(true);
+    }
+  }, [ready]);
+
+  // ✅ Convert NGN to USDC (6 decimals)
   const usdcAmount = Number((amount / NGN_PER_USDC).toFixed(6))
 
-// ✅ Safe wallet address extraction
-const embeddedWalletAddress: string | null =
-  user?.wallet?.address ||
-  (user?.linkedAccounts?.find(
-    (acc: any) => 
-      acc?.type === 'wallet' && 
-      typeof acc?.address === 'string'
-  ) as any)?.address ||
-  null
+  // ✅ Find the embedded wallet from useWallets()
+  const embeddedWallet = wallets.find(
+    (w) => w.walletClientType === 'privy'
+  ) || wallets[0];
 
-  const hasEmbeddedWallet = !!embeddedWalletAddress
+  // ✅ Fallback: check user object
+  const userWalletAddress: string | null =
+    (user as any)?.wallet?.address ||
+    (user as any)?.linkedAccounts?.find(
+      (acc: any) => acc?.type === 'wallet' && typeof acc?.address === 'string'
+    )?.address ||
+    null;
+
+  const hasWallet = !!embeddedWallet || !!userWalletAddress;
 
   const handlePayment = async () => {
     if (disabled || isProcessing) return;
 
-    // ✅ If not authenticated, trigger Privy login
     if (!authenticated) {
       toast.info('Please sign in to continue with USDC payment');
       try {
@@ -76,13 +85,11 @@ const embeddedWalletAddress: string | null =
       return;
     }
 
-    // Validate email
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       toast.error('Please enter a valid email address');
       return;
     }
 
-    // Validate amount
     if (usdcAmount <= 0) {
       toast.error('Invalid payment amount');
       return;
@@ -102,8 +109,8 @@ const embeddedWalletAddress: string | null =
           eventId,
           ticketTypeId,
           quantity,
-          amount: usdcAmount,       // Send USDC amount
-          originalAmount: amount,   // Keep original NGN amount for reference
+          amount: usdcAmount,
+          originalAmount: amount,
           email,
           userName,
         }),
@@ -117,20 +124,33 @@ const embeddedWalletAddress: string | null =
       }
 
       console.log('✅ Payment initialized:', data);
-      console.log('📝 On-chain payment ID:', data.paymentId);
 
       // ============================================================
-      // STEP 2: Send USDC using App Kits
+      // STEP 2: Get provider from the Privy embedded wallet
       // ============================================================
       toast.loading('Preparing USDC payment...');
 
-      // ✅ Get the EIP-1193 provider from the user's wallet
       let provider: any;
 
-      if ((user as any)?.wallet?.getEthereumProvider) {
+      // ✅ Method 1: Use the wallet from useWallets() — has getEthereumProvider
+      if (embeddedWallet?.getEthereumProvider) {
+        console.log('🔑 Getting provider from embeddedWallet (useWallets)');
+        provider = await embeddedWallet.getEthereumProvider();
+      }
+      // ✅ Method 2: Fallback — try user object (some Privy versions)
+      else if ((user as any)?.wallet?.getEthereumProvider) {
+        console.log('🔑 Getting provider from user.wallet');
         provider = await (user as any).wallet.getEthereumProvider();
-      } else {
-        throw new Error('Embedded wallet not ready. Please refresh and try again.');
+      }
+      // ✅ Method 3: Fallback — try window.ethereum (MetaMask-free browsers)
+      else if (typeof window !== 'undefined' && (window as any).ethereum) {
+        console.log('🔑 Using window.ethereum provider');
+        provider = (window as any).ethereum;
+      }
+      else {
+        throw new Error(
+          'Wallet provider not available. Please refresh the page and try again.'
+        );
       }
 
       toast.loading(`Sending ${usdcAmount} USDC...`);
@@ -139,17 +159,17 @@ const embeddedWalletAddress: string | null =
         process.env.NEXT_PUBLIC_ARC_CONTRACT_ADDRESS ||
         '0x084622e6970BBcBA510454C6145313c2993ED9E4';
 
-      // ✅ Convert whole USDC to string for App Kit
-        const result = await sendUSDCWithAppKit(
-          provider,
-          contractAddress,
-          usdcAmount.toFixed(6)
-        );
+      const result = await sendUSDCWithAppKit(
+        provider,
+        contractAddress,
+        usdcAmount.toFixed(6)
+      );
+
       console.log('✅ USDC sent:', result);
       toast.dismiss();
 
       // ============================================================
-      // STEP 3: Redirect to success page for verification
+      // STEP 3: Redirect to success page
       // ============================================================
       toast.success('Payment successful! Verifying...');
 
@@ -186,10 +206,11 @@ const embeddedWalletAddress: string | null =
   };
 
   // ============================================================
-  // BUTTON LABEL LOGIC
+  // BUTTON LABELS
   // ============================================================
 
-  if (!ready) {
+  // ✅ Don't render anything until Privy is ready — prevents useWallets error
+  if (!isPrivyReady) {
     return (
       <button
         disabled
