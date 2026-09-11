@@ -18,16 +18,27 @@ const LoadingSpinner = dynamic(() =>
   { ssr: false }
 )
 
+// ============================================
+// ✅ ARC TESTNET CONFIGURATION
+// ============================================
 const ARC_CONFIG = {
-  RPC_URL: 'https://rpc.testnet.arc.io',
-  BLOCKSCOUT_API: 'https://testnet.arcscan.app/api/v2',
+  RPC_URL: 'https://rpc.testnet.arc.network',
+  RPC_URL_FALLBACK: 'https://rpc.testnet.arc.io',
+  EXPLORER_URL: 'https://testnet.arcscan.app',
   CHAIN_ID: 5042002,
+  CHAIN_ID_HEX: '0x4cef52',
+  NATIVE_CURRENCY: {
+    name: 'USD Coin',
+    symbol: 'USDC',
+    decimals: 6
+  }
 }
 
-// Arc Testnet USDC address
-const ARC_USDC_ADDRESS = '0xF56D154E8A75C81f7bAC1F83E1C634F6A53C9e8E'  // Verify from docs
+// ✅ Arc Testnet USDC
+const USDC_CONTRACT_ADDRESS = '0x3600000000000000000000000000000000000000'
+const USDC_DECIMALS = 18
 
-// USDC ABI - Minimal interface for balanceOf
+// Keep the ABI as-is
 const USDC_ABI = [
   "function balanceOf(address owner) view returns (uint256)",
   "function decimals() view returns (uint8)"
@@ -129,76 +140,125 @@ function getWalletAddressFromUser(user: any): string | null {
   return null
 }
 
-// Function to fetch USDC balance from Lisk Mainnet with dynamic ethers
-async function fetchUSDCBalance(walletAddress: string): Promise<{
-  usdcBalance: string;
-  usdBalance: string;
-  success: boolean;
-  error?: string;
-}> {
-  try {
-    console.log('💰 Fetching USDC balance for:', walletAddress)
-    
-    // Dynamically load ethers only when needed
-    const { ethers } = await loadEthers()
-    const provider = new ethers.JsonRpcProvider(ARC_CONFIG.RPC_URL)
-    
+// Function to fetch USDC balance from Arc Testnet with dynamic ethers
+  async function fetchUSDCBalance(walletAddress: string): Promise<{
+    usdcBalance: string;
+    usdBalance: string;
+    success: boolean;
+    error?: string;
+  }> {
     try {
-      const network = await provider.getNetwork()
-      console.log('✅ Connected to Arc Testnet:', {
-        name: network.name,
-        chainId: network.chainId
+      console.log('💰 Fetching USDC balance for:', walletAddress)
+      
+      const { ethers } = await loadEthers()
+      
+      // ✅ FIX 1: Use staticNetwork: true to skip getNetwork() call
+      // ✅ FIX 2: Updated RPC URL for Arc Testnet
+      const provider = new ethers.JsonRpcProvider(
+        ARC_CONFIG.RPC_URL,
+        {
+          chainId: ARC_CONFIG.CHAIN_ID,
+          name: 'arc-testnet'
+        },
+        {
+          staticNetwork: true,
+          batchMaxCount: 1,
+          polling: false,
+        }
+      )
+      
+      try {
+        const network = await provider.getNetwork()
+        console.log('✅ Connected to Arc Testnet:', {
+          name: network.name,
+          chainId: network.chainId.toString()
+        })
+      } catch (networkError) {
+        console.error('❌ Arc Testnet connection error:', networkError)
+        return {
+          usdcBalance: '0.000000',
+          usdBalance: '0.000000',
+          success: false,
+          error: 'Failed to connect to Arc Testnet'
+        }
+      }
+      
+      const usdcContract = new ethers.Contract(
+        USDC_CONTRACT_ADDRESS,
+        USDC_ABI,
+        provider
+      )
+      
+      const rawBalance = await usdcContract.balanceOf(walletAddress)
+      
+      // ✅ Arc USDC uses 6 decimals
+      const usdcBalance = ethers.formatUnits(rawBalance, USDC_DECIMALS)
+      const usdcBalanceFormatted = parseFloat(usdcBalance).toFixed(6)
+      
+      console.log('✅ USDC balance fetched successfully:', {
+        usdc: usdcBalanceFormatted,
+        usd: usdcBalanceFormatted
       })
-    } catch (networkError) {
-      console.error('❌ Arc Testnet connection error:', networkError)
+      
       return {
-        usdcBalance: '0.00',
-        usdBalance: '0.00',
-        success: false,
-        error: 'Failed to connect to Lisk Mainnet'
+        usdcBalance: usdcBalanceFormatted,
+        usdBalance: usdcBalanceFormatted,
+        success: true
+      }
+      
+    } catch (error: any) {
+      console.error('❌ Error fetching USDC balance:', {
+        error: error.message,
+        code: error.code
+      })
+      
+      // ✅ Better fallback - try the alternative RPC URL
+      try {
+        console.log('🔄 Retrying with fallback RPC...')
+        const { ethers } = await loadEthers()
+        
+        const fallbackProvider = new ethers.JsonRpcProvider(
+          ARC_CONFIG.RPC_URL_FALLBACK,
+          {
+            chainId: ARC_CONFIG.CHAIN_ID,
+            name: 'arc-testnet'
+          },
+          {
+            staticNetwork: true,
+            batchMaxCount: 1,
+            polling: false,
+          }
+        )
+        
+        const usdcContract = new ethers.Contract(
+          USDC_CONTRACT_ADDRESS,
+          USDC_ABI,
+          fallbackProvider
+        )
+        
+        const rawBalance = await usdcContract.balanceOf(walletAddress)
+        const usdcBalance = ethers.formatUnits(rawBalance, USDC_DECIMALS)
+        const usdcBalanceFormatted = parseFloat(usdcBalance).toFixed(6)
+        
+        console.log('✅ Fallback succeeded:', usdcBalanceFormatted)
+        
+        return {
+          usdcBalance: usdcBalanceFormatted,
+          usdBalance: usdcBalanceFormatted,
+          success: true
+        }
+      } catch (fallbackError: any) {
+        console.error('❌ Fallback also failed:', fallbackError.message)
+        
+        return {
+          usdcBalance: '0.000000',
+          usdBalance: '0.000000',
+          success: false,
+          error: 'Failed to connect to Arc Testnet'
+        }
       }
     }
-    
-    const usdcContract = new ethers.Contract(
-      ARC_USDC_ADDRESS,
-      USDC_ABI,
-      provider
-    )
-    
-    // Parallel fetch for better performance
-    const [rawBalance, decimals] = await Promise.all([
-      usdcContract.balanceOf(walletAddress),
-      usdcContract.decimals()
-    ])
-    
-    const usdcBalance = ethers.formatUnits(rawBalance, decimals)
-    const usdcBalanceFormatted = parseFloat(usdcBalance).toFixed(6)
-    const usdBalance = usdcBalanceFormatted
-    
-    console.log('✅ USDC balance fetched successfully:', {
-      usdc: usdcBalanceFormatted,
-      usd: usdBalance
-    })
-    
-    return {
-      usdcBalance: usdcBalanceFormatted,
-      usdBalance: usdBalance,
-      success: true
-    }
-    
-  } catch (error: any) {
-    console.error('❌ Error fetching USDC balance:', {
-      error: error.message,
-      code: error.code
-    })
-    return {
-      usdcBalance: '0.00',
-      usdBalance: '0.00',
-      success: false,
-      error: error.message || 'Failed to fetch USDC balance'
-    }
   }
-}
 
 export default function DashboardPage() {
   const { user, authenticated, ready, login } = usePrivy()
@@ -548,7 +608,7 @@ export default function DashboardPage() {
                       <p className="text-3xl font-extrabold">${stats.usdBalance}</p>
                       <p className="text-sm opacity-80 font-extrabold">USDC</p>
                     </div>
-                    <p className="text-xs opacity-70 mt-2 font-extrabold">USDC on Lisk Mainnet (1:1 with USD)</p>
+                    <p className="text-xs opacity-70 mt-2 font-extrabold">USDC on Arc (1:1 with USD)</p>
                   </div>
                 )}
               </div>
