@@ -1276,7 +1276,7 @@ const handlePayWithCard = useCallback(async (overrideEmail?: string) => {
                             eventId={eventId}
                             ticketTypeId={selectedTicketType._id}
                             quantity={selectedQuantity}
-                            amount={Number(getTotalPrice())}
+                            amount={Number(getTotalPrice())}   // NGN amount — the button converts to USDC
                             email={userEmail || guestEmail || ''}
                             userName={(userEmail || guestEmail || '').split('@')[0] || 'User'}
                             onSuccess={() => {

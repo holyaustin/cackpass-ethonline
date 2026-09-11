@@ -8,6 +8,8 @@ import {
   initializeOnChainPayment,
 } from '@/lib/arc/client';
 
+const NGN_PER_USDC = Number(process.env.NEXT_PUBLIC_NGN_PER_USDC) || 1350
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -17,7 +19,8 @@ export async function POST(request: NextRequest) {
       eventId,
       ticketTypeId,
       quantity,
-      amount,
+      amount,           // USDC
+      originalAmount,   // NGN
       email,
       userName,
       discountCode,
@@ -172,29 +175,16 @@ export async function POST(request: NextRequest) {
       paymentMethod: 'arc_usdc',
       userId: user._id,
       eventId,
-      amount: finalAmount,
-      originalAmount: amount,
+      amount: finalAmount,                          // USDC
+      originalAmount: originalAmount || amount,     // NGN
       quantity,
-      ticketTypeId: realTicketTypeId,
-      paymentStatus: 'pending',
-      paymentReference: `CACK-${reference}`,
-      customerEmail: email,
+      // ... rest
       metadata: {
-        orderId: order._id,
-        userName: userName || email.split('@')[0] || 'User',
-        isVirtual,
-        eventTitle: event.title,
-        ticketName: ticketType?.name || 'General Admission',
-        eventVenue: event.venue || 'Online Event',
-        eventStartDate: event.startDate,
-        eventEndDate: event.endDate,
-        onChainPaymentId: paymentId,
-        transactionHash: onChainResult.transactionHash,
-        blockNumber: onChainResult.blockNumber,
-        discountCode: discountInfo?.code || null,
-        discountPercent: discountInfo?.percent || null,
-        discountAmount: discountInfo?.amount || null,
-        isGuest: isGuest || false,
+        // ...
+        usdcAmount: finalAmount,
+        ngnAmount: originalAmount || amount,
+        exchangeRate: NGN_PER_USDC,
+        // ...
       },
     });
 
