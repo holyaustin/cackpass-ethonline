@@ -14,6 +14,7 @@ interface TicketDetails {
 interface PaymentDetails {
   reference: string
   amount: number
+  currency?: string         // ✅ NEW
   tickets: TicketDetails[]
   userEmail?: string
   event?: {
@@ -48,10 +49,10 @@ export default function PaymentSuccessPage() {
     setReference(ref)
     
     if (isFree) {
-      // Handle free ticket success without API call
       setPaymentDetails({
         reference: ref,
         amount: 0,
+        currency: 'FREE',
         tickets: [{ ticketId: ref }],
         userEmail: email || undefined,
         isFree: true
@@ -64,17 +65,14 @@ export default function PaymentSuccessPage() {
     }
   }, [searchParams, router])
 
-  // ✅ CHANGED: Updated verifyPayment to handle both Flutterwave and Arc
   const verifyPayment = async (ref: string) => {
     try {
       console.log('🔍 Verifying payment for reference:', ref);
       
-      // Get the provider from URL
       const urlParams = new URLSearchParams(window.location.search);
       const provider = urlParams.get('provider');
       const transactionId = urlParams.get('transaction_id');
       
-      // Build verification URL based on provider
       let verifyUrl;
       if (provider === 'arc') {
         verifyUrl = `/api/payments/arc/verify?reference=${ref}`;
@@ -82,7 +80,6 @@ export default function PaymentSuccessPage() {
           verifyUrl += `&transaction_id=${transactionId}`;
         }
       } else {
-        // Flutterwave (default)
         verifyUrl = `/api/payments/flutterwave/verify?reference=${ref}`;
         if (transactionId) {
           verifyUrl += `&transaction_id=${transactionId}`;
@@ -121,6 +118,7 @@ export default function PaymentSuccessPage() {
       setPaymentDetails({
         reference: ref,
         amount: data.amount || 0,
+        currency: data.currency || 'NGN',    // ✅ Capture currency from API
         tickets: data.tickets || [],
         userEmail: data.userEmail,
         event: data.event
@@ -144,6 +142,27 @@ export default function PaymentSuccessPage() {
       setError(err.message || 'Failed to verify payment');
       setIsLoading(false);
     }
+  };
+
+  // ✅ NEW: Helper to format amount with correct currency
+  const formatAmountDisplay = (amount: number, currency: string = 'NGN'): string => {
+    // USDC / USD - use $ prefix with 6 decimals max
+    if (currency === 'USDC' || currency === 'USD') {
+      const formatted = amount.toFixed(amount < 1 ? 6 : 2).replace(/\.?0+$/, '');
+      return `${formatted} USDC`;
+    }
+    
+    // NGN - use ₦ symbol
+    if (currency === 'NGN') {
+      return `₦${amount.toLocaleString()}`;
+    }
+    
+    // EUR, GBP etc.
+    if (currency === 'EUR') return `€${amount.toLocaleString()}`;
+    if (currency === 'GBP') return `£${amount.toLocaleString()}`;
+    
+    // Fallback
+    return `${amount.toLocaleString()} ${currency}`;
   };
 
   if (isLoading) {
@@ -192,6 +211,7 @@ export default function PaymentSuccessPage() {
   }
 
   const ticketCount = paymentDetails?.tickets?.length || 1
+  const currency = paymentDetails?.currency || 'NGN'
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-green-50 to-white dark:from-gray-900 dark:to-gray-950 flex items-center justify-center p-4">
@@ -226,11 +246,14 @@ export default function PaymentSuccessPage() {
               <span className="font-medium">Tickets:</span>
               <span>{ticketCount} ticket{ticketCount !== 1 ? 's' : ''}</span>
             </div>
-            {!isFreeTicket && paymentDetails?.amount && paymentDetails.amount > 0 && (
+            {!isFreeTicket && paymentDetails?.amount !== undefined && paymentDetails.amount > 0 && (
               <div className="flex items-center gap-2">
                 <DollarSign className="h-4 w-4 text-primary" />
                 <span className="font-medium">Amount Paid:</span>
-                <span>₦{paymentDetails.amount.toLocaleString()}</span>
+                {/* ✅ FIXED: Now displays USDC when paid in USDC */}
+                <span className="font-semibold">
+                  {formatAmountDisplay(paymentDetails.amount, currency)}
+                </span>
               </div>
             )}
             {isFreeTicket && (

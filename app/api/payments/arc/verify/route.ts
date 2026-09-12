@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const reference = searchParams.get('reference');
-    const usdcTxHash = searchParams.get('transaction_id'); // USDC transfer hash from App Kits
+    const usdcTxHash = searchParams.get('transaction_id');
 
     if (!reference) {
       return NextResponse.json({ error: 'Missing reference' }, { status: 400 });
@@ -64,7 +64,6 @@ export async function GET(request: NextRequest) {
         }))
       );
 
-      // ✅ FALLBACK 3: If exactly ONE recent pending payment exists, use it
       if (recentPayments.length === 1) {
         payment = await Payment.findById(recentPayments[0]._id);
         console.log(
@@ -86,7 +85,6 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // ✅ If we found a different payment than requested, log it
     if (payment.paymentReference !== reference) {
       console.log(
         `⚠️ Found payment with different reference: DB=${payment.paymentReference}, URL=${reference}`
@@ -96,7 +94,6 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // ✅ Use the DB's actual reference for consistency
     const effectiveReference = payment.paymentReference;
 
     // ============================================================
@@ -115,6 +112,7 @@ export async function GET(request: NextRequest) {
         tickets: tickets.map((t: any) => ({ ticketId: t.ticketNumber })),
         emailSent: wasEmailSent,
         amount: payment.amount,
+        currency: payment.metadata?.currency || 'USDC',   // ✅ ADD THIS
         userEmail: payment.customerEmail,
         reference: effectiveReference,
         event: {
@@ -136,6 +134,18 @@ export async function GET(request: NextRequest) {
         { error: 'Invalid payment data - missing on-chain payment ID' },
         { status: 400 }
       );
+    }
+
+    // ✅ Persist the USDC transfer hash on the DB payment record
+    // This is our source of truth since the contract doesn't store txHash
+    if (usdcTxHash && !payment.metadata?.usdcTxHash) {
+      payment.metadata = {
+        ...(payment.metadata || {}),
+        usdcTxHash,
+      };
+      payment.transactionHash = usdcTxHash;
+      await payment.save();
+      console.log(`✅ Stored USDC tx hash on payment record: ${usdcTxHash}`);
     }
 
     const onChainPayment = await getOnChainPayment(paymentId);
@@ -169,10 +179,33 @@ export async function GET(request: NextRequest) {
           console.log(
             `✅ Payment confirmed on-chain: ${confirmResult.transactionHash}`
           );
-          // Refresh payment data
-          const updatedPayment = await getOnChainPayment(paymentId);
-          if (updatedPayment.success && updatedPayment.payment) {
-            onChainPayment.payment = updatedPayment.payment;
+
+          // ✅ Wait for confirmation and retry fetching
+          let retries = 0;
+          const maxRetries = 5;
+          const retryDelay = 2000;
+
+          while (retries < maxRetries) {
+            await new Promise((resolve) => setTimeout(resolve, retryDelay));
+
+            const updatedPayment = await getOnChainPayment(paymentId);
+            if (
+              updatedPayment.success &&
+              updatedPayment.payment?.status === 'confirmed'
+            ) {
+              onChainPayment.payment = updatedPayment.payment;
+              console.log(`✅ Payment confirmed after ${retries + 1} retries`);
+              break;
+            }
+
+            retries++;
+            console.log(
+              `⏳ Retry ${retries}/${maxRetries} - payment still not confirmed...`
+            );
+          }
+
+          if (retries >= maxRetries) {
+            console.error('❌ Payment confirmation timed out');
           }
         } else {
           console.error(`❌ Failed to confirm payment:`, confirmResult.error);
@@ -201,9 +234,10 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    console.log(
-      `✅ Payment confirmed on-chain with proof: ${onChainPayment.payment.txHash}`
-    );
+    // ✅ Contract doesn't return txHash — use the USDC hash we stored
+    const onChainProof =
+      usdcTxHash || payment.transactionHash || effectiveReference;
+    console.log(`✅ Payment confirmed on-chain with proof: ${onChainProof}`);
 
     // ============================================================
     // 6. Get user and event
@@ -222,7 +256,8 @@ export async function GET(request: NextRequest) {
     // 7. Update payment status
     // ============================================================
     payment.paymentStatus = 'completed';
-    payment.transactionHash = onChainPayment.payment.txHash || effectiveReference;
+    payment.transactionHash =
+      usdcTxHash || payment.transactionHash || effectiveReference;
     await payment.save();
     console.log(`✅ Payment marked as completed`);
 
@@ -293,7 +328,8 @@ export async function GET(request: NextRequest) {
           metadata: {
             arcPayment: true,
             onChainPaymentId: paymentId,
-            transactionHash: onChainPayment.payment.txHash,
+            transactionHash:
+              usdcTxHash || payment.transactionHash || effectiveReference,
           },
         });
         tickets.push(ticket);
@@ -351,12 +387,14 @@ export async function GET(request: NextRequest) {
     // ============================================================
     const finalEvent = await Event.findById(payment.eventId);
     const finalTicketsSold = finalEvent?.ticketsSold || 0;
+    const finalTxHash =
+      usdcTxHash || payment.transactionHash || effectiveReference;
 
     console.log(`\n🎉 ========== PAYMENT COMPLETE ==========`);
     console.log(`✅ Reference: ${effectiveReference}`);
     console.log(`✅ Tickets: ${tickets.length}`);
     console.log(`✅ Email: ${emailSent ? 'SENT ✅' : 'FAILED ❌'}`);
-    console.log(`✅ On-chain proof: ${onChainPayment.payment.txHash}`);
+    console.log(`✅ On-chain proof: ${finalTxHash}`);
     console.log(
       `📊 ticketsSold: ${finalTicketsSold}/${finalEvent?.capacity || 'unlimited'}`
     );
@@ -370,8 +408,9 @@ export async function GET(request: NextRequest) {
       })),
       emailSent: emailSent,
       amount: payment.amount,
+      currency: 'USDC', 
       userEmail: userEmail,
-      transactionHash: onChainPayment.payment.txHash,
+      transactionHash: finalTxHash,
       reference: effectiveReference,
       event: {
         ticketsSold: finalTicketsSold,

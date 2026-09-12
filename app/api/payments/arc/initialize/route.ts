@@ -113,9 +113,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 5. Generate payment ID
+    // 5. Generate payment ID and reference
     const paymentId = generatePaymentId();
-    const reference = paymentId.replace('0x', '').slice(0, 16);
+    const shortRef = paymentId.replace('0x', '').slice(0, 16);
+    const fullReference = `CACK-${shortRef}`;
+
+    console.log('📝 Generated paymentId:', paymentId);
+    console.log('📝 Generated reference:', fullReference);
 
     // 6. Initialize payment on Arc blockchain (creates pending record)
     console.log('⛓️ Initializing payment on Arc blockchain...');
@@ -129,7 +133,7 @@ export async function POST(request: NextRequest) {
     const onChainResult = await initializeOnChainPayment(
       paymentId,
       finalAmount,
-      `CACK-${reference}`,
+      fullReference,
       eventId,
       quantity,
       privateKey
@@ -144,7 +148,7 @@ export async function POST(request: NextRequest) {
 
     console.log('✅ On-chain payment initialized:', onChainResult.transactionHash);
 
-    // 7. Create database records
+    // 7. Create Order
     const order = await Order.create({
       userId: user._id,
       eventId,
@@ -154,7 +158,7 @@ export async function POST(request: NextRequest) {
       originalAmount: amount,
       paymentMethod: 'arc_usdc',
       paymentStatus: 'pending',
-      paymentReference: `CACK-${reference}`,
+      paymentReference: fullReference,
       customerEmail: email,
       customerName: userName || email.split('@')[0] || 'User',
       metadata: {
@@ -171,29 +175,69 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    await Payment.create({
+    console.log('✅ Order created:', order._id.toString());
+
+    // ============================================================
+    // 8. Create Payment — ALL CRITICAL FIELDS INCLUDED
+    // ============================================================
+    const paymentDoc = await Payment.create({
       paymentMethod: 'arc_usdc',
       userId: user._id,
       eventId,
       amount: finalAmount,                          // USDC
       originalAmount: originalAmount || amount,     // NGN
       quantity,
-      // ... rest
+      ticketTypeId: realTicketTypeId,
+
+      // ✅ CRITICAL FIELDS THAT WERE MISSING
+      paymentStatus: 'pending',
+      paymentReference: fullReference,              // MUST match URL reference
+      customerEmail: email,                          // Required for verify + email
+
+      // ✅ CRITICAL METADATA FOR FALLBACK LOOKUPS
       metadata: {
-        // ...
+        orderId: order._id,
+        onChainPaymentId: paymentId,
+        transactionHash: onChainResult.transactionHash,
+        blockNumber: onChainResult.blockNumber,
+        userName: userName || email.split('@')[0] || 'User',
+        isVirtual,
+        ticketName: ticketType?.name || 'General Admission',
+        eventTitle: event.title,
+        eventVenue: event.venue || 'Online Event',
+        eventStartDate: event.startDate,
+        eventEndDate: event.endDate,
+        discountCode: discountInfo?.code || null,
+        discountPercent: discountInfo?.percent || null,
+        discountAmount: discountInfo?.amount || null,
+        isGuest: isGuest || false,
         usdcAmount: finalAmount,
         ngnAmount: originalAmount || amount,
         exchangeRate: NGN_PER_USDC,
-        // ...
       },
     });
 
-    console.log(`✅ Payment initialized. Reference: CACK-${reference}, Amount: ${finalAmount}`);
+    console.log('✅ Payment record created:', {
+      _id: paymentDoc._id.toString(),
+      reference: paymentDoc.paymentReference,
+      txHash: paymentDoc.metadata?.transactionHash,
+      orderId: paymentDoc.metadata?.orderId?.toString(),
+    });
+
+    // ✅ Verify the payment can be found by reference (sanity check)
+    const verify = await Payment.findOne({ paymentReference: fullReference }).lean();
+    if (!verify) {
+      console.error('❌ CRITICAL: Payment record not findable after create!');
+    } else {
+      console.log('✅ Sanity check passed - payment findable by reference');
+    }
+
+    console.log(`✅ Payment initialized. Reference: ${fullReference}, Amount: ${finalAmount}`);
 
     return NextResponse.json({
       success: true,
       paymentId: paymentId,
-      reference: `CACK-${reference}`,
+      reference: fullReference,
       amount: finalAmount,
       message: 'Payment initialized. Please approve the USDC transaction.',
       onChain: {

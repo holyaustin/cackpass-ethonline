@@ -225,6 +225,7 @@ export async function GET(request: NextRequest) {
         })),
         emailSent: wasEmailSent,
         amount: payment.amount,
+        currency: payment.metadata?.currency || 'NGN',   // ✅ ADD THIS
         userEmail: payment.customerEmail,
         event: {
           ticketsSold: 0,
@@ -515,6 +516,7 @@ export async function GET(request: NextRequest) {
       emailSent: emailSent,
       emailError: emailError,
       amount: payment.amount,
+      currency: payment.metadata?.currency || 'NGN',   // ✅ ADD THIS
       userEmail: userEmail,
       event: {
         ticketsSold: finalTicketsSold,

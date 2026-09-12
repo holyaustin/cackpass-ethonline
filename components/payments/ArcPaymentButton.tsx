@@ -20,6 +20,7 @@ interface ArcPaymentButtonProps {
   onSuccess?: () => void;
   className?: string;
   disabled?: boolean;
+  onRequireLogin?: () => void;   // ✅ NEW: caller can decide what to do when login is needed
 }
 
 export function ArcPaymentButton({
@@ -32,41 +33,69 @@ export function ArcPaymentButton({
   onSuccess,
   className = '',
   disabled = false,
+  onRequireLogin,
 }: ArcPaymentButtonProps) {
   const [isProcessing, setIsProcessing] = useState(false);
-  const [isPrivyReady, setIsPrivyReady] = useState(false);
-  // ✅ ADD THIS: Prevent double-invocation
   const isProcessingRef = useRef(false);
   const router = useRouter();
 
-  const { user, authenticated, ready, login } = usePrivy();
-  const { wallets } = useWallets();
+  // ✅ FIX: Detect whether Privy context is available.
+  // If the button renders before PrivyProvider is mounted, usePrivy/useWallets throw.
+  // Wrap in a try/catch so we can render a safe fallback button.
+  let privyContext: { user: any; authenticated: boolean; ready: boolean; login: () => Promise<any> } | null = null;
+  let walletsContext: { wallets: any[] } | null = null;
 
-  // ✅ Ensure Privy is fully ready before rendering the actual button
-  useEffect(() => {
-    if (ready) {
-      setIsPrivyReady(true);
-    }
-  }, [ready]);
+  try {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    privyContext = usePrivy() as any;
+  } catch {
+    privyContext = null;
+  }
 
-  const usdcAmount = Number((amount / NGN_PER_USDC).toFixed(6))
+  try {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    walletsContext = useWallets() as any;
+  } catch {
+    walletsContext = null;
+  }
 
-  // ✅ Get the embedded wallet with a fallback
-  const embeddedWallet = wallets.find(
-    (w) => w.walletClientType === 'privy'
-  ) || wallets[0];
+  const privyReady = privyContext?.ready === true;
+  const authenticated = privyContext?.authenticated === true;
+  const user = privyContext?.user;
+  const login = privyContext?.login;
+  const wallets = walletsContext?.wallets || [];
+
+  const embeddedWallet =
+    wallets.find((w) => w.walletClientType === 'privy') || wallets[0];
+
+  const usdcAmount = Number((amount / NGN_PER_USDC).toFixed(6));
 
   const handlePayment = async () => {
-    // ✅ FIX: Use both ref and state to prevent double-clicks
     if (disabled || isProcessing || isProcessingRef.current) {
-      console.log('🚫 [ArcPayment] Blocked duplicate click');
+      return;
+    }
+
+    // ✅ If Privy isn't even loaded, tell the user to trigger login first
+    if (!privyContext) {
+      toast.info('Please sign in to continue with USDC payment');
+      if (onRequireLogin) {
+        onRequireLogin();
+      } else if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('load-auth'));
+      }
       return;
     }
 
     if (!authenticated) {
       toast.info('Please sign in to continue with USDC payment');
       try {
-        await login();
+        if (onRequireLogin) {
+          onRequireLogin();
+        } else if (login) {
+          await login();
+        } else {
+          window.dispatchEvent(new CustomEvent('load-auth'));
+        }
       } catch (error) {
         console.error('Login failed:', error);
         toast.error('Sign in failed. Please try again.');
@@ -74,7 +103,7 @@ export function ArcPaymentButton({
       return;
     }
 
-    if (!ready) {
+    if (!privyReady) {
       toast.info('Please wait while we set up your wallet...');
       return;
     }
@@ -94,13 +123,11 @@ export function ArcPaymentButton({
       return;
     }
 
-    // ✅ FIX: Lock immediately BEFORE any async work
     isProcessingRef.current = true;
     setIsProcessing(true);
     const loadingToast = toast.loading('Initializing USDC payment...');
 
     try {
-      // STEP 1: Initialize payment on backend
       const response = await fetch('/api/payments/arc/initialize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -123,20 +150,13 @@ export function ArcPaymentButton({
       }
 
       console.log('✅ Payment initialized:', data);
-      // ✅ FIX: Log the EXACT reference we'll use for verification
       const verifyReference = data.reference;
-      console.log('📝 Reference to verify with:', verifyReference);
 
-      // STEP 2: Get the provider from the embedded wallet
       toast.loading('Preparing USDC payment...');
-
       const provider = await embeddedWallet.getEthereumProvider();
-
       if (!provider) {
         throw new Error('Failed to get wallet provider. Please try again.');
       }
-
-      console.log('✅ Provider obtained from embedded wallet');
 
       toast.loading(`Sending ${usdcAmount} USDC...`);
 
@@ -150,22 +170,14 @@ export function ArcPaymentButton({
         usdcAmount.toFixed(6)
       );
 
-      console.log('✅ USDC sent:', result);
       toast.dismiss();
 
-      // STEP 3: Extract transaction hash
       const txHash =
         (result as any)?.transactionHash ||
         (result as any)?.txHash ||
         (result as any)?.hash ||
         'completed';
 
-      console.log('📝 Redirecting with:', {
-        reference: verifyReference,
-        txHash,
-      });
-
-      // STEP 4: Redirect to success page
       toast.success('Payment successful! Verifying...');
 
       setTimeout(() => {
@@ -179,7 +191,6 @@ export function ArcPaymentButton({
       toast.dismiss();
       console.error('❌ Arc payment error:', error);
 
-      // ✅ FIX: Release lock on failure so user can retry
       isProcessingRef.current = false;
       setIsProcessing(false);
 
@@ -194,33 +205,32 @@ export function ArcPaymentButton({
       }
       return;
     }
-    // ✅ FIX: Do NOT release lock in `finally` on success
-    // (we're navigating away, so the button will unmount)
-    // Lock is only released above on error.
   };
 
-  // Don't render until Privy is ready
-  if (!isPrivyReady) {
+  // ✅ FIX: If Privy isn't loaded, show a normal "Sign in to pay" button.
+  // It will trigger the app to load Privy on click, then the user can click again.
+  if (!privyContext || !authenticated) {
+    return (
+      <button
+        onClick={handlePayment}
+        disabled={isProcessing || disabled}
+        className={`w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-3 text-lg bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white transition-all disabled:opacity-50 ${className}`}
+      >
+        <LogIn className="h-5 w-5" />
+        Sign in to Pay {usdcAmount} USDC
+      </button>
+    );
+  }
+
+  // ✅ Between click and Privy fully ready, show a brief "Loading..." state
+  if (!privyReady) {
     return (
       <button
         disabled
         className={`w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-3 text-lg bg-gray-400 text-white cursor-not-allowed ${className}`}
       >
         <Loader2 className="h-5 w-5 animate-spin" />
-        Loading...
-      </button>
-    );
-  }
-
-  if (!authenticated) {
-    return (
-      <button
-        onClick={handlePayment}
-        disabled={isProcessing || disabled}
-        className={`w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-3 text-lg bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white transition-all ${className}`}
-      >
-        <LogIn className="h-5 w-5" />
-        Sign in to Pay {usdcAmount} USDC
+        Loading wallet...
       </button>
     );
   }
