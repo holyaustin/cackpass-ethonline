@@ -98,21 +98,49 @@ export async function GET(request: NextRequest) {
     // ============================================================
     // 2. Skip if already completed
     // ============================================================
+
     if (payment.paymentStatus === 'completed') {
       console.log(
         `⚠️ Payment already processed (ref=${effectiveReference}) - returning existing data`
       );
-      const tickets = await MyTicket.find({ orderId: payment.metadata?.orderId });
+
+      const tickets = await MyTicket.find({
+        orderId: payment.metadata?.orderId,
+      });
+
       const wasEmailSent = payment.metadata?.emailSent === true;
+
+      // Resolve email from Order first.
+      const processedOrder = payment.metadata?.orderId
+        ? await Order.findById(payment.metadata.orderId).lean()
+        : null;
+
+      let processedUserEmail =
+        processedOrder?.customerEmail ||
+        payment.customerEmail ||
+        payment.metadata?.userEmail ||
+        payment.metadata?.email ||
+        '';
+
+      // Additional fallback through User.
+      if (!processedUserEmail && payment.userId) {
+        const processedUser = await User.findById(payment.userId).lean();
+
+        processedUserEmail = processedUser?.email || '';
+      }
+
+      console.log(`📧 Already-processed email: ${processedUserEmail}`);
 
       return NextResponse.json({
         success: true,
         alreadyProcessed: true,
-        tickets: tickets.map((t: any) => ({ ticketId: t.ticketNumber })),
+        tickets: tickets.map((t: any) => ({
+          ticketId: t.ticketNumber,
+        })),
         emailSent: wasEmailSent,
         amount: payment.amount,
-        currency: payment.metadata?.currency || 'USDC',   // ✅ ADD THIS
-        userEmail: payment.customerEmail,
+        currency: payment.metadata?.currency || 'USDC',
+        userEmail: processedUserEmail,
         reference: effectiveReference,
         event: {
           ticketsSold: 0,
@@ -255,16 +283,61 @@ export async function GET(request: NextRequest) {
     console.log(`✅ Payment confirmed on-chain with proof: ${onChainProof}`);
 
     // ============================================================
-    // 6. Get user and event
+    // 6. Get order, user and event
     // ============================================================
-    let userEmail = payment.customerEmail || '';
+
+    // The initialize API stores the customer's email on the Order.
+    // We use Order.customerEmail as the primary email source.
+    // This avoids depending on Payment.customerEmail, which may
+    // not be available on the Payment document.
+    const order = await Order.findById(payment.metadata?.orderId);
+
+    let userEmail = order?.customerEmail || '';
+
     let userName =
-      payment.metadata?.userName || userEmail.split('@')[0] || 'User';
+      order?.customerName ||
+      payment.metadata?.userName ||
+      userEmail.split('@')[0] ||
+      'User';
+
+    // Additional fallback: the Payment is linked to the User.
+    if (!userEmail && payment.userId) {
+      const paymentUser = await User.findById(payment.userId).lean();
+
+      if (paymentUser?.email) {
+        userEmail = paymentUser.email;
+      }
+    }
+
+    // Final fallback to Payment fields if they exist.
+    if (!userEmail) {
+      userEmail =
+        payment.customerEmail ||
+        payment.metadata?.userEmail ||
+        payment.metadata?.email ||
+        '';
+    }
+
+    console.log('📧 EMAIL RESOLUTION:', {
+      orderId: payment.metadata?.orderId?.toString(),
+      orderCustomerEmail: order?.customerEmail,
+      orderCustomerName: order?.customerName,
+      paymentUserId: payment.userId?.toString(),
+      paymentCustomerEmail: payment.customerEmail,
+      metadataUserEmail: payment.metadata?.userEmail,
+      metadataEmail: payment.metadata?.email,
+      resolvedUserEmail: userEmail,
+      resolvedUserName: userName,
+    });
 
     const event = await Event.findById(payment.eventId);
+
     if (!event) {
       console.error(`❌ Event not found: ${payment.eventId}`);
-      return NextResponse.json({ error: 'Event not found' }, { status: 404 });
+      return NextResponse.json(
+        { error: 'Event not found' },
+        { status: 404 }
+      );
     }
 
     // ============================================================
@@ -279,7 +352,7 @@ export async function GET(request: NextRequest) {
     // ============================================================
     // 8. Update order
     // ============================================================
-    const order = await Order.findById(payment.metadata?.orderId);
+
     if (order) {
       order.paymentStatus = 'paid';
       await order.save();
@@ -358,20 +431,35 @@ export async function GET(request: NextRequest) {
     // ============================================================
     // 13. Send email (via API endpoint, same as Flutterwave)
     // ============================================================
+
     let emailSent = false;
 
-    if (userEmail && !payment.metadata?.emailSent) {
-      console.log(`\n📧 ========== SENDING EMAIL ==========`);
-      console.log(`📧 To: ${userEmail}`);
+    console.log(`🔍 EMAIL DEBUG:`);
+    console.log(`   payment.customerEmail = "${payment.customerEmail}"`);
+    console.log(`   order.customerEmail = "${order?.customerEmail}"`);
+    console.log(`   payment.metadata.userEmail = "${payment.metadata?.userEmail}"`);
+    console.log(`   payment.metadata.email = "${payment.metadata?.email}"`);
+    console.log(`   payment.metadata.userName = "${payment.metadata?.userName}"`);
+    console.log(`   payment.metadata.emailSent = ${payment.metadata?.emailSent}`);
+    console.log(`   FINAL resolved userEmail = "${userEmail}"`);
+
+    if (!userEmail) {
+      console.error(`❌ SKIPPING EMAIL: no userEmail resolved`);
+    } else if (payment.metadata?.emailSent === true) {
+      console.log(`⏭️ SKIPPING EMAIL: already sent previously`);
+      emailSent = true;
+    } else {
+      console.log(`📧 Sending email to: ${userEmail}`);
       console.log(`📧 Event: ${event.title}`);
-      console.log(`📧 Reference: ${effectiveReference}`);
 
       try {
         const emailResponse = await fetch(
           `${process.env.NEXT_PUBLIC_APP_URL}/api/email/ticket-confirmation`,
           {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+            },
             body: JSON.stringify({
               email: userEmail,
               name: userName || userEmail.split('@')[0] || 'User',
@@ -391,19 +479,33 @@ export async function GET(request: NextRequest) {
 
         if (!emailResponse.ok) {
           const errorText = await emailResponse.text();
-          throw new Error(`Email API returned ${emailResponse.status}: ${errorText}`);
+          throw new Error(
+            `Email API returned ${emailResponse.status}: ${errorText}`
+          );
         }
 
         const emailResult = await emailResponse.json();
-        console.log(`✅ Email sent successfully to ${userEmail}`, emailResult);
+
+        console.log(
+          `✅ Email sent successfully to ${userEmail}`,
+          emailResult
+        );
+
         emailSent = true;
-        payment.metadata.emailSent = true;
+
+        payment.metadata = {
+          ...(payment.metadata || {}),
+          emailSent: true,
+        };
+
         await payment.save();
+
       } catch (emailError: any) {
         console.error(`❌ EMAIL FAILED:`, emailError.message);
         emailSent = false;
       }
     }
+
     // ============================================================
     // 14. Final response
     // ============================================================
