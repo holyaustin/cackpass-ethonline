@@ -196,50 +196,65 @@ export async function getOnChainPayment(paymentId: string): Promise<OnChainPayme
   try {
     const contract = getArcContract();
     const paymentIdBytes = paymentIdToBytes32(paymentId);
-    
-    console.log(`🔍 Fetching on-chain payment: ${paymentId}`);
-    console.log(`📝 Contract address: ${ARC_CONFIG.contractAddress}`);
-    console.log(`📝 RPC URL: ${ARC_CONFIG.rpcUrl}`);
-    
-    const payment = await contract.getPayment(paymentIdBytes);
-    
-    // ✅ Safe decode - contract returns 10 fields with uint8 status
-    const rawStatusCode = Number(payment.status);
-    const statusLabel = PAYMENT_STATUS_LABELS[rawStatusCode] || 'unknown';
-    
-    const paymentData: OnChainPaymentData = {
-      paymentId: payment.paymentId,
-      payer: payment.payer,
-      amount: ethers.formatUnits(payment.amount, ARC_CONFIG.usdcDecimals),
-      fee: ethers.formatUnits(payment.fee, ARC_CONFIG.usdcDecimals),
-      reference: payment.paymentReference,   // ✅ Correct field name
-      status: statusLabel,                   // ✅ Converted from enum
-      statusCode: rawStatusCode,
-      createdAt: Number(payment.createdAt),
-      confirmedAt: Number(payment.confirmedAt),
-      eventId: payment.eventId,
-      ticketQuantity: Number(payment.ticketQuantity),
-    };
-    
-    console.log('✅ Decoded payment data:', paymentData);
-    
-    return {
-      success: true,
-      payment: paymentData,
-    };
+
+    // ✅ Try the simple status call first (most robust)
+    try {
+      const statusString = await contract.getPaymentStatus(paymentIdBytes);
+      console.log(`✅ getPaymentStatus returned: ${statusString}`);
+
+      // Try full struct for enrichment, but don't fail if it errors
+      try {
+        const payment = await contract.getPayment(paymentIdBytes);
+        const rawStatusCode = Number(payment.status);
+        const statusLabel = PAYMENT_STATUS_LABELS[rawStatusCode] || statusString;
+
+        return {
+          success: true,
+          payment: {
+            paymentId: payment.paymentId,
+            payer: payment.payer,
+            amount: ethers.formatUnits(payment.amount, ARC_CONFIG.usdcDecimals),
+            fee: ethers.formatUnits(payment.fee, ARC_CONFIG.usdcDecimals),
+            reference: payment.paymentReference,
+            status: statusLabel,
+            statusCode: rawStatusCode,
+            createdAt: Number(payment.createdAt),
+            confirmedAt: Number(payment.confirmedAt),
+            eventId: payment.eventId,
+            ticketQuantity: Number(payment.ticketQuantity),
+          },
+        };
+      } catch (structError: any) {
+        // ✅ Struct decode failed but we have status — return minimal data
+        console.warn('⚠️ Struct decode failed, using status only');
+        return {
+          success: true,
+          payment: {
+            paymentId: paymentIdBytes,
+            payer: '0x0000000000000000000000000000000000000000',
+            amount: '0',
+            fee: '0',
+            reference: '',
+            status: statusString,
+            statusCode: statusString === 'confirmed' ? 1 : 0,
+            createdAt: 0,
+            confirmedAt: 0,
+            eventId: '0x',
+            ticketQuantity: 0,
+          },
+        };
+      }
+    } catch (statusError: any) {
+      console.error('❌ getPaymentStatus failed:', statusError.message);
+
+      if (statusError.message?.includes('Payment does not exist')) {
+        return { success: false, error: 'Payment does not exist on-chain' };
+      }
+
+      throw statusError;
+    }
   } catch (error: any) {
     console.error('❌ Failed to get payment details:', error);
-    
-    let errorMessage = error.message;
-    if (error.message?.includes('deferred error')) {
-      errorMessage = 'Contract returned invalid data. Verify contract address and ABI match.';
-    } else if (error.code === 'CALL_EXCEPTION') {
-      errorMessage = `Contract call failed at ${ARC_CONFIG.contractAddress}. Payment may not exist.`;
-    }
-    
-    return {
-      success: false,
-      error: errorMessage,
-    };
+    return { success: false, error: error.message };
   }
 }
