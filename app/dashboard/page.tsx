@@ -140,88 +140,24 @@ function getWalletAddressFromUser(user: any): string | null {
   return null
 }
 
-// Function to fetch USDC balance from Arc Testnet with dynamic ethers
-  async function fetchUSDCBalance(walletAddress: string): Promise<{
-    usdcBalance: string;
-    usdBalance: string;
-    success: boolean;
-    error?: string;
-  }> {
-    try {
-      console.log('💰 Fetching USDC balance for:', walletAddress)
-      
-      const { ethers } = await loadEthers()
-      
-      // ✅ FIX 1: Use staticNetwork: true to skip getNetwork() call
-      // ✅ FIX 2: Updated RPC URL for Arc Testnet
-      const provider = new ethers.JsonRpcProvider(
-        ARC_CONFIG.RPC_URL,
-        {
-          chainId: ARC_CONFIG.CHAIN_ID,
-          name: 'arc-testnet'
-        },
-        {
-          staticNetwork: true,
-          batchMaxCount: 1,
-          polling: false,
-        }
-      )
-      
+    // Function to fetch native USDC balance from Arc Testnet
+    // On Arc, USDC is the native gas token — read it via provider.getBalance()
+    async function fetchUSDCBalance(walletAddress: string): Promise<{
+      usdcBalance: string;
+      usdBalance: string;
+      success: boolean;
+      error?: string;
+    }> {
       try {
-        const network = await provider.getNetwork()
-        console.log('✅ Connected to Arc Testnet:', {
-          name: network.name,
-          chainId: network.chainId.toString()
-        })
-      } catch (networkError) {
-        console.error('❌ Arc Testnet connection error:', networkError)
-        return {
-          usdcBalance: '0.000000',
-          usdBalance: '0.000000',
-          success: false,
-          error: 'Failed to connect to Arc Testnet'
-        }
-      }
-      
-      const usdcContract = new ethers.Contract(
-        USDC_CONTRACT_ADDRESS,
-        USDC_ABI,
-        provider
-      )
-      
-      const rawBalance = await usdcContract.balanceOf(walletAddress)
-      
-      // ✅ Arc USDC uses 6 decimals
-      const usdcBalance = ethers.formatUnits(rawBalance, USDC_DECIMALS)
-      const usdcBalanceFormatted = parseFloat(usdcBalance).toFixed(6)
-      
-      console.log('✅ USDC balance fetched successfully:', {
-        usdc: usdcBalanceFormatted,
-        usd: usdcBalanceFormatted
-      })
-      
-      return {
-        usdcBalance: usdcBalanceFormatted,
-        usdBalance: usdcBalanceFormatted,
-        success: true
-      }
-      
-    } catch (error: any) {
-      console.error('❌ Error fetching USDC balance:', {
-        error: error.message,
-        code: error.code
-      })
-      
-      // ✅ Better fallback - try the alternative RPC URL
-      try {
-        console.log('🔄 Retrying with fallback RPC...')
+        console.log('💰 Fetching native USDC balance for:', walletAddress)
+
         const { ethers } = await loadEthers()
-        
-        const fallbackProvider = new ethers.JsonRpcProvider(
-          ARC_CONFIG.RPC_URL_FALLBACK,
+
+        const provider = new ethers.JsonRpcProvider(
+          ARC_CONFIG.RPC_URL,
           {
             chainId: ARC_CONFIG.CHAIN_ID,
-            name: 'arc-testnet'
+            name: 'arc-testnet',
           },
           {
             staticNetwork: true,
@@ -229,36 +165,73 @@ function getWalletAddressFromUser(user: any): string | null {
             polling: false,
           }
         )
-        
-        const usdcContract = new ethers.Contract(
-          USDC_CONTRACT_ADDRESS,
-          USDC_ABI,
-          fallbackProvider
-        )
-        
-        const rawBalance = await usdcContract.balanceOf(walletAddress)
-        const usdcBalance = ethers.formatUnits(rawBalance, USDC_DECIMALS)
-        const usdcBalanceFormatted = parseFloat(usdcBalance).toFixed(6)
-        
-        console.log('✅ Fallback succeeded:', usdcBalanceFormatted)
-        
+
+        // ✅ Native balance — USDC is the gas token on Arc Testnet
+        // We use 18 decimals because the RPC encodes native balances in wei
+        // (1 USDC = 1e18 wei on Arc's representation)
+        const rawBalance = await provider.getBalance(walletAddress)
+        const balanceStr = ethers.formatUnits(rawBalance, 18)
+
+        // Display with 6 decimal places for readability
+        const formatted = parseFloat(balanceStr).toFixed(6)
+
+        console.log('✅ Native USDC balance fetched:', {
+          raw: rawBalance.toString(),
+          formatted,
+        })
+
         return {
-          usdcBalance: usdcBalanceFormatted,
-          usdBalance: usdcBalanceFormatted,
-          success: true
+          usdcBalance: formatted,
+          usdBalance: formatted,
+          success: true,
         }
-      } catch (fallbackError: any) {
-        console.error('❌ Fallback also failed:', fallbackError.message)
-        
-        return {
-          usdcBalance: '0.000000',
-          usdBalance: '0.000000',
-          success: false,
-          error: 'Failed to connect to Arc Testnet'
+      } catch (error: any) {
+        console.error('❌ Error fetching native balance:', {
+          error: error.message,
+          code: error.code,
+        })
+
+        // Fallback RPC
+        try {
+          console.log('🔄 Retrying with fallback RPC...')
+          const { ethers } = await loadEthers()
+
+          const fallbackProvider = new ethers.JsonRpcProvider(
+            ARC_CONFIG.RPC_URL_FALLBACK,
+            {
+              chainId: ARC_CONFIG.CHAIN_ID,
+              name: 'arc-testnet',
+            },
+            {
+              staticNetwork: true,
+              batchMaxCount: 1,
+              polling: false,
+            }
+          )
+
+          const rawBalance = await fallbackProvider.getBalance(walletAddress)
+          const balanceStr = ethers.formatUnits(rawBalance, 18)
+          const formatted = parseFloat(balanceStr).toFixed(6)
+
+          console.log('✅ Fallback succeeded:', formatted)
+
+          return {
+            usdcBalance: formatted,
+            usdBalance: formatted,
+            success: true,
+          }
+        } catch (fallbackError: any) {
+          console.error('❌ Fallback also failed:', fallbackError.message)
+
+          return {
+            usdcBalance: '0.000000',
+            usdBalance: '0.000000',
+            success: false,
+            error: 'Failed to connect to Arc Testnet',
+          }
         }
       }
     }
-  }
 
 export default function DashboardPage() {
   const { user, authenticated, ready, login } = usePrivy()
@@ -507,7 +480,7 @@ export default function DashboardPage() {
       count: null,
     },
     {
-      title: 'Fund Wallet',
+      title: 'Fund Wallet (Privy)',
       description: 'Add funds and manage wallet',
       icon: <CreditCard className="h-5 w-5" />,
       href: '/dashboard/wallet',
@@ -647,7 +620,7 @@ export default function DashboardPage() {
                 className="flex-1 py-3 bg-white/20 text-white rounded-xl text-center hover:bg-white/30 transition-colors flex items-center justify-center gap-2"
               >
                 <CreditCard className="h-4 w-4" />
-                Fund Wallet
+                Fund Wallet (Privy)
               </Link>
             </div>
           </div>
