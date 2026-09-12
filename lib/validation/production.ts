@@ -5,7 +5,7 @@ export const ARC_TESTNET_CONFIG = {
   CHAIN_ID: 5042002,
   RPC_URLS: [
     'https://rpc.testnet.arc.network',
-    'https://rpc.testnet.arc.io'
+    'https://arc-testnet.drpc.org'
   ],
   EXPLORER_URL: 'https://testnet.arcscan.app',
   NATIVE_CURRENCY: 'USDC',

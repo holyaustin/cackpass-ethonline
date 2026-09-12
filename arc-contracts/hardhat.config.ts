@@ -11,7 +11,7 @@ dotenv.config();
 // Based on: https://docs.arc.io/arc/references/connect-to-arc
 const ARC_TESTNET_CONFIG = {
   chainId: 5042002, // Arc Testnet Chain ID
-  rpcUrl: process.env.ARC_RPC_URL || "https://rpc.testnet.arc.io",
+  rpcUrl: process.env.ARC_RPC_URL || "https://rpc.testnet.arc.network",
   explorerUrl: "https://testnet.arcscan.app",
   gasPrice: 20_000_000_000, // 20 Gwei (Arc's minimum)
 };

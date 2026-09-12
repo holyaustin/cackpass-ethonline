@@ -26,8 +26,8 @@ const arcTestnet = {
     decimals: 18       // ✅ Arc USDC uses 18 decimals
   },
   rpcUrls: {
-    default: { http: ['https://rpc.testnet.arc.io'] },
-    public: { http: ['https://rpc.testnet.arc.io'] },
+    default: { http: ['https://rpc.testnet.arc.network'] },
+    public: { http: ['https://rpc.testnet.arc.network'] },
   },
   blockExplorers: {
     default: { name: 'ArcScan', url: 'https://testnet.arcscan.app' },
@@ -45,8 +45,8 @@ const arcMainnet = {
     decimals: 18
   },
   rpcUrls: {
-    default: { http: ['https://rpc.arc.io'] },  // Placeholder
-    public: { http: ['https://rpc.arc.network'] },
+    default: { http: ['https://rpc.testnet.arc.network'] },
+    public: { http: ['https://rpc.testnet.arc.network'] },
   },
   blockExplorers: {
     default: { name: 'ArcScan', url: 'https://arcscan.app' },

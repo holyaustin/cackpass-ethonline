@@ -20,7 +20,10 @@ import QRCode from 'qrcode'
 // ✅ ARC TESTNET CONFIGURATION
 // ============================================
 const ARC_CONFIG = {
-  RPC_URL: 'https://rpc.testnet.arc.io',
+    RPC_URL: typeof window !== 'undefined'
+    ? 'https://arc-testnet.drpc.org'
+    : 'https://rpc.testnet.arc.network',
+  RPC_URL_FALLBACK: 'https://rpc.testnet.arc.network',
   EXPLORER_URL: 'https://testnet.arcscan.app',
   BLOCKSCOUT_API: 'https://testnet.arcscan.app/api/v2',
   CHAIN_ID: 5042002,

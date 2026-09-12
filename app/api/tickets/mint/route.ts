@@ -628,7 +628,7 @@ async function mintOnBlockchain(eventId: number, recipient: string, quantity: nu
     return
   }
 
-  const rpcUrl = process.env.NEXT_PUBLIC_ARC_RPC_URL || 'https://rpc.testnet.arc.io'
+  const rpcUrl = process.env.NEXT_PUBLIC_ARC_RPC_URL || 'https://rpc.testnet.arc.network'
   const provider = new ethers.JsonRpcProvider(rpcUrl)
   const wallet = new ethers.Wallet(process.env.GASLESS_PRIVATE_KEY, provider)
   

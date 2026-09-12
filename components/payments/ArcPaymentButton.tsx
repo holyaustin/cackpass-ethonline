@@ -1,7 +1,7 @@
 // components/payments/ArcPaymentButton.tsx
 'use client'
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Loader2, Wallet, LogIn } from 'lucide-react';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
@@ -35,6 +35,8 @@ export function ArcPaymentButton({
 }: ArcPaymentButtonProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isPrivyReady, setIsPrivyReady] = useState(false);
+  // ✅ ADD THIS: Prevent double-invocation
+  const isProcessingRef = useRef(false);
   const router = useRouter();
 
   const { user, authenticated, ready, login } = usePrivy();
@@ -55,7 +57,11 @@ export function ArcPaymentButton({
   ) || wallets[0];
 
   const handlePayment = async () => {
-    if (disabled || isProcessing) return;
+    // ✅ FIX: Use both ref and state to prevent double-clicks
+    if (disabled || isProcessing || isProcessingRef.current) {
+      console.log('🚫 [ArcPayment] Blocked duplicate click');
+      return;
+    }
 
     if (!authenticated) {
       toast.info('Please sign in to continue with USDC payment');
@@ -83,12 +89,13 @@ export function ArcPaymentButton({
       return;
     }
 
-    // ✅ CRITICAL: Ensure the embedded wallet is available before proceeding
     if (!embeddedWallet) {
       toast.error('Wallet not ready. Please wait a moment and try again.');
       return;
     }
 
+    // ✅ FIX: Lock immediately BEFORE any async work
+    isProcessingRef.current = true;
     setIsProcessing(true);
     const loadingToast = toast.loading('Initializing USDC payment...');
 
@@ -116,11 +123,13 @@ export function ArcPaymentButton({
       }
 
       console.log('✅ Payment initialized:', data);
+      // ✅ FIX: Log the EXACT reference we'll use for verification
+      const verifyReference = data.reference;
+      console.log('📝 Reference to verify with:', verifyReference);
 
       // STEP 2: Get the provider from the embedded wallet
       toast.loading('Preparing USDC payment...');
 
-      // ✅ This is now guaranteed to work because we checked embeddedWallet above
       const provider = await embeddedWallet.getEthereumProvider();
 
       if (!provider) {
@@ -144,18 +153,24 @@ export function ArcPaymentButton({
       console.log('✅ USDC sent:', result);
       toast.dismiss();
 
-      // STEP 3: Redirect to success page
-      toast.success('Payment successful! Verifying...');
-
+      // STEP 3: Extract transaction hash
       const txHash =
         (result as any)?.transactionHash ||
         (result as any)?.txHash ||
         (result as any)?.hash ||
         'completed';
 
+      console.log('📝 Redirecting with:', {
+        reference: verifyReference,
+        txHash,
+      });
+
+      // STEP 4: Redirect to success page
+      toast.success('Payment successful! Verifying...');
+
       setTimeout(() => {
         router.push(
-          `/payment/success?reference=${data.reference}&provider=arc&transaction_id=${txHash}`
+          `/payment/success?reference=${verifyReference}&provider=arc&transaction_id=${txHash}`
         );
       }, 1500);
 
@@ -163,6 +178,10 @@ export function ArcPaymentButton({
     } catch (error: any) {
       toast.dismiss();
       console.error('❌ Arc payment error:', error);
+
+      // ✅ FIX: Release lock on failure so user can retry
+      isProcessingRef.current = false;
+      setIsProcessing(false);
 
       if (error.code === 'ACTION_REJECTED' || error.code === 4001) {
         toast.error('Payment was cancelled');
@@ -173,10 +192,11 @@ export function ArcPaymentButton({
       } else {
         toast.error(error.message || 'Payment processing failed');
       }
-      setIsProcessing(false);
-    } finally {
-      setIsProcessing(false);
+      return;
     }
+    // ✅ FIX: Do NOT release lock in `finally` on success
+    // (we're navigating away, so the button will unmount)
+    // Lock is only released above on error.
   };
 
   // Don't render until Privy is ready
@@ -196,7 +216,7 @@ export function ArcPaymentButton({
     return (
       <button
         onClick={handlePayment}
-        disabled={disabled}
+        disabled={isProcessing || disabled}
         className={`w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-3 text-lg bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white transition-all ${className}`}
       >
         <LogIn className="h-5 w-5" />

@@ -23,7 +23,7 @@ const LoadingSpinner = dynamic(() =>
 // ============================================
 const ARC_CONFIG = {
   RPC_URL: 'https://rpc.testnet.arc.network',
-  RPC_URL_FALLBACK: 'https://rpc.testnet.arc.io',
+  RPC_URL_FALLBACK: 'https://arc-testnet.drpc.org',
   EXPLORER_URL: 'https://testnet.arcscan.app',
   CHAIN_ID: 5042002,
   CHAIN_ID_HEX: '0x4cef52',
