@@ -2,6 +2,8 @@
 
 Complete Hardhat implementation for deploying the CackPassArcPayment smart contract to Arc Testnet.
 
+https://testnet.arcscan.app/address/0x084622e6970BBcBA510454C6145313c2993ED9E4?tab=txs
+
 ## 📋 Project Structure
 
 ```
@@ -488,3 +490,4 @@ https://testnet.arcscan.app/address/0x084622e6970BBcBA510454C6145313c2993ED9E4#c
    3. Test the integration with your CACK-pass app
 
 ✅ Done!
+
