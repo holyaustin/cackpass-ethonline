@@ -287,17 +287,15 @@ export default function DashboardPage() {
   // ✅ Fetch admin state (determines whether admin button shows)
   useEffect(() => {
     const checkAdmin = async () => {
-      if (!authenticated || !ready) {
+      if (!walletAddress) {
         setAdminStateLoaded(true)
         return
       }
 
       try {
-        const token = await getAccessToken()
-        const res = await fetch('/api/admin/me', {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        })
-
+        const res = await fetch(
+          `/api/admin/me?walletAddress=${encodeURIComponent(walletAddress)}`
+        )
         if (!res.ok) {
           setAdminStateLoaded(true)
           return
@@ -311,7 +309,6 @@ export default function DashboardPage() {
           email: data.email || '',
         })
       } catch (err) {
-        // Non-blocking — user is simply not an admin
         console.warn('Admin check failed (non-fatal):', err)
       } finally {
         setAdminStateLoaded(true)
@@ -319,7 +316,7 @@ export default function DashboardPage() {
     }
 
     checkAdmin()
-  }, [authenticated, ready, getAccessToken])
+  }, [walletAddress])
 
   // Fetch balance when wallet address changes - with debounce
   useEffect(() => {
