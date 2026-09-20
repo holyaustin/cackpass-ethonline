@@ -7,10 +7,10 @@ import * as dotenv from "dotenv";
 dotenv.config();
 
 
-// Arc Testnet Configuration
+// Arc Mainnet Configuration
 const ARC_MAINNET_CONFIG = {
   chainId: 5042, // Arc Mainnet Chain ID
-  rpcUrl: process.env.ARC_MAINET_RPC_URL || "https://rpc.mainnet.arc.io",
+  rpcUrl: process.env.ARC_MAINNET_RPC_URL || "https://rpc.mainnet.arc.io",
   explorerUrl: "https://explorer.arc.io/", // Also available at https://arc.etherscan.io  
   gasPrice: 20_000_000_000, // 20 Gwei minimum (Gas is paid natively in USDC)
 }
@@ -30,7 +30,7 @@ if (!process.env.PRIVATE_KEY) {
 
 const config: HardhatUserConfig = {
   solidity: {
-    version: "0.8.24",
+    version: "0.8.30",
     settings: {
       optimizer: {
         enabled: true,
@@ -71,8 +71,12 @@ const config: HardhatUserConfig = {
         network: "arcTestnet",
         chainId: ARC_TESTNET_CONFIG.chainId,
         urls: {
-          apiURL: `${ARC_TESTNET_CONFIG.explorerUrl}/api`,
-          browserURL: ARC_TESTNET_CONFIG.explorerUrl,
+          apiURL:
+            process.env.ARC_TESTNET_EXPLORER_API_URL ??
+            "https://api-testnet.arc-scan.org/api",
+
+          browserURL:
+            ARC_TESTNET_CONFIG.explorerUrl,
         },
       },
       {
@@ -81,9 +85,12 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL:
             process.env.ARC_MAINNET_EXPLORER_API_URL ??
-            "https://arcscan.app/api",
-          browserURL: "https://arcscan.app",
+            "https://api.arc-scan.org/api",
+
+          browserURL:
+            ARC_MAINNET_CONFIG.explorerUrl,
         },
+
       },
 
     ],

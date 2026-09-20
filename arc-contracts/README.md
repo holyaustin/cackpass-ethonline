@@ -2,7 +2,70 @@
 
 Complete Hardhat implementation for deploying the CackPassArcPayment smart contract to Arc Testnet.
 
-https://testnet.arcscan.app/address/0x084622e6970BBcBA510454C6145313c2993ED9E4?tab=txs
+https://testnet.arcscan.app/address/0x5eB4Ddc89F2FEEf5e43eFb636189953C99Ab048a?tab=
+
+npx hardhat verify --network arcTestnet 0x5eB4Ddc89F2FEEf5e43eFb636189953C99Ab048a "0x2c3b2B2325610a6814f2f822D0bF4DAB8CF16e16"
+
+🚀 ═══════════════════════════════════════════════════
+   CACKPASS ARC REGISTRY DEPLOYMENT — Arc Mainnet
+   ═══════════════════════════════════════════════════
+
+📡 Deployer:        0x2fDC2261285fAe92e8151e10F47075c80Ea43cB1
+💰 Balance:         1.0 USDC
+🔗 Network:         Arc Mainnet
+⛓️  Chain ID:        5042
+🌐 Explorer:        https://arcscan.app
+
+📋 Constructor arguments:
+   initialPaymentProcessor: 0x2fDC2261285fAe92e8151e10F47075c80Ea43cB1
+   platformOwner (deployer): 0x2fDC2261285fAe92e8151e10F47075c80Ea43cB1  ← becomes owner automatically
+
+⏳ Deploying CackPassArcRegistry...
+✅ Contract deployed to: 0x91dC7a39f918a8ADD25D89F25F8dB4205Db067e0
+📝 Deployment TX:        0x2fe77639d823642071bb5cf2f98ee59da5ea54b616301f97e66cd8b31ebee9df
+🔗 Explorer:             https://arcscan.app/tx/0x2fe77639d823642071bb5cf2f98ee59da5ea54b616301f97e66cd8b31ebee9df
+📦 Block Number:         21893015
+
+📋 Contract state:
+   platformOwner:      0x2fDC2261285fAe92e8151e10F47075c80Ea43cB1
+   paymentProcessor:   0x2fDC2261285fAe92e8151e10F47075c80Ea43cB1
+   paused:             false
+
+💾 Deployment artifact saved to:
+   /home/augustineonuora/Dapps-Empty/2026/Sep2026/cackpass-ethonline/arc-contracts/deployments/arcMainnet-1789934853501.json
+   /home/augustineonuora/Dapps-Empty/2026/Sep2026/cackpass-ethonline/arc-contracts/deployments/arcMainnet-latest.json
+
+🔍 Verifying contract on explorer...
+   ⏳ Waiting 30s for block confirmations...
+⚠️ Verification failed: 
+
+   Retry manually:
+   npx hardhat verify --network arcMainnet 0x91dC7a39f918a8ADD25D89F25F8dB4205Db067e0 "0x2fDC2261285fAe92e8151e10F47075c80Ea43cB1"
+
+🧪 Smoke test...
+   ✅ getTotalBatches() = 0
+   ✅ Contract is responsive and readable
+
+🎉 ═══════════════════════════════════════════════════
+   DEPLOYMENT COMPLETE
+   ═══════════════════════════════════════════════════
+
+📌 Contract Address:   0x91dC7a39f918a8ADD25D89F25F8dB4205Db067e0
+🔗 Explorer:           https://arcscan.app/address/0x91dC7a39f918a8ADD25D89F25F8dB4205Db067e0
+👤 platformOwner:      0x2fDC2261285fAe92e8151e10F47075c80Ea43cB1
+🤖 paymentProcessor:   0x2fDC2261285fAe92e8151e10F47075c80Ea43cB1
+
+📚 Next steps:
+   1. Add to .env:
+      NEXT_PUBLIC_ARC_REGISTRY_ADDRESS=0x91dC7a39f918a8ADD25D89F25F8dB4205Db067e0
+   2. If you deployed from a hot wallet, rotate ownership:
+      → call updatePlatformOwner(<coldWallet>) from the owner wallet
+   3. Fund the paymentProcessor wallet with USDC for gas
+   4. Update the backend client to use the new ABI
+
+✅ Done!
+
+
 
 ## 📋 Project Structure
 

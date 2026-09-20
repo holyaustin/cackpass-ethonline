@@ -27,7 +27,7 @@ const NETWORKS: Record<NetworkKey, NetworkConfig> = {
   },
   arcMainnet: {
     label: "Arc Mainnet",
-    chainId: 1135,
+    chainId: 5042,
     explorerUrl: "https://arcscan.app",
   },
 };
