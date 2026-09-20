@@ -9,6 +9,7 @@ import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { sendUSDCWithAppKit } from '@/lib/arc/app-kit';
 
 const NGN_PER_USDC = Number(process.env.NEXT_PUBLIC_NGN_PER_USDC) || 1350
+const PROCESSING_MARKUP_USDC = Number(process.env.NEXT_PUBLIC_PROCESSING_MARKUP_USDC) || 0.02
 
 interface ArcPaymentButtonProps {
   eventId: string;
@@ -20,7 +21,7 @@ interface ArcPaymentButtonProps {
   onSuccess?: () => void;
   className?: string;
   disabled?: boolean;
-  onRequireLogin?: () => void;   // ✅ NEW: caller can decide what to do when login is needed
+  onRequireLogin?: () => void;
 }
 
 export function ArcPaymentButton({
@@ -39,9 +40,6 @@ export function ArcPaymentButton({
   const isProcessingRef = useRef(false);
   const router = useRouter();
 
-  // ✅ FIX: Detect whether Privy context is available.
-  // If the button renders before PrivyProvider is mounted, usePrivy/useWallets throw.
-  // Wrap in a try/catch so we can render a safe fallback button.
   let privyContext: { user: any; authenticated: boolean; ready: boolean; login: () => Promise<any> } | null = null;
   let walletsContext: { wallets: any[] } | null = null;
 
@@ -68,14 +66,18 @@ export function ArcPaymentButton({
   const embeddedWallet =
     wallets.find((w) => w.walletClientType === 'privy') || wallets[0];
 
-  const usdcAmount = Number((amount / NGN_PER_USDC).toFixed(6));
+  // ✅ Compute base + total on the client so the user sees the real amount
+  //    BEFORE clicking. The backend still validates the same numbers.
+  const baseUsdcAmount = Number((amount / NGN_PER_USDC).toFixed(6));
+  const displayTotal = Number(
+    (baseUsdcAmount + PROCESSING_MARKUP_USDC).toFixed(6)
+  );
 
   const handlePayment = async () => {
     if (disabled || isProcessing || isProcessingRef.current) {
       return;
     }
 
-    // ✅ If Privy isn't even loaded, tell the user to trigger login first
     if (!privyContext) {
       toast.info('Please sign in to continue with USDC payment');
       if (onRequireLogin) {
@@ -113,7 +115,7 @@ export function ArcPaymentButton({
       return;
     }
 
-    if (usdcAmount <= 0) {
+    if (baseUsdcAmount <= 0) {
       toast.error('Invalid payment amount');
       return;
     }
@@ -135,8 +137,8 @@ export function ArcPaymentButton({
           eventId,
           ticketTypeId,
           quantity,
-          amount: usdcAmount,
-          originalAmount: amount,
+          amount: baseUsdcAmount,        // base amount
+          originalAmount: amount,        // NGN
           email,
           userName,
         }),
@@ -150,7 +152,20 @@ export function ArcPaymentButton({
       }
 
       console.log('✅ Payment initialized:', data);
+
+      // ✅ Use the authoritative total from the backend
+      const totalUSDC = Number(data.amountUSDC);
       const verifyReference = data.reference;
+
+      if (!totalUSDC || totalUSDC <= 0) {
+        throw new Error('Invalid payment amount received from server');
+      }
+
+      console.log('💵 Amount breakdown:', {
+        base: data.baseAmountUSDC,
+        markup: data.processingMarkupUSDC,
+        total: totalUSDC,
+      });
 
       toast.loading('Preparing USDC payment...');
       const provider = await embeddedWallet.getEthereumProvider();
@@ -158,16 +173,21 @@ export function ArcPaymentButton({
         throw new Error('Failed to get wallet provider. Please try again.');
       }
 
-      toast.loading(`Sending ${usdcAmount} USDC...`);
+      toast.loading(`Sending ${totalUSDC} USDC...`);
 
-      const contractAddress =
-        process.env.NEXT_PUBLIC_ARC_CONTRACT_ADDRESS ||
-        '0x084622e6970BBcBA510454C6145313c2993ED9E4';
+      const treasuryAddress = process.env.NEXT_PUBLIC_TREASURY_WALLET;
+      if (!treasuryAddress) throw new Error('Treasury wallet not configured');
+
+      console.log('💸 Sending USDC natively:', {
+        to: treasuryAddress,
+        amount: totalUSDC.toFixed(6),
+        from: embeddedWallet.address,
+      });
 
       const result = await sendUSDCWithAppKit(
         provider,
-        contractAddress,
-        usdcAmount.toFixed(6)
+        treasuryAddress,
+        totalUSDC.toFixed(6)
       );
 
       toast.dismiss();
@@ -198,7 +218,7 @@ export function ArcPaymentButton({
         toast.error('Payment was cancelled');
       } else if (error.message?.includes('insufficient funds')) {
         toast.error(
-          `Insufficient USDC balance. You need ${usdcAmount} USDC. Fund your wallet from the Circle faucet.`
+          `Insufficient USDC balance. You need ${displayTotal} USDC. Fund your wallet from the Circle faucet.`
         );
       } else {
         toast.error(error.message || 'Payment processing failed');
@@ -207,22 +227,24 @@ export function ArcPaymentButton({
     }
   };
 
-  // ✅ FIX: If Privy isn't loaded, show a normal "Sign in to pay" button.
-  // It will trigger the app to load Privy on click, then the user can click again.
+  // Fallback button when Privy isn't loaded yet
   if (!privyContext || !authenticated) {
     return (
-      <button
-        onClick={handlePayment}
-        disabled={isProcessing || disabled}
-        className={`w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-3 text-lg bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white transition-all disabled:opacity-50 ${className}`}
-      >
-        <LogIn className="h-5 w-5" />
-        Sign in to Pay {usdcAmount} USDC
-      </button>
+      <div className="space-y-2">
+        <button
+          onClick={handlePayment}
+          disabled={isProcessing || disabled}
+          className={`w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-3 text-lg bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white transition-all disabled:opacity-50 ${className}`}
+        >
+          <LogIn className="h-5 w-5" />
+          Sign in to Pay {displayTotal} USDC
+        </button>
+        <AmountBreakdown base={baseUsdcAmount} markup={PROCESSING_MARKUP_USDC} total={displayTotal} />
+      </div>
     );
   }
 
-  // ✅ Between click and Privy fully ready, show a brief "Loading..." state
+  // Brief loading state while Privy finishes initializing
   if (!privyReady) {
     return (
       <button
@@ -236,22 +258,61 @@ export function ArcPaymentButton({
   }
 
   return (
-    <button
-      onClick={handlePayment}
-      disabled={isProcessing || disabled}
-      className={`w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-3 text-lg bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white disabled:opacity-50 transition-all ${className}`}
-    >
-      {isProcessing ? (
-        <>
-          <Loader2 className="h-5 w-5 animate-spin" />
-          Processing...
-        </>
-      ) : (
-        <>
-          <Wallet className="h-5 w-5" />
-          Pay {usdcAmount} USDC
-        </>
-      )}
-    </button>
+    <div className="space-y-2">
+      <button
+        onClick={handlePayment}
+        disabled={isProcessing || disabled}
+        className={`w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-3 text-lg bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white disabled:opacity-50 transition-all ${className}`}
+      >
+        {isProcessing ? (
+          <>
+            <Loader2 className="h-5 w-5 animate-spin" />
+            Processing...
+          </>
+        ) : (
+          <>
+            <Wallet className="h-5 w-5" />
+            Pay {displayTotal} USDC
+          </>
+        )}
+      </button>
+
+      <AmountBreakdown base={baseUsdcAmount} markup={PROCESSING_MARKUP_USDC} total={displayTotal} />
+    </div>
+  );
+}
+
+/**
+ * Small breakdown shown under the button:
+ *
+ *   Ticket:         0.370370 USDC
+ *   Processing fee: 0.020000 USDC
+ *   ─────────────────────────────
+ *   Total to pay:   0.390370 USDC
+ */
+function AmountBreakdown({
+  base,
+  markup,
+  total,
+}: {
+  base: number;
+  markup: number;
+  total: number;
+}) {
+  return (
+    <div className="rounded-xl bg-gray-50 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700 px-4 py-3 text-xs text-gray-700 dark:text-gray-300">
+      <div className="flex justify-between">
+        <span>Ticket</span>
+        <span className="font-mono">{base.toFixed(6)} USDC</span>
+      </div>
+      <div className="flex justify-between mt-1">
+        <span>Processing fee</span>
+        <span className="font-mono">{markup.toFixed(6)} USDC</span>
+      </div>
+      <div className="flex justify-between mt-2 pt-2 border-t border-gray-200 dark:border-gray-700 font-semibold text-gray-900 dark:text-gray-100">
+        <span>Total to pay</span>
+        <span className="font-mono">{total.toFixed(6)} USDC</span>
+      </div>
+    </div>
   );
 }

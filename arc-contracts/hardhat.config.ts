@@ -8,10 +8,17 @@ dotenv.config();
 
 
 // Arc Testnet Configuration
+const ARC_MAINNET_CONFIG = {
+  chainId: 5042, // Arc Mainnet Chain ID
+  rpcUrl: process.env.ARC_MAINET_RPC_URL || "https://rpc.mainnet.arc.io",
+  explorerUrl: "https://explorer.arc.io/", // Also available at https://arc.etherscan.io  
+  gasPrice: 20_000_000_000, // 20 Gwei minimum (Gas is paid natively in USDC)
+}
+
 // Based on: https://docs.arc.io/arc/references/connect-to-arc
 const ARC_TESTNET_CONFIG = {
   chainId: 5042002, // Arc Testnet Chain ID
-  rpcUrl: process.env.ARC_RPC_URL || "https://rpc.testnet.arc.network",
+  rpcUrl: process.env.ARC_RPC_URL || "https://rpc.testnet.arc.io",
   explorerUrl: "https://testnet.arcscan.app",
   gasPrice: 20_000_000_000, // 20 Gwei (Arc's minimum)
 };
@@ -23,9 +30,8 @@ if (!process.env.PRIVATE_KEY) {
 
 const config: HardhatUserConfig = {
   solidity: {
-    version: "0.8.30",
+    version: "0.8.24",
     settings: {
-      viaIR: true, // Enable IR-based compilation for optimization
       optimizer: {
         enabled: true,
         runs: 200,
@@ -33,7 +39,15 @@ const config: HardhatUserConfig = {
     },
   },
   networks: {
-    // Arc Testnet Configuration
+    // Arc Mainnet Configuration
+    arcMainnet: {
+      url: ARC_MAINNET_CONFIG.rpcUrl,
+      chainId: ARC_MAINNET_CONFIG.chainId,
+      accounts: process.env.PRIVATE_KEY_MAINNET ? [process.env.PRIVATE_KEY_MAINNET] : [],
+      gasPrice: ARC_MAINNET_CONFIG.gasPrice,
+      timeout: 60000, // 60 seconds
+    },
+        // Arc Testnet Configuration
     arcTestnet: {
       url: ARC_TESTNET_CONFIG.rpcUrl,
       chainId: ARC_TESTNET_CONFIG.chainId,
@@ -49,7 +63,8 @@ const config: HardhatUserConfig = {
   },
   etherscan: {
     apiKey: {
-      arcTestnet: process.env.ARC_API_KEY || "empty",
+      arcTestnet: process.env.ARC_TESTNET_EXPLORER_API_KEY ?? "arcscan",
+      arcMainnet: process.env.ARC_MAINNET_EXPLORER_API_KEY ?? "arcscan",
     },
     customChains: [
       {
@@ -60,6 +75,17 @@ const config: HardhatUserConfig = {
           browserURL: ARC_TESTNET_CONFIG.explorerUrl,
         },
       },
+      {
+        network: "arcMainnet",
+        chainId: 5042,
+        urls: {
+          apiURL:
+            process.env.ARC_MAINNET_EXPLORER_API_URL ??
+            "https://arcscan.app/api",
+          browserURL: "https://arcscan.app",
+        },
+      },
+
     ],
   },
   sourcify: {

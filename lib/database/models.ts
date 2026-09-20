@@ -389,6 +389,27 @@ const DiscountCodeSchema = new mongoose.Schema({
   expiresAt: { type: Date, default: null },
 }, { timestamps: true });
 
+const AdminUserSchema = new mongoose.Schema({
+  email:       { type: String, required: true, lowercase: true, trim: true },
+  permissions: { type: [String], default: [] },
+  grantedBy:   { type: String, required: true },  // email of the granter
+  grantedAt:   { type: Date, default: Date.now },
+  isActive:    { type: Boolean, default: true },
+  notes:       { type: String, default: '' },     // super admin's private notes
+}, { timestamps: true })
+
+// Admin action log
+const AdminAuditLogSchema = new mongoose.Schema({
+  actorEmail:  { type: String, required: true, lowercase: true, index: true },
+  action:      { type: String, required: true, index: true },
+  target:      { type: String, default: '' },     // email of target, or entity id
+  details:     { type: mongoose.Schema.Types.Mixed, default: {} },
+  ip:          { type: String, default: '' },
+  userAgent:   { type: String, default: '' },
+  success:     { type: Boolean, default: true },
+  error:       { type: String, default: '' },
+}, { timestamps: true })
+
 // ========================
 // INDEXES - Define ALL indexes here (NOT in field definitions)
 // ========================
@@ -407,6 +428,17 @@ const createIndexes = (schema: mongoose.Schema, indexes: Array<[any, any?]>) => 
     }
   })
 }
+
+createIndexes(AdminUserSchema, [
+  [{ email: 1 }, { unique: true }],
+  [{ isActive: 1 }],
+])
+
+createIndexes(AdminAuditLogSchema, [
+  [{ actorEmail: 1, createdAt: -1 }],
+  [{ action: 1, createdAt: -1 }],
+  [{ createdAt: -1 }],
+])
 
 // Indexes createIndexes
 createIndexes(DiscountCodeSchema, [
@@ -445,8 +477,9 @@ createIndexes(PaymentSchema, [
   [{ eventId: 1 }],
   [{ paymentReference: 1 }, { unique: true, sparse: true }],
   [{ paymentStatus: 1 }],
-  [{ approvalId: 1 }, { sparse: true }],
-  [{ transactionHash: 1 }, { sparse: true }],
+  [{ paymentMethod: 1 }],
+  [{ 'metadata.anchorBatchId': 1 }, { sparse: true }],   // ✅ NEW
+  [{ 'metadata.paymentTxHash': 1 }, { sparse: true }],   // ✅ NEW
   [{ createdAt: -1 }],
 ])
 
@@ -538,3 +571,5 @@ export const TransactionLog = mongoose.models.TransactionLog || mongoose.model('
 export const WalletTransaction = mongoose.models.WalletTransaction || mongoose.model('WalletTransaction', WalletTransactionSchema)
 export const GaslessApproval = mongoose.models.GaslessApproval || mongoose.model('GaslessApproval', GaslessApprovalSchema)
 export const BackendSigner = mongoose.models.BackendSigner || mongoose.model('BackendSigner', BackendSignerSchema)
+export const AdminUser = mongoose.models.AdminUser || mongoose.model('AdminUser', AdminUserSchema)
+export const AdminAuditLog = mongoose.models.AdminAuditLog || mongoose.model('AdminAuditLog', AdminAuditLogSchema)

@@ -3,7 +3,7 @@
 **Decentralized Event Ticketing Platform — Now Settling Every Ticket as USDC on Arc**
 
 - **Live demo:** https://cackpass-ethonline.vercel.app/
-- **Video walkthrough:** https://cackpass-ethonline.vercel.app/
+- **Video walkthrough:** https://youtu.be/ZiU2gWjEjvU
 - **GitHub:** https://github.com/holyaustin/cackpass-ethonline
 
 ---
@@ -317,7 +317,7 @@ Without all three, the Arc payment rail doesn't exist. They are the core code of
 ## 🧪 Try the Demo
 
 **Live:** https://cackpass-ethonline.vercel.app/
-**Video:** https://cackpass-ethonline.vercel.app/
+**Video:** https://youtu.be/ZiU2gWjEjvU
 
 ### Test the Flutterwave fiat flow
 1. Open any paid event → click **Card Payment** → enter guest email
@@ -403,7 +403,7 @@ MIT © 2026 CACK-pass Team
 | Want to see | Go to |
 |-------------|-------|
 | Live app | https://cackpass-ethonline.vercel.app/ |
-| Video walkthrough | https://cackpass-ethonline.vercel.app/ |
+| Video walkthrough | https://youtu.be/ZiU2gWjEjvU |
 | **Server-side Arc contract library** | `lib/arc/client.ts` |
 | **Client-side Circle App Kit wrapper** | `lib/arc/app-kit.ts` |
 | **The USDC payment button component** | `components/payments/ArcPaymentButton.tsx` |

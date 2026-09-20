@@ -1,260 +1,300 @@
 // lib/arc/client.ts
-"server only"
+import { ethers } from 'ethers'
 
-import { ethers } from 'ethers';
-import { ARC_CONFIG } from './app-kit';
+const ARC_CONFIG = {
+  rpcUrl:
+    process.env.NEXT_PUBLIC_ARC_RPC_URL ||
+    'https://rpc.testnet.arc.network',
+  rpcUrlFallback:
+    process.env.NEXT_PUBLIC_ARC_RPC_URL_FALLBACK ||
+    'https://arc-testnet.drpc.org',
+  explorerUrl:
+    process.env.NEXT_PUBLIC_ARC_EXPLORER_URL ||
+    'https://testnet.arcscan.app',
+  chainId: 5042002,
+  chainIdHex: '0x4cef52',
+  chainName: 'Arc Testnet',
+  registryAddress:
+    process.env.NEXT_PUBLIC_ARC_REGISTRY_ADDRESS || '',
+  treasuryAddress:
+    process.env.NEXT_PUBLIC_TREASURY_WALLET || '',
+  usdcAddress:
+    process.env.NEXT_PUBLIC_ARC_USDC_ADDRESS ||
+    '0x3600000000000000000000000000000000000000',
+  usdcDecimals: 6,
+  nativeDecimals: 18,
+} as const
 
-// ✅ CORRECTED ABI - matches deployed CackPassArcPayment contract exactly
-export const CackPassArcPaymentABI = [
-  // ──────────────────────────────────────────────
-  // Events (5 params, no txHash)
-  // ──────────────────────────────────────────────
-  "event PaymentInitiated(bytes32 indexed paymentId, address indexed payer, uint256 amount, string paymentReference, uint256 timestamp)",
-  "event PaymentConfirmed(bytes32 indexed paymentId, address indexed payer, uint256 amount, string paymentReference, uint256 timestamp)",
-  "event PaymentFailed(bytes32 indexed paymentId, address indexed payer, string reason, uint256 timestamp)",
-  
-  // ──────────────────────────────────────────────
-  // Write Functions
-  // ──────────────────────────────────────────────
-  "function initializePayment(bytes32 paymentId, uint256 amount, string calldata paymentReference, bytes32 eventId, uint256 ticketQuantity) external",
-  "function confirmPayment(bytes32 paymentId) external",       // ✅ No txHash param
-  "function failPayment(bytes32 paymentId, string calldata reason) external",
-  
-  // ──────────────────────────────────────────────
-  // View Functions
-  // ──────────────────────────────────────────────
-  // ✅ PaymentStatus enum is uint8 on the wire (Pending=0, Confirmed=1, Failed=2, Refunded=3)
-  // ✅ Field name is "paymentReference" not "reference"
-  // ✅ No txHash field
-  "function getPayment(bytes32 paymentId) external view returns (tuple(bytes32 paymentId, address payer, uint256 amount, uint256 fee, string paymentReference, uint8 status, uint256 createdAt, uint256 confirmedAt, bytes32 eventId, uint256 ticketQuantity))",
-  
-  "function getPaymentStatus(bytes32 paymentId) external view returns (string memory)",
-  "function getUserPayments(address user) external view returns (bytes32[] memory)",
-  "function paymentExists(bytes32 paymentId) external view returns (bool)",
-  "function platformOwner() external view returns (address)",
-  "function platformFeeBps() external view returns (uint256)",
-  "function MAX_FEE_BPS() external view returns (uint256)",
-];
 
-// ✅ NEW: PaymentStatus enum mapping (matches Solidity enum)
-export enum PaymentStatus {
-  Pending = 0,
-  Confirmed = 1,
-  Failed = 2,
-  Refunded = 3,
-}
+// ═══════════════════════════════════════════════════════════
+// ABI — matches CackPassArcRegistry
+// ═══════════════════════════════════════════════════════════
+export const CackPassArcRegistryABI = [
+  // ── Write functions ──
+  "function recordPayment(bytes32 paymentId, address payer, uint256 amount, string paymentReference, bytes32 eventId, uint256 ticketQuantity, bytes32 orderHash, bytes32 paymentTxHash) external",
+  "function confirmPayment(bytes32 paymentId) external",
+  "function failPayment(bytes32 paymentId, string reason) external",
+  "function refundPayment(bytes32 paymentId, string reason) external",
+  "function anchorBatch(bytes32 batchId, bytes32 merkleRoot, uint256 recordCount, string batchLabel) external",
 
-export const PAYMENT_STATUS_LABELS: Record<number, string> = {
+  // ── View functions ──
+  "function getPayment(bytes32 paymentId) view returns (tuple(bytes32 paymentId, address payer, uint256 amount, string paymentReference, uint8 status, uint256 createdAt, uint256 confirmedAt, bytes32 eventId, uint256 ticketQuantity, bytes32 orderHash, bytes32 paymentTxHash))",
+  "function getPaymentStatus(bytes32 paymentId) view returns (string)",
+  "function paymentExists(bytes32 paymentId) view returns (bool)",
+  "function getUserPayments(address user) view returns (bytes32[])",
+  "function getPaymentTxHash(bytes32 paymentId) view returns (bytes32)",
+  "function verifyOrderHash(bytes32 paymentId, bytes32 orderHash) view returns (bool)",
+  "function getAnchor(bytes32 batchId) view returns (tuple(bytes32 merkleRoot, uint256 recordCount, uint256 anchoredAt, string batchLabel))",
+  "function batchExists(bytes32 batchId) view returns (bool)",
+  "function getTotalBatches() view returns (uint256)",
+  "function getBatchIdAt(uint256 index) view returns (bytes32)",
+  "function verifyBatchEntry(bytes32 batchId, bytes32 recordHash, bytes32[] proof) view returns (bool)",
+
+  // ── Roles / state ──
+  "function platformOwner() view returns (address)",
+  "function paymentProcessor() view returns (address)",
+  "function paused() view returns (bool)",
+
+  // ── Events ──
+  "event PaymentRecorded(bytes32 indexed paymentId, address indexed payer, bytes32 indexed eventId, uint256 amount, uint256 ticketQuantity, bytes32 orderHash, bytes32 paymentTxHash, string paymentReference, uint256 timestamp)",
+  "event PaymentConfirmed(bytes32 indexed paymentId, address indexed payer, uint256 amount, uint256 timestamp)",
+  "event BatchAnchored(bytes32 indexed batchId, bytes32 merkleRoot, uint256 recordCount, string batchLabel, uint256 timestamp)",
+] as const
+
+// ═══════════════════════════════════════════════════════════
+// Enum mirror — PaymentStatus
+// ═══════════════════════════════════════════════════════════
+export const PaymentStatus = {
   0: 'pending',
   1: 'confirmed',
   2: 'failed',
   3: 'refunded',
-};
+} as const
 
-export interface OnChainPaymentData {
-  paymentId: string;
-  payer: string;
-  amount: string;
-  fee: string;
-  reference: string;       // maps to paymentReference in contract
-  status: string;          // human-readable string derived from enum
-  statusCode: number;      // raw enum value
-  createdAt: number;
-  confirmedAt: number;
-  eventId: string;
-  ticketQuantity: number;
-  // ✅ NO txHash - the contract doesn't store it
+export type OnChainPayment = {
+  paymentId: string
+  payer: string
+  amount: string
+  paymentReference: string
+  status: string
+  createdAt: number
+  confirmedAt: number
+  eventId: string
+  ticketQuantity: number
+  orderHash: string
+  paymentTxHash: string
 }
 
-export interface OnChainPaymentResult {
-  success: boolean;
-  payment?: OnChainPaymentData;
-  error?: string;
+// ═══════════════════════════════════════════════════════════
+// Provider + wallet
+// ═══════════════════════════════════════════════════════════
+function getProvider() {
+  const rpcUrl =
+    ARC_CONFIG?.rpcUrl ||
+    process.env.NEXT_PUBLIC_ARC_RPC_URL ||
+    'https://rpc.testnet.arc.network'
+  console.log('🔗 [client.ts] Using RPC:', rpcUrl)
+  return new ethers.JsonRpcProvider(rpcUrl)
 }
 
-// Get provider
-export function getArcProvider() {
-  return new ethers.JsonRpcProvider(ARC_CONFIG.rpcUrl);
+function getSigner() {
+  const key =
+    process.env.PAYMENT_PROCESSOR_PRIVATE_KEY ||
+    process.env.GASLESS_PRIVATE_KEY
+  if (!key) {
+    throw new Error('No payment processor key configured')
+  }
+  return new ethers.Wallet(key, getProvider())
 }
 
-// Get contract with signer (for write operations)
-export function getArcContractWithSigner(privateKey: string) {
-  const provider = getArcProvider();
-  const wallet = new ethers.Wallet(privateKey, provider);
-  return new ethers.Contract(
-    ARC_CONFIG.contractAddress,
-    CackPassArcPaymentABI,
-    wallet
-  );
+function getRegistryReadOnly() {
+  const addr = process.env.NEXT_PUBLIC_ARC_REGISTRY_ADDRESS
+  if (!addr) throw new Error('NEXT_PUBLIC_ARC_REGISTRY_ADDRESS missing')
+  return new ethers.Contract(addr, CackPassArcRegistryABI, getProvider())
 }
 
-// Get contract instance (read-only)
-export function getArcContract() {
-  const provider = getArcProvider();
-  return new ethers.Contract(
-    ARC_CONFIG.contractAddress,
-    CackPassArcPaymentABI,
-    provider
-  );
+function getRegistryWithSigner() {
+  const addr = process.env.NEXT_PUBLIC_ARC_REGISTRY_ADDRESS
+  if (!addr) throw new Error('NEXT_PUBLIC_ARC_REGISTRY_ADDRESS missing')
+  return new ethers.Contract(addr, CackPassArcRegistryABI, getSigner())
 }
 
-// Generate unique payment ID
+// ═══════════════════════════════════════════════════════════
+// Helpers
+// ═══════════════════════════════════════════════════════════
 export function generatePaymentId(): string {
-  const timestamp = Date.now().toString(36);
-  const random = Math.random().toString(36).substring(2, 10);
-  return ethers.id(`CACK-${timestamp}-${random}`);
+  const ts = Date.now().toString(36)
+  const rand = Math.random().toString(36).substring(2, 10)
+  return ethers.id(`CACK-${ts}-${rand}`)
 }
 
-// Convert payment ID to bytes32
-export function paymentIdToBytes32(paymentId: string): string {
-  return ethers.id(paymentId);
+export function paymentIdToBytes32(id: string): string {
+  return ethers.id(id)
 }
 
-// Initialize payment on-chain (called by backend)
-export async function initializeOnChainPayment(
-  paymentId: string,
-  amount: number,
-  reference: string,
-  eventId: string,
-  ticketQuantity: number,
-  privateKey: string
-) {
+export function eventIdToBytes32(eventId: string): string {
+  return ethers.id(eventId)
+}
+
+export function batchIdFromString(label: string): string {
+  return ethers.id(label)
+}
+
+/**
+ * Build the orderHash that ties a MongoDB order to this payment.
+ * The backend must compute this EXACT same hash when storing in MongoDB,
+ * so verification succeeds.
+ */
+export function computeOrderHash(order: {
+  orderId: string
+  payer: string
+  eventId: string
+  ticketTypeId: string
+  quantity: number
+  amount: string
+  paymentReference: string
+}): string {
+  return ethers.keccak256(
+    ethers.AbiCoder.defaultAbiCoder().encode(
+      ['string', 'address', 'string', 'string', 'uint256', 'string', 'string'],
+      [
+        order.orderId,
+        order.payer,
+        order.eventId,
+        order.ticketTypeId,
+        order.quantity,
+        order.amount,
+        order.paymentReference,
+      ]
+    )
+  )
+}
+
+// ═══════════════════════════════════════════════════════════
+// Write functions (called by backend)
+// ═══════════════════════════════════════════════════════════
+export async function recordPaymentOnChain(input: {
+  paymentId: string        // bytes32 (already hashed)
+  payer: string
+  amount: string           // USDC amount, decimal string (e.g. "0.5")
+  paymentReference: string
+  eventId: string          // bytes32
+  ticketQuantity: number
+  orderHash: string        // bytes32
+  paymentTxHash: string    // bytes32 (USDC tx hash)
+}): Promise<{ success: boolean; txHash?: string; error?: string }> {
   try {
-    const contract = getArcContractWithSigner(privateKey);
-    const paymentIdBytes = paymentIdToBytes32(paymentId);
-    const eventIdBytes = ethers.id(eventId);
-    
-    const amountWei = ethers.parseUnits(amount.toString(), ARC_CONFIG.usdcDecimals);
-    
-    const tx = await contract.initializePayment(
-      paymentIdBytes,
+    const contract = getRegistryWithSigner()
+
+    // Amount is in 18-decimal native units on Arc
+    const amountWei = ethers.parseUnits(input.amount, 18)
+
+    const tx = await contract.recordPayment(
+      input.paymentId,
+      input.payer,
       amountWei,
-      reference,
-      eventIdBytes,
-      ticketQuantity,
-      { gasLimit: 300000 }
-    );
-    
-    console.log('📝 Payment initialization tx sent:', tx.hash);
-    const receipt = await tx.wait();
-    console.log('✅ Payment initialized on-chain:', receipt.blockNumber);
-    
+      input.paymentReference,
+      input.eventId,
+      input.ticketQuantity,
+      input.orderHash,
+      input.paymentTxHash,
+      { gasLimit: 400000 }
+    )
+
+    const receipt = await tx.wait()
     return {
       success: true,
-      transactionHash: tx.hash,
-      blockNumber: receipt.blockNumber,
-      paymentId: paymentId,
-    };
-  } catch (error: any) {
-    console.error('❌ On-chain payment initialization failed:', error);
-    return {
-      success: false,
-      error: error.message,
-    };
-  }
-}
-
-// ✅ FIXED: confirmOnChainPayment now takes ONLY paymentId (matches contract)
-// The usdcTxHash is used for logging/DB storage but NOT sent to the contract
-export async function confirmOnChainPayment(
-  paymentId: string,
-  usdcTransferTxHash: string,
-  privateKey: string
-) {
-  try {
-    const contract = getArcContractWithSigner(privateKey);
-    const paymentIdBytes = paymentIdToBytes32(paymentId);
-    
-    console.log(`📝 Confirming payment on-chain: ${paymentId}`);
-    console.log(`📝 USDC transfer hash (for logging only): ${usdcTransferTxHash}`);
-    
-    // ✅ Contract takes ONLY paymentId - no txHash param
-    const tx = await contract.confirmPayment(paymentIdBytes, {
-      gasLimit: 200000,
-    });
-    
-    console.log('📝 Payment confirmation tx sent:', tx.hash);
-    const receipt = await tx.wait();
-    console.log('✅ Payment confirmed on-chain:', receipt.blockNumber);
-    
-    return {
-      success: true,
-      transactionHash: tx.hash,
-      blockNumber: receipt.blockNumber,
-    };
-  } catch (error: any) {
-    console.error('❌ On-chain payment confirmation failed:', error);
-    return {
-      success: false,
-      error: error.message,
-    };
-  }
-}
-
-// ✅ FIXED: getOnChainPayment with correct decoding
-export async function getOnChainPayment(paymentId: string): Promise<OnChainPaymentResult> {
-  try {
-    const contract = getArcContract();
-    const paymentIdBytes = paymentIdToBytes32(paymentId);
-
-    // ✅ Try the simple status call first (most robust)
-    try {
-      const statusString = await contract.getPaymentStatus(paymentIdBytes);
-      console.log(`✅ getPaymentStatus returned: ${statusString}`);
-
-      // Try full struct for enrichment, but don't fail if it errors
-      try {
-        const payment = await contract.getPayment(paymentIdBytes);
-        const rawStatusCode = Number(payment.status);
-        const statusLabel = PAYMENT_STATUS_LABELS[rawStatusCode] || statusString;
-
-        return {
-          success: true,
-          payment: {
-            paymentId: payment.paymentId,
-            payer: payment.payer,
-            amount: ethers.formatUnits(payment.amount, ARC_CONFIG.usdcDecimals),
-            fee: ethers.formatUnits(payment.fee, ARC_CONFIG.usdcDecimals),
-            reference: payment.paymentReference,
-            status: statusLabel,
-            statusCode: rawStatusCode,
-            createdAt: Number(payment.createdAt),
-            confirmedAt: Number(payment.confirmedAt),
-            eventId: payment.eventId,
-            ticketQuantity: Number(payment.ticketQuantity),
-          },
-        };
-      } catch (structError: any) {
-        // ✅ Struct decode failed but we have status — return minimal data
-        console.warn('⚠️ Struct decode failed, using status only');
-        return {
-          success: true,
-          payment: {
-            paymentId: paymentIdBytes,
-            payer: '0x0000000000000000000000000000000000000000',
-            amount: '0',
-            fee: '0',
-            reference: '',
-            status: statusString,
-            statusCode: statusString === 'confirmed' ? 1 : 0,
-            createdAt: 0,
-            confirmedAt: 0,
-            eventId: '0x',
-            ticketQuantity: 0,
-          },
-        };
-      }
-    } catch (statusError: any) {
-      console.error('❌ getPaymentStatus failed:', statusError.message);
-
-      if (statusError.message?.includes('Payment does not exist')) {
-        return { success: false, error: 'Payment does not exist on-chain' };
-      }
-
-      throw statusError;
+      txHash: tx.hash,
     }
   } catch (error: any) {
-    console.error('❌ Failed to get payment details:', error);
-    return { success: false, error: error.message };
+    console.error('recordPayment failed:', error)
+    return {
+      success: false,
+      error: error.message || 'recordPayment failed',
+    }
+  }
+}
+
+export async function confirmPaymentOnChain(
+  paymentId: string
+): Promise<{ success: boolean; txHash?: string; error?: string }> {
+  try {
+    const contract = getRegistryWithSigner()
+    const tx = await contract.confirmPayment(paymentId, { gasLimit: 150000 })
+    await tx.wait()
+    return { success: true, txHash: tx.hash }
+  } catch (error: any) {
+    return { success: false, error: error.message }
+  }
+}
+
+export async function anchorBatchOnChain(input: {
+  batchId: string          // bytes32
+  merkleRoot: string       // bytes32
+  recordCount: number
+  batchLabel: string       // "2026-09-week3"
+}): Promise<{ success: boolean; txHash?: string; error?: string }> {
+  try {
+    const contract = getRegistryWithSigner()
+    const tx = await contract.anchorBatch(
+      input.batchId,
+      input.merkleRoot,
+      input.recordCount,
+      input.batchLabel,
+      { gasLimit: 300000 }
+    )
+    await tx.wait()
+    return { success: true, txHash: tx.hash }
+  } catch (error: any) {
+    return { success: false, error: error.message }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// Read functions
+// ═══════════════════════════════════════════════════════════
+export async function getOnChainPayment(
+  paymentId: string
+): Promise<OnChainPayment | null> {
+  try {
+    const contract = getRegistryReadOnly()
+    const exists = await contract.paymentExists(paymentId)
+    if (!exists) return null
+
+    const p = await contract.getPayment(paymentId)
+    return {
+      paymentId: p.paymentId,
+      payer: p.payer,
+      amount: ethers.formatUnits(p.amount, 18),
+      paymentReference: p.paymentReference,
+      status: PaymentStatus[Number(p.status) as 0 | 1 | 2 | 3] || 'unknown',
+      createdAt: Number(p.createdAt),
+      confirmedAt: Number(p.confirmedAt),
+      eventId: p.eventId,
+      ticketQuantity: Number(p.ticketQuantity),
+      orderHash: p.orderHash,
+      paymentTxHash: p.paymentTxHash,
+    }
+  } catch (error) {
+    console.error('getOnChainPayment failed:', error)
+    return null
+  }
+}
+
+export async function getOnChainAnchor(batchId: string) {
+  try {
+    const contract = getRegistryReadOnly()
+    const exists = await contract.batchExists(batchId)
+    if (!exists) return null
+    const a = await contract.getAnchor(batchId)
+    return {
+      merkleRoot: a.merkleRoot,
+      recordCount: Number(a.recordCount),
+      anchoredAt: Number(a.anchoredAt),
+      batchLabel: a.batchLabel,
+    }
+  } catch (error) {
+    console.error('getOnChainAnchor failed:', error)
+    return null
   }
 }

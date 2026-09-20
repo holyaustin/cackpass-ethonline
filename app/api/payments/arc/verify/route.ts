@@ -1,1102 +1,403 @@
 // app/api/payments/arc/verify/route.ts
-
-import { NextRequest, NextResponse } from 'next/server';
-import {
-  connectDB,
-} from '@/lib/database/connection';
-
+import { NextRequest, NextResponse } from 'next/server'
+import { connectDB } from '@/lib/database/connection'
 import {
   Payment,
   Order,
   MyTicket,
-  TicketType,
   Event,
   User,
-  DiscountCode,
-} from '@/lib/database/models';
-
+  TicketType,
+} from '@/lib/database/models'
 import {
-  getOnChainPayment,
-  confirmOnChainPayment,
-} from '@/lib/arc/client';
+  recordPaymentOnChain,
+  confirmPaymentOnChain,
+  computeOrderHash,
+  paymentIdToBytes32,
+  eventIdToBytes32,
+} from '@/lib/arc/client'
+import { ethers } from 'ethers'
+
+export const dynamic = 'force-dynamic'
+export const maxDuration = 60
+
+// ─────────────────────────────────────────────────────────────
+// Arc USDC ERC-20 wrapper
+// ─────────────────────────────────────────────────────────────
+const ARC_USDC_ADDRESS = '0x3600000000000000000000000000000000000000'
+
+// keccak256("Transfer(address,address,uint256)")
+const ERC20_TRANSFER_TOPIC =
+  '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
+
+// ─────────────────────────────────────────────────────────────
+// Provider with retry / fallback
+// ─────────────────────────────────────────────────────────────
+async function getArcProvider(): Promise<ethers.JsonRpcProvider> {
+  const rpcUrls = [
+    process.env.NEXT_PUBLIC_ARC_RPC_URL,
+    'https://rpc.testnet.arc.network',
+    'https://arc-testnet.drpc.org',
+  ].filter(Boolean) as string[]
+
+  for (const url of rpcUrls) {
+    try {
+      const provider = new ethers.JsonRpcProvider(url)
+      await Promise.race([
+        provider.getBlockNumber(),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('timeout')), 5000)
+        ),
+      ])
+      console.log(`✅ Connected to Arc RPC: ${url}`)
+      return provider
+    } catch (err: any) {
+      console.warn(`⚠️ RPC failed: ${url} — ${err.message}`)
+    }
+  }
+  throw new Error('All Arc RPC endpoints unreachable')
+}
 
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-
-    const reference = searchParams.get('reference');
-    const usdcTxHash = searchParams.get('transaction_id');
+    const { searchParams } = new URL(request.url)
+    const reference = searchParams.get('reference')
+    const usdcTxHash = searchParams.get('transaction_id')
 
     if (!reference) {
-      return NextResponse.json(
-        { error: 'Missing reference' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Missing reference' }, { status: 400 })
     }
 
-    console.log(
-      `\n🔍 ========== VERIFYING ARC PAYMENT: ${reference} ==========`
-    );
+    await connectDB()
 
-    console.log(
-      `📝 USDC tx hash: ${usdcTxHash || 'none'}`
-    );
-
-    await connectDB();
-
-    // ============================================================
-    // 1. MULTI-TIER PAYMENT LOOKUP
-    // ============================================================
-
-    let payment = await Payment.findOne({
-      paymentReference: reference,
-    });
-
-    // ------------------------------------------------------------
-    // FALLBACK 1:
-    // Look up payment by USDC transaction hash
-    // ------------------------------------------------------------
-
-    if (!payment && usdcTxHash) {
-      console.log(
-        `🔎 Not found by reference, trying transaction hash lookup...`
-      );
-
-      payment = await Payment.findOne({
-        $or: [
-          { 'metadata.transactionHash': usdcTxHash },
-          { 'metadata.usdcTxHash': usdcTxHash },
-          { transactionHash: usdcTxHash },
-        ],
-      });
-
-      if (payment) {
-        console.log(
-          `✅ Found payment via tx hash: reference=${payment.paymentReference}`
-        );
-      }
-    }
-
-    // ------------------------------------------------------------
-    // FALLBACK 2:
-    // Look for a single recent pending Arc USDC payment
-    // ------------------------------------------------------------
-
+    // ─────────────────────────────────────────────────
+    // 1. Load the MongoDB Payment
+    // ─────────────────────────────────────────────────
+    const payment = await Payment.findOne({ paymentReference: reference })
     if (!payment) {
-      console.log(
-        `🔎 Still not found, checking recent pending payments...`
-      );
-
-      const recentPayments = await Payment.find({
-        paymentStatus: 'pending',
-        paymentMethod: 'arc_usdc',
-      })
-        .sort({ createdAt: -1 })
-        .limit(5)
-        .lean();
-
-      console.log(
-        `📊 Recent pending arc_usdc payments:`,
-        recentPayments.map((p: any) => ({
-          ref: p.paymentReference,
-          createdAt: p.createdAt,
-          txHash: p.metadata?.transactionHash,
-          status: p.paymentStatus,
-        }))
-      );
-
-      // Only use this fallback when there is exactly one candidate.
-      if (recentPayments.length === 1) {
-        payment = await Payment.findById(
-          recentPayments[0]._id
-        );
-
-        console.log(
-          `✅ Using the single recent pending payment: ${
-            payment?.paymentReference
-          }`
-        );
-      }
+      return NextResponse.json({ error: 'Payment not found' }, { status: 404 })
     }
-
-    // ------------------------------------------------------------
-    // No payment found
-    // ------------------------------------------------------------
-
-    if (!payment) {
-      console.error(
-        `❌ Payment record not found for reference: ${reference}`
-      );
-
-      console.error(
-        `❌ Also not found by tx hash: ${usdcTxHash}`
-      );
-
-      return NextResponse.json(
-        {
-          error: 'Payment not found',
-          reference,
-          transactionHash: usdcTxHash,
-        },
-        { status: 404 }
-      );
-    }
-
-    // ------------------------------------------------------------
-    // Use the DB reference from this point forward
-    // ------------------------------------------------------------
-
-    if (payment.paymentReference !== reference) {
-      console.log(
-        `⚠️ Found payment with different reference: ` +
-        `DB=${payment.paymentReference}, URL=${reference}`
-      );
-
-      console.log(
-        `   Proceeding with the DB reference: ${
-          payment.paymentReference
-        }`
-      );
-    }
-
-    const effectiveReference =
-      payment.paymentReference;
-
-    // ============================================================
-    // 2. SKIP IF ALREADY COMPLETED
-    // ============================================================
 
     if (payment.paymentStatus === 'completed') {
-      console.log(
-        `⚠️ Payment already processed ` +
-        `(ref=${effectiveReference}) - returning existing data`
-      );
-
-      const tickets = await MyTicket.find({
-        orderId: payment.metadata?.orderId,
-      });
-
-      const wasEmailSent =
-        payment.metadata?.emailSent === true;
-
-      // ----------------------------------------------------------
-      // Resolve processed order
-      // ----------------------------------------------------------
-
-      const processedOrder =
-        payment.metadata?.orderId
-          ? await Order.findById(
-              payment.metadata.orderId
-            ).lean()
-          : null;
-
-      // ----------------------------------------------------------
-      // Resolve customer email
-      // ----------------------------------------------------------
-
-      let processedUserEmail =
-        processedOrder?.customerEmail ||
-        payment.customerEmail ||
-        payment.metadata?.userEmail ||
-        payment.metadata?.email ||
-        '';
-
-      // ----------------------------------------------------------
-      // Additional User fallback
-      // ----------------------------------------------------------
-
-      if (
-        !processedUserEmail &&
-        payment.userId
-      ) {
-        const processedUser =
-          await User.findById(
-            payment.userId
-          ).lean();
-
-        processedUserEmail =
-          processedUser?.email || '';
-      }
-
-      console.log(
-        `📧 Already-processed email: ${processedUserEmail}`
-      );
-
+      const tickets = await MyTicket.find({ orderId: payment.metadata?.orderId })
       return NextResponse.json({
         success: true,
         alreadyProcessed: true,
-
         tickets: tickets.map((t: any) => ({
           ticketId: t.ticketNumber,
           ticketNumber: t.ticketNumber,
         })),
-
-        emailSent: wasEmailSent,
-
         amount: payment.amount,
-
-        currency:
-          payment.metadata?.currency ||
-          'USDC',
-
-        userEmail:
-          processedUserEmail,
-
-        reference:
-          effectiveReference,
-
-        event: {
-          ticketsSold: 0,
-          capacity: 0,
-        },
-      });
+        currency: 'USDC',
+        userEmail: payment.customerEmail,
+        emailSent: payment.metadata?.emailSent === true,
+        reference,
+      })
     }
 
-    // ============================================================
-    // 3. GET ON-CHAIN PAYMENT
-    // ============================================================
+    if (!usdcTxHash) {
+      return NextResponse.json({ error: 'Missing transaction_id' }, { status: 400 })
+    }
 
-    const paymentId =
-      payment.metadata?.onChainPaymentId;
+    // ─────────────────────────────────────────────────
+    // 2. Fetch tx + receipt
+    // ─────────────────────────────────────────────────
+    const provider = await getArcProvider()
 
-    if (!paymentId) {
-      console.error(
-        `❌ No on-chain payment ID found for reference: ${
-          effectiveReference
-        }`
-      );
-
+    const tx = await provider.getTransaction(usdcTxHash)
+    if (!tx) {
       return NextResponse.json(
-        {
-          error:
-            'Invalid payment data - missing on-chain payment ID',
-        },
+        { error: 'USDC transaction not found' },
+        { status: 404 }
+      )
+    }
+
+    const receipt = await provider.getTransactionReceipt(usdcTxHash)
+    if (!receipt || receipt.status !== 1) {
+      return NextResponse.json(
+        { error: 'USDC transaction failed on-chain' },
         { status: 400 }
-      );
+      )
     }
 
-    console.log(
-      `🔗 On-chain payment ID: ${paymentId}`
-    );
-
-    // ============================================================
-    // 3A. SAVE USDC TRANSACTION HASH
-    // ============================================================
-
-    if (
-      usdcTxHash &&
-      !payment.metadata?.usdcTxHash
-    ) {
-      payment.metadata = {
-        ...(payment.metadata || {}),
-        usdcTxHash,
-      };
-
-      payment.transactionHash =
-        usdcTxHash;
-
-      await payment.save();
-
-      console.log(
-        `✅ Stored USDC tx hash on payment record: ${usdcTxHash}`
-      );
+    const treasury = process.env.NEXT_PUBLIC_TREASURY_WALLET?.toLowerCase()
+    if (!treasury) {
+      return NextResponse.json(
+        { error: 'Treasury wallet not configured' },
+        { status: 500 }
+      )
     }
 
-    // ============================================================
-    // 3B. FETCH ON-CHAIN PAYMENT
-    // ============================================================
+    // ─────────────────────────────────────────────────
+    // 3. Detect the USDC transfer shape
+    //    (A) native:  tx.to === treasury, tx.value > 0
+    //    (B) erc20:   tx.to === USDC contract, Transfer log credits treasury
+    // ─────────────────────────────────────────────────
+    const toAddr = tx.to?.toLowerCase()
+    let receivedAmountWei: bigint | null = null
+    let transferType: 'native' | 'erc20' | 'unknown' = 'unknown'
 
-    const onChainPayment =
-      await getOnChainPayment(paymentId);
+    // Shape A — native
+    if (toAddr === treasury && tx.value > 0n) {
+      receivedAmountWei = tx.value
+      transferType = 'native'
+    }
 
-    // IMPORTANT:
-    // Keep a separate variable so TypeScript can narrow it.
-    let onChainPaymentDetails =
-      onChainPayment.payment;
+    // Shape B — ERC-20 wrapper
+    if (receivedAmountWei === null && toAddr === ARC_USDC_ADDRESS.toLowerCase()) {
+      for (const log of receipt.logs) {
+        if (log.address.toLowerCase() !== ARC_USDC_ADDRESS.toLowerCase()) continue
+        if (log.topics[0] !== ERC20_TRANSFER_TOPIC) continue
 
-    console.log(
-      `📊 Initial Arc payment response:`,
-      {
-        success:
-          onChainPayment.success,
+        const toPadded = log.topics[2]
+        const toAddress = ethers
+          .getAddress('0x' + toPadded.slice(26))
+          .toLowerCase()
 
-        status:
-          onChainPaymentDetails?.status ||
-          'unknown',
-      }
-    );
-
-    // ============================================================
-    // 4. IF PENDING + TX HASH EXISTS, TRY TO CONFIRM ON-CHAIN
-    // ============================================================
-
-    if (
-      onChainPaymentDetails?.status ===
-        'pending' &&
-      usdcTxHash
-    ) {
-      console.log(
-        `⏳ Payment is pending, confirming with USDC tx: ${usdcTxHash}`
-      );
-
-      const privateKey =
-        process.env.GASLESS_PRIVATE_KEY;
-
-      if (!privateKey) {
-        console.error(
-          `❌ GASLESS_PRIVATE_KEY is not configured`
-        );
-      } else {
-        try {
-          const confirmResult =
-            await confirmOnChainPayment(
-              paymentId,
-              usdcTxHash,
-              privateKey
-            );
-
-          if (confirmResult.success) {
-            console.log(
-              `✅ Payment confirmation transaction submitted: ${
-                confirmResult.transactionHash ||
-                'unknown'
-              }`
-            );
-
-            // ------------------------------------------------------
-            // Wait for the Arc contract/payment state to update.
-            // ------------------------------------------------------
-
-            let retries = 0;
-
-            const maxRetries = 5;
-            const retryDelay = 2000;
-
-            while (
-              retries < maxRetries
-            ) {
-              await new Promise(
-                (resolve) =>
-                  setTimeout(
-                    resolve,
-                    retryDelay
-                  )
-              );
-
-              const updatedPayment =
-                await getOnChainPayment(
-                  paymentId
-                );
-
-              if (
-                updatedPayment.success &&
-                updatedPayment.payment
-              ) {
-                onChainPaymentDetails =
-                  updatedPayment.payment;
-
-                console.log(
-                  `🔄 Arc payment status after retry ${
-                    retries + 1
-                  }: ${
-                    onChainPaymentDetails.status
-                  }`
-                );
-
-                if (
-                  onChainPaymentDetails.status ===
-                  'confirmed'
-                ) {
-                  console.log(
-                    `✅ Payment confirmed after ${
-                      retries + 1
-                    } retries`
-                  );
-
-                  break;
-                }
-              }
-
-              retries++;
-
-              console.log(
-                `⏳ Retry ${retries}/${maxRetries} - payment still not confirmed...`
-              );
-            }
-
-            if (
-              onChainPaymentDetails?.status !==
-              'confirmed'
-            ) {
-              console.error(
-                `❌ Payment confirmation timed out`
-              );
-            }
-          } else {
-            console.error(
-              `❌ Failed to confirm payment:`,
-              confirmResult.error
-            );
-          }
-        } catch (confirmError: any) {
-          console.error(
-            `❌ Error confirming on-chain payment:`,
-            confirmError?.message ||
-              confirmError
-          );
+        if (toAddress === treasury) {
+          receivedAmountWei = BigInt(log.data)
+          transferType = 'erc20'
+          break
         }
       }
     }
 
-    // ============================================================
-    // 5. FINAL ON-CHAIN CONFIRMATION CHECK
-    // ============================================================
+    console.log('🔍 USDC tx verification:', {
+      hash: usdcTxHash,
+      from: tx.from,
+      to: tx.to,
+      value: tx.value.toString(),
+      valueFormatted: ethers.formatUnits(tx.value, 18),
+      treasuryExpected: treasury,
+      detectedTransferType: transferType,
+      receivedWei: receivedAmountWei?.toString() ?? 'null',
+      logCount: receipt.logs.length,
+    })
 
-    // IMPORTANT:
-    // This explicit guard fixes the TS18048 error and ensures
-    // that payment details are definitely available before use.
-
-    if (!onChainPaymentDetails) {
-      console.error(
-        `❌ Arc payment details were not returned`
-      );
-
+    if (receivedAmountWei === null) {
       return NextResponse.json(
         {
           error:
-            'Payment verification failed - Arc payment details were not returned',
-          status: 'unknown',
+            'No USDC transfer to the treasury found in this transaction.',
+          txTo: tx.to,
+          treasuryExpected: treasury,
+          transferType,
         },
         { status: 400 }
-      );
+      )
     }
 
-    if (
-      onChainPaymentDetails.status !==
-      'confirmed'
-    ) {
-      console.error(
-        `❌ Payment not confirmed. Status: ${
-          onChainPaymentDetails.status
-        }`
-      );
+    // ─────────────────────────────────────────────────
+    // 4. Amount check — decimals depend on transfer shape
+    // ─────────────────────────────────────────────────
+    const decimals = transferType === 'native' ? 18 : 6
+    const sentAmountStr = ethers.formatUnits(receivedAmountWei, decimals)
+    const sentAmount = parseFloat(sentAmountStr)
+    const expectedAmount = parseFloat(payment.amount.toString())
 
+    console.log(
+      `💰 Amount check: received=${sentAmountStr} (decimals=${decimals}), ` +
+      `expected=${payment.amount}`
+    )
+
+    if (Math.abs(sentAmount - expectedAmount) > 0.001) {
       return NextResponse.json(
         {
-          error: 'Payment not confirmed',
-          status:
-            onChainPaymentDetails.status,
+          error: 'Amount mismatch',
+          sent: sentAmountStr,
+          expected: payment.amount.toString(),
         },
         { status: 400 }
-      );
+      )
     }
 
     console.log(
-      `✅ Arc payment confirmed: ${
-        onChainPaymentDetails.status
-      }`
-    );
+      `✅ USDC verified (${transferType}): ${sentAmountStr} USDC ` +
+      `from ${tx.from} to treasury`
+    )
 
-    // ============================================================
-    // 6. PAYMENT PROOF
-    // ============================================================
+    // ─────────────────────────────────────────────────
+    // 5. Build orderHash & write to registry
+    // ─────────────────────────────────────────────────
+    const order = await Order.findById(payment.metadata?.orderId)
+    if (!order) {
+      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    }
 
-    // The Arc payment contract does not return the USDC
-    // transaction hash, so use the transaction hash supplied
-    // by Circle/App Kit when available.
+    const paymentId: string = payment.metadata?.paymentId
+    if (!paymentId) {
+      return NextResponse.json(
+        { error: 'Missing paymentId in metadata' },
+        { status: 400 }
+      )
+    }
 
-    const onChainProof =
-      usdcTxHash ||
-      payment.transactionHash ||
-      effectiveReference;
+    const eventIdStr: string = payment.eventId.toString()
 
-    console.log(
-      `✅ Payment confirmed on-chain with proof: ${onChainProof}`
-    );
+    const orderHash = computeOrderHash({
+      orderId: order._id.toString(),
+      payer: tx.from,
+      eventId: eventIdStr,
+      ticketTypeId: payment.ticketTypeId?.toString() || '',
+      quantity: payment.quantity,
+      amount: payment.amount.toString(),
+      paymentReference: reference,
+    })
 
-    // ============================================================
-    // 7. GET ORDER, USER AND EVENT
-    // ============================================================
+    const registryResult = await recordPaymentOnChain({
+      paymentId: paymentIdToBytes32(paymentId),
+      payer: tx.from,
+      amount: payment.amount.toString(),
+      paymentReference: reference,
+      eventId: eventIdToBytes32(eventIdStr),
+      ticketQuantity: payment.quantity,
+      orderHash,
+      paymentTxHash: usdcTxHash,
+    })
 
-    // The initialize API stores the customer's email on Order.
-    // Order.customerEmail is therefore the primary source.
-
-    const order =
-      await Order.findById(
-        payment.metadata?.orderId
-      );
-
-    // ------------------------------------------------------------
-    // Resolve email
-    // ------------------------------------------------------------
-
-    let userEmail =
-      order?.customerEmail || '';
-
-    // ------------------------------------------------------------
-    // Resolve customer name
-    // ------------------------------------------------------------
-
-    let userName =
-      order?.customerName ||
-      payment.metadata?.userName ||
-      userEmail.split('@')[0] ||
-      'User';
-
-    // ------------------------------------------------------------
-    // Fallback through User
-    // ------------------------------------------------------------
-
-    if (
-      !userEmail &&
-      payment.userId
-    ) {
-      const paymentUser =
-        await User.findById(
-          payment.userId
-        ).lean();
-
-      if (paymentUser?.email) {
-        userEmail =
-          paymentUser.email;
+    if (!registryResult.success) {
+      payment.metadata = {
+        ...payment.metadata,
+        paymentTxHash: usdcTxHash,
+        orderHash,
+        registryError: registryResult.error,
       }
-    }
-
-    // ------------------------------------------------------------
-    // Final fallback to Payment fields
-    // ------------------------------------------------------------
-
-    if (!userEmail) {
-      userEmail =
-        payment.customerEmail ||
-        payment.metadata?.userEmail ||
-        payment.metadata?.email ||
-        '';
-    }
-
-    console.log(
-      `📧 EMAIL RESOLUTION:`,
-      {
-        orderId:
-          payment.metadata?.orderId?.toString(),
-
-        orderCustomerEmail:
-          order?.customerEmail,
-
-        orderCustomerName:
-          order?.customerName,
-
-        paymentUserId:
-          payment.userId?.toString(),
-
-        paymentCustomerEmail:
-          payment.customerEmail,
-
-        metadataUserEmail:
-          payment.metadata?.userEmail,
-
-        metadataEmail:
-          payment.metadata?.email,
-
-        resolvedUserEmail:
-          userEmail,
-
-        resolvedUserName:
-          userName,
-      }
-    );
-
-    // ============================================================
-    // 8. GET EVENT
-    // ============================================================
-
-    const event =
-      await Event.findById(
-        payment.eventId
-      );
-
-    if (!event) {
-      console.error(
-        `❌ Event not found: ${payment.eventId}`
-      );
+      await payment.save()
 
       return NextResponse.json(
-        {
-          error: 'Event not found',
-        },
-        { status: 404 }
-      );
+        { error: 'Registry write failed', details: registryResult.error },
+        { status: 500 }
+      )
     }
 
-    // ============================================================
-    // 9. UPDATE PAYMENT STATUS
-    // ============================================================
-
-    payment.paymentStatus =
-      'completed';
-
-    payment.transactionHash =
-      usdcTxHash ||
-      payment.transactionHash ||
-      effectiveReference;
-
+    // ─────────────────────────────────────────────────
+    // 6. Persist on-chain info
+    // ─────────────────────────────────────────────────
     payment.metadata = {
-      ...(payment.metadata || {}),
-      verifiedAt: new Date(),
-      onChainStatus:
-        onChainPaymentDetails.status,
-    };
-
-    await payment.save();
-
-    console.log(
-      `✅ Payment marked as completed`
-    );
-
-    // ============================================================
-    // 10. UPDATE ORDER
-    // ============================================================
-
-    if (order) {
-      order.paymentStatus =
-        'paid';
-
-      await order.save();
-
-      console.log(
-        `✅ Order marked as paid`
-      );
+      ...payment.metadata,
+      paymentTxHash: usdcTxHash,
+      orderHash,
+      registryTxHash: registryResult.txHash,
+      registryPaymentId: paymentId,
+      transferType,
     }
+    await payment.save()
 
-    // ============================================================
-    // 11. INCREMENT DISCOUNT CODE USAGE
-    // ============================================================
+    await confirmPaymentOnChain(paymentIdToBytes32(paymentId))
 
-    if (
-      payment.metadata?.discountCode
-    ) {
-      const discount =
-        await DiscountCode.findOne({
-          code:
-            payment.metadata.discountCode.toUpperCase(),
-
-          eventId:
-            payment.eventId,
-        });
-
-      if (discount) {
-        discount.usedCount +=
-          payment.quantity;
-
-        await discount.save();
-
-        console.log(
-          `✅ Discount code ${discount.code} used count increased to ${discount.usedCount}/${discount.maxUses}`
-        );
+    // ─────────────────────────────────────────────────
+    // 7. Create tickets in MongoDB
+    // ─────────────────────────────────────────────────
+    let tickets: any[] = []
+    const existingTickets = await MyTicket.find({ orderId: order._id })
+    if (existingTickets.length > 0) {
+      tickets = existingTickets
+    } else {
+      for (let i = 0; i < payment.quantity; i++) {
+        const t = await MyTicket.create({
+          orderId: order._id,
+          userId: payment.userId,
+          eventId: payment.eventId,
+          ticketTypeId: payment.ticketTypeId,
+          ticketNumber: `${reference}-${i + 1}`,
+          status: 'active',
+          customerEmail: payment.customerEmail,
+          customerName: payment.metadata?.userName,
+          metadata: {
+            arcPayment: true,
+            registryPaymentId: paymentId,
+            paymentTxHash: usdcTxHash,
+          },
+        })
+        tickets.push(t)
       }
     }
 
-    // ============================================================
-    // 12. GET TICKET TYPE
-    // ============================================================
+    payment.paymentStatus = 'completed'
+    await payment.save()
 
-    let ticketType = null;
-
-    if (
-      payment.ticketTypeId &&
-      !payment.metadata?.isVirtual
-    ) {
-      ticketType =
-        await TicketType.findById(
-          payment.ticketTypeId
-        );
-    }
-
-    // ============================================================
-    // 13. UPDATE EVENT TICKETS SOLD
-    // ============================================================
+    order.paymentStatus = 'paid'
+    await order.save()
 
     await Event.updateOne(
-      {
-        _id: payment.eventId,
-      },
-      {
-        $inc: {
-          ticketsSold:
-            payment.quantity,
-        },
-      }
-    );
+      { _id: payment.eventId },
+      { $inc: { ticketsSold: payment.quantity } }
+    )
 
-    const updatedEvent =
-      await Event.findById(
-        payment.eventId
-      );
+    // ─────────────────────────────────────────────────
+    // 8. Send email — MUST include `email` field
+    // ─────────────────────────────────────────────────
+    let emailSent = false
+    try {
+      const customerEmail =
+        payment.customerEmail ||
+        payment.metadata?.userEmail ||
+        payment.metadata?.email
 
-    console.log(
-      `✅ ticketsSold updated to: ${
-        updatedEvent?.ticketsSold
-      }`
-    );
+      if (!customerEmail) {
+        console.warn('No customer email on payment — skipping email send')
+      } else {
+        const event = await Event.findById(payment.eventId)
+        const ticketType = payment.ticketTypeId
+          ? await TicketType.findById(payment.ticketTypeId)
+          : null
 
-    // ============================================================
-    // 14. CREATE TICKETS
-    // ============================================================
+        const emailRes = await fetch(
+          `${process.env.NEXT_PUBLIC_APP_URL}/api/email/ticket-confirmation`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: customerEmail,
+              name:
+                payment.metadata?.userName ||
+                customerEmail.split('@')[0],
+              eventTitle: event?.title || payment.metadata?.eventTitle,
+              eventDate: event?.startDate?.toISOString(),
+              venue: event?.venue || 'Online Event',
+              ticketCount: payment.quantity,
+              ticketType:
+                ticketType?.name ||
+                payment.metadata?.ticketName ||
+                'General Admission',
+              amount: payment.amount,
+              reference,
+            }),
+          }
+        )
 
-    let tickets: any[] = [];
-
-    const existingTickets =
-      await MyTicket.find({
-        orderId: order?._id,
-      });
-
-    if (
-      existingTickets.length === 0
-    ) {
-      console.log(
-        `🎫 Creating ${payment.quantity} tickets...`
-      );
-
-      for (
-        let i = 0;
-        i < payment.quantity;
-        i++
-      ) {
-        const ticket =
-          await MyTicket.create({
-            orderId:
-              order?._id,
-
-            userId:
-              payment.userId,
-
-            eventId:
-              payment.eventId,
-
-            ticketTypeId:
-              payment.ticketTypeId,
-
-            ticketNumber:
-              `${effectiveReference}-${i + 1}`,
-
-            status:
-              'active',
-
-            customerEmail:
-              userEmail,
-
-            customerName:
-              userName,
-
-            metadata: {
-              arcPayment: true,
-
-              onChainPaymentId:
-                paymentId,
-
-              transactionHash:
-                usdcTxHash ||
-                payment.transactionHash ||
-                effectiveReference,
-            },
-          });
-
-        tickets.push(ticket);
-      }
-
-      console.log(
-        `✅ Created ${tickets.length} tickets`
-      );
-    } else {
-      tickets =
-        existingTickets;
-
-      console.log(
-        `✅ Using ${existingTickets.length} existing tickets`
-      );
-    }
-
-    // ============================================================
-    // 15. SEND TICKET CONFIRMATION EMAIL
-    // ============================================================
-
-    let emailSent = false;
-
-    console.log(
-      `🔍 EMAIL DEBUG:`
-    );
-
-    console.log(
-      `   payment.customerEmail = "${payment.customerEmail}"`
-    );
-
-    console.log(
-      `   order.customerEmail = "${order?.customerEmail}"`
-    );
-
-    console.log(
-      `   payment.metadata.userEmail = "${payment.metadata?.userEmail}"`
-    );
-
-    console.log(
-      `   payment.metadata.email = "${payment.metadata?.email}"`
-    );
-
-    console.log(
-      `   payment.metadata.userName = "${payment.metadata?.userName}"`
-    );
-
-    console.log(
-      `   payment.metadata.emailSent = ${payment.metadata?.emailSent}`
-    );
-
-    console.log(
-      `   FINAL resolved userEmail = "${userEmail}"`
-    );
-
-    // ------------------------------------------------------------
-    // No email
-    // ------------------------------------------------------------
-
-    if (!userEmail) {
-      console.error(
-        `❌ SKIPPING EMAIL: no userEmail resolved`
-      );
-    }
-
-    // ------------------------------------------------------------
-    // Already sent
-    // ------------------------------------------------------------
-
-    else if (
-      payment.metadata?.emailSent === true
-    ) {
-      console.log(
-        `⏭️ SKIPPING EMAIL: already sent previously`
-      );
-
-      emailSent = true;
-    }
-
-    // ------------------------------------------------------------
-    // Send email
-    // ------------------------------------------------------------
-
-    else {
-      console.log(
-        `📧 Sending email to: ${userEmail}`
-      );
-
-      console.log(
-        `📧 Event: ${event.title}`
-      );
-
-      try {
-        const appUrl =
-          process.env.NEXT_PUBLIC_APP_URL;
-
-        if (!appUrl) {
-          throw new Error(
-            'NEXT_PUBLIC_APP_URL is not configured'
-          );
+        if (!emailRes.ok) {
+          const errText = await emailRes.text()
+          console.error('Email API error:', emailRes.status, errText)
+        } else {
+          emailSent = true
+          payment.metadata = { ...payment.metadata, emailSent: true }
+          await payment.save()
         }
-
-        const emailResponse =
-          await fetch(
-            `${appUrl}/api/email/ticket-confirmation`,
-            {
-              method: 'POST',
-
-              headers: {
-                'Content-Type':
-                  'application/json',
-              },
-
-              body:
-                JSON.stringify({
-                  email:
-                    userEmail,
-
-                  name:
-                    userName ||
-                    userEmail.split(
-                      '@'
-                    )[0] ||
-                    'User',
-
-                  eventTitle:
-                    event.title,
-
-                  eventDate:
-                    event.startDate?.toISOString(),
-
-                  venue:
-                    event.venue ||
-                    'Online Event',
-
-                  ticketCount:
-                    payment.quantity,
-
-                  ticketType:
-                    ticketType?.name ||
-                    payment.metadata
-                      ?.ticketName ||
-                    'General Admission',
-
-                  amount:
-                    payment.amount,
-
-                  reference:
-                    effectiveReference,
-                }),
-            }
-          );
-
-        if (
-          !emailResponse.ok
-        ) {
-          const errorText =
-            await emailResponse.text();
-
-          throw new Error(
-            `Email API returned ${emailResponse.status}: ${errorText}`
-          );
-        }
-
-        const emailResult =
-          await emailResponse.json();
-
-        console.log(
-          `✅ Email sent successfully to ${userEmail}`,
-          emailResult
-        );
-
-        emailSent = true;
-
-        payment.metadata = {
-          ...(payment.metadata || {}),
-          emailSent: true,
-        };
-
-        await payment.save();
-
-      } catch (
-        emailError: any
-      ) {
-        console.error(
-          `❌ EMAIL FAILED:`,
-          emailError?.message ||
-            emailError
-        );
-
-        emailSent = false;
       }
+    } catch (e) {
+      console.error('Email failed:', e)
     }
-
-    // ============================================================
-    // 16. FINAL RESPONSE
-    // ============================================================
-
-    const finalEvent =
-      await Event.findById(
-        payment.eventId
-      );
-
-    const finalTicketsSold =
-      finalEvent?.ticketsSold || 0;
-
-    const finalTxHash =
-      usdcTxHash ||
-      payment.transactionHash ||
-      effectiveReference;
-
-    console.log(
-      `\n🎉 ========== PAYMENT COMPLETE ==========`
-    );
-
-    console.log(
-      `✅ Reference: ${effectiveReference}`
-    );
-
-    console.log(
-      `✅ Tickets: ${tickets.length}`
-    );
-
-    console.log(
-      `✅ Email: ${
-        emailSent
-          ? 'SENT ✅'
-          : 'FAILED ❌'
-      }`
-    );
-
-    console.log(
-      `✅ On-chain proof: ${finalTxHash}`
-    );
-
-    console.log(
-      `📊 ticketsSold: ${finalTicketsSold}/${finalEvent?.capacity || 'unlimited'}`
-    );
-
-    console.log(
-      `========================================\n`
-    );
 
     return NextResponse.json({
       success: true,
-
-      tickets:
-        tickets.map(
-          (t: any) => ({
-            ticketId:
-              t.ticketNumber,
-
-            ticketNumber:
-              t.ticketNumber,
-          })
-        ),
-
-      emailSent:
-        emailSent,
-
-      amount:
-        payment.amount,
-
-      currency:
-        'USDC',
-
-      userEmail:
-        userEmail,
-
-      transactionHash:
-        finalTxHash,
-
-      reference:
-        effectiveReference,
-
-      event: {
-        ticketsSold:
-          finalTicketsSold,
-
-        capacity:
-          finalEvent?.capacity,
-      },
-    });
-
+      tickets: tickets.map((t) => ({
+        ticketId: t.ticketNumber,
+        ticketNumber: t.ticketNumber,
+      })),
+      emailSent,
+      amount: payment.amount,
+      currency: 'USDC',
+      userEmail: payment.customerEmail,
+      transactionHash: usdcTxHash,
+      reference,
+      registryTxHash: registryResult.txHash,
+    })
   } catch (error: any) {
-    console.error(
-      '❌ VERIFY ERROR:',
-      error
-    );
-
+    console.error('Arc verify error:', error)
     return NextResponse.json(
-      {
-        error:
-          error?.message ||
-          'Payment verification failed',
-      },
+      { error: error?.message || 'Verification failed' },
       { status: 500 }
-    );
+    )
   }
 }
-

@@ -71,6 +71,13 @@ interface DashboardStats {
   error: string | null
 }
 
+interface AdminState {
+  isAdmin: boolean
+  isSuperAdmin: boolean
+  permissions: string[]
+  email: string
+}
+
 // Skeleton component for balance card
 function BalanceCardSkeleton() {
   return (
@@ -140,101 +147,101 @@ function getWalletAddressFromUser(user: any): string | null {
   return null
 }
 
-    // Function to fetch native USDC balance from Arc Testnet
-    // On Arc, USDC is the native gas token — read it via provider.getBalance()
-    async function fetchUSDCBalance(walletAddress: string): Promise<{
-      usdcBalance: string;
-      usdBalance: string;
-      success: boolean;
-      error?: string;
-    }> {
-      try {
-        console.log('💰 Fetching native USDC balance for:', walletAddress)
+// Function to fetch native USDC balance from Arc Testnet
+// On Arc, USDC is the native gas token — read it via provider.getBalance()
+async function fetchUSDCBalance(walletAddress: string): Promise<{
+  usdcBalance: string;
+  usdBalance: string;
+  success: boolean;
+  error?: string;
+}> {
+  try {
+    console.log('💰 Fetching native USDC balance for:', walletAddress)
 
-        const { ethers } = await loadEthers()
+    const { ethers } = await loadEthers()
 
-        const provider = new ethers.JsonRpcProvider(
-          ARC_CONFIG.RPC_URL,
-          {
-            chainId: ARC_CONFIG.CHAIN_ID,
-            name: 'arc-testnet',
-          },
-          {
-            staticNetwork: true,
-            batchMaxCount: 1,
-            polling: false,
-          }
-        )
+    const provider = new ethers.JsonRpcProvider(
+      ARC_CONFIG.RPC_URL,
+      {
+        chainId: ARC_CONFIG.CHAIN_ID,
+        name: 'arc-testnet',
+      },
+      {
+        staticNetwork: true,
+        batchMaxCount: 1,
+        polling: false,
+      }
+    )
 
-        // ✅ Native balance — USDC is the gas token on Arc Testnet
-        // We use 18 decimals because the RPC encodes native balances in wei
-        // (1 USDC = 1e18 wei on Arc's representation)
-        const rawBalance = await provider.getBalance(walletAddress)
-        const balanceStr = ethers.formatUnits(rawBalance, 18)
+    // ✅ Native balance — USDC is the gas token on Arc Testnet
+    // We use 18 decimals because the RPC encodes native balances in wei
+    // (1 USDC = 1e18 wei on Arc's representation)
+    const rawBalance = await provider.getBalance(walletAddress)
+    const balanceStr = ethers.formatUnits(rawBalance, 18)
 
-        // Display with 6 decimal places for readability
-        const formatted = parseFloat(balanceStr).toFixed(6)
+    // Display with 6 decimal places for readability
+    const formatted = parseFloat(balanceStr).toFixed(6)
 
-        console.log('✅ Native USDC balance fetched:', {
-          raw: rawBalance.toString(),
-          formatted,
-        })
+    console.log('✅ Native USDC balance fetched:', {
+      raw: rawBalance.toString(),
+      formatted,
+    })
 
-        return {
-          usdcBalance: formatted,
-          usdBalance: formatted,
-          success: true,
+    return {
+      usdcBalance: formatted,
+      usdBalance: formatted,
+      success: true,
+    }
+  } catch (error: any) {
+    console.error('❌ Error fetching native balance:', {
+      error: error.message,
+      code: error.code,
+    })
+
+    // Fallback RPC
+    try {
+      console.log('🔄 Retrying with fallback RPC...')
+      const { ethers } = await loadEthers()
+
+      const fallbackProvider = new ethers.JsonRpcProvider(
+        ARC_CONFIG.RPC_URL_FALLBACK,
+        {
+          chainId: ARC_CONFIG.CHAIN_ID,
+          name: 'arc-testnet',
+        },
+        {
+          staticNetwork: true,
+          batchMaxCount: 1,
+          polling: false,
         }
-      } catch (error: any) {
-        console.error('❌ Error fetching native balance:', {
-          error: error.message,
-          code: error.code,
-        })
+      )
 
-        // Fallback RPC
-        try {
-          console.log('🔄 Retrying with fallback RPC...')
-          const { ethers } = await loadEthers()
+      const rawBalance = await fallbackProvider.getBalance(walletAddress)
+      const balanceStr = ethers.formatUnits(rawBalance, 18)
+      const formatted = parseFloat(balanceStr).toFixed(6)
 
-          const fallbackProvider = new ethers.JsonRpcProvider(
-            ARC_CONFIG.RPC_URL_FALLBACK,
-            {
-              chainId: ARC_CONFIG.CHAIN_ID,
-              name: 'arc-testnet',
-            },
-            {
-              staticNetwork: true,
-              batchMaxCount: 1,
-              polling: false,
-            }
-          )
+      console.log('✅ Fallback succeeded:', formatted)
 
-          const rawBalance = await fallbackProvider.getBalance(walletAddress)
-          const balanceStr = ethers.formatUnits(rawBalance, 18)
-          const formatted = parseFloat(balanceStr).toFixed(6)
+      return {
+        usdcBalance: formatted,
+        usdBalance: formatted,
+        success: true,
+      }
+    } catch (fallbackError: any) {
+      console.error('❌ Fallback also failed:', fallbackError.message)
 
-          console.log('✅ Fallback succeeded:', formatted)
-
-          return {
-            usdcBalance: formatted,
-            usdBalance: formatted,
-            success: true,
-          }
-        } catch (fallbackError: any) {
-          console.error('❌ Fallback also failed:', fallbackError.message)
-
-          return {
-            usdcBalance: '0.000000',
-            usdBalance: '0.000000',
-            success: false,
-            error: 'Failed to connect to Arc Testnet',
-          }
-        }
+      return {
+        usdcBalance: '0.000000',
+        usdBalance: '0.000000',
+        success: false,
+        error: 'Failed to connect to Arc Testnet',
       }
     }
+  }
+}
 
 export default function DashboardPage() {
-  const { user, authenticated, ready, login } = usePrivy()
+  const { user, authenticated, ready, login, getAccessToken } = usePrivy()
   const [stats, setStats] = useState<DashboardStats>({
     usdcBalance: '0.00',
     usdBalance: '0.00',
@@ -248,6 +255,15 @@ export default function DashboardPage() {
   const [balanceUpdateTime, setBalanceUpdateTime] = useState<string>('')
   const [userEmail, setUserEmail] = useState<string | null>(null)
   const [pageLoaded, setPageLoaded] = useState(false)
+
+  // ✅ Admin state
+  const [adminState, setAdminState] = useState<AdminState>({
+    isAdmin: false,
+    isSuperAdmin: false,
+    permissions: [],
+    email: '',
+  })
+  const [adminStateLoaded, setAdminStateLoaded] = useState(false)
 
   // Events the user can scan (organiser or scanner)
   const [scanEvents, setScanEvents] = useState<any[]>([])
@@ -267,6 +283,43 @@ export default function DashboardPage() {
       setUserEmail(email)
     }
   }, [authenticated, ready, user])
+
+  // ✅ Fetch admin state (determines whether admin button shows)
+  useEffect(() => {
+    const checkAdmin = async () => {
+      if (!authenticated || !ready) {
+        setAdminStateLoaded(true)
+        return
+      }
+
+      try {
+        const token = await getAccessToken()
+        const res = await fetch('/api/admin/me', {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        })
+
+        if (!res.ok) {
+          setAdminStateLoaded(true)
+          return
+        }
+
+        const data = await res.json()
+        setAdminState({
+          isAdmin: !!data.isAdmin,
+          isSuperAdmin: !!data.isSuperAdmin,
+          permissions: data.permissions || [],
+          email: data.email || '',
+        })
+      } catch (err) {
+        // Non-blocking — user is simply not an admin
+        console.warn('Admin check failed (non-fatal):', err)
+      } finally {
+        setAdminStateLoaded(true)
+      }
+    }
+
+    checkAdmin()
+  }, [authenticated, ready, getAccessToken])
 
   // Fetch balance when wallet address changes - with debounce
   useEffect(() => {
@@ -629,6 +682,46 @@ export default function DashboardPage() {
         {/* Quick Actions Menu - Renders immediately */}
         <div className="space-y-3">
           <h2 className="text-lg font-semibold mb-4">Quick Actions</h2>
+
+          {/* ✅ ADMIN PANEL — Only visible to admins */}
+          {adminStateLoaded && adminState.isAdmin && (
+            <Link
+              href="/admin"
+              className="glass-card rounded-2xl p-4 block hover:scale-[1.02] transition-transform active:scale-[0.98] border-2 border-red-500/40 relative overflow-hidden"
+            >
+              {/* subtle red glow */}
+              <div className="absolute inset-0 bg-gradient-to-r from-red-500/5 to-transparent pointer-events-none" />
+              <div className="flex items-center justify-between relative">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-red-500/10 rounded-xl flex items-center justify-center">
+                    <div className="bg-red-600 text-white p-2 rounded-lg">
+                      <Shield className="h-5 w-5" />
+                    </div>
+                  </div>
+                  <div>
+                    <h3 className="font-semibold flex items-center gap-2">
+                      Admin Panel
+                      {adminState.isSuperAdmin && (
+                        <span className="text-[10px] bg-red-600 text-white px-2 py-0.5 rounded-full font-bold tracking-wide">
+                          SUPER ADMIN
+                        </span>
+                      )}
+                    </h3>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      Contract &amp; system administration
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="hidden sm:inline text-xs text-red-600 dark:text-red-400 bg-red-500/10 px-2 py-1 rounded-full font-medium">
+                    {adminState.permissions.length} permission{adminState.permissions.length !== 1 ? 's' : ''}
+                  </span>
+                  <ChevronRight className="h-5 w-5 text-gray-400" />
+                </div>
+              </div>
+            </Link>
+          )}
+
           {menuItems.map((item) => (
             <Link
               key={item.title}
@@ -744,7 +837,7 @@ export default function DashboardPage() {
                   <Users className="h-5 w-5" />
                 </div>
                 <p className="font-medium">Music Events</p>
-                <p className="text-xs opacity-75">Concerts & Festivals</p>
+                <p className="text-xs opacity-75">Concerts &amp; Festivals</p>
               </div>
             </Link>
             <Link 
@@ -756,7 +849,7 @@ export default function DashboardPage() {
                   <QrCode className="h-5 w-5" />
                 </div>
                 <p className="font-medium">Tech Conferences</p>
-                <p className="text-xs opacity-75">Networking & Learning</p>
+                <p className="text-xs opacity-75">Networking &amp; Learning</p>
               </div>
             </Link>
           </div>

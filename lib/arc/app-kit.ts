@@ -1,5 +1,5 @@
 // lib/arc/app-kit.ts
-"server only"
+'use client'
 
 import { AppKit } from '@circle-fin/app-kit';
 import { createViemAdapterFromProvider } from '@circle-fin/adapter-viem-v2';
@@ -35,7 +35,7 @@ export const ARC_CONFIG = {
   chainId: 5042002,
   chainIdHex: '0x4cef52',
   usdcDecimals: 6,
-  contractAddress: process.env.NEXT_PUBLIC_ARC_CONTRACT_ADDRESS || '0x084622e6970BBcBA510454C6145313c2993ED9E4',
+  contractAddress: process.env.NEXT_PUBLIC_ARC_CONTRACT_ADDRESS || '0x5eB4Ddc89F2FEEf5e43eFb636189953C99Ab048a',
   usdcAddress: process.env.NEXT_PUBLIC_ARC_USDC_ADDRESS || '0x3600000000000000000000000000000000000000',
   explorerUrl: 'https://testnet.arcscan.app',
 };
