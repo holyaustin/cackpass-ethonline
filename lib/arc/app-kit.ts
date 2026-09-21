@@ -4,6 +4,9 @@
 import { createWalletClient, createPublicClient, http, custom, parseUnits } from 'viem'
 import { defineChain } from 'viem'
 
+const RPC_URL =
+  process.env.NEXT_PUBLIC_ARC_MAINNET_RPC_URL || 'https://rpc.drpc.testnet.arc.io'
+
 // ✅ Define Arc Mainnet for Viem
 export const arcMainnet = defineChain({
   id: 5042,
@@ -14,13 +17,10 @@ export const arcMainnet = defineChain({
     decimals: 18,  // ✅ Native USDC uses 18 decimals internally
   },
   rpcUrls: {
-    default: {
-      http: [process.env.NEXT_PUBLIC_ARC_MAINNET_RPC_URL],
-    },
-    public: {
-      http: [process.env.NEXT_PUBLIC_ARC_MAINNET_RPC_URL],
-    },
+    default: { http: [RPC_URL] },
+    public: { http: [RPC_URL] },
   },
+
   blockExplorers: {
     default: { name: 'ArcScan', url: 'https://arcscan.app' },
   },

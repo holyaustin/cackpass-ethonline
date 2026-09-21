@@ -380,7 +380,7 @@ const BackendSignerSchema = new mongoose.Schema({
 
 // DiscountCode Schema
 const DiscountCodeSchema = new mongoose.Schema({
-  code: { type: String, required: true, uppercase: true, unique: true },
+  code: { type: String, required: true, uppercase: true },
   discountPercent: { type: Number, required: true, min: 0, max: 100 },
   maxUses: { type: Number, required: true, default: 1 },        // total tickets allowed
   usedCount: { type: Number, default: 0 },

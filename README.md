@@ -5,7 +5,7 @@
 - **Live demo:** https://cackpass-ethonline.vercel.app/
 - **Video walkthrough:** https://youtu.be/ZiU2gWjEjvU
 - **GitHub:** https://github.com/holyaustin/cackpass-ethonline
-
+- **Contract Live on Arc mainnet:** https://explorer.arc.io/address/0x91dC7a39f918a8ADD25D89F25F8dB4205Db067e0?tab=txs
 ---
 
 ## 🎯 Submission Summary (Continuity Track)

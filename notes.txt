@@ -1,0 +1,7 @@
+ df -h /
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sda6       259G  239G  6.7G  98% /
+
+$ df -h /
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sda6       259G  237G  8.8G  97% /

@@ -14,12 +14,14 @@ export async function POST(request: NextRequest) {
     const check = await shouldAnchor()
     if (!check.should) {
       await logAdminAction(ctx, 'anchor.run', 'anchors', { skipped: true, reason: check.reason })
-      return NextResponse.json({ success: true, anchored: false, reason: check.reason, ...check })
+      // Spread check first, then override — order matters
+      return NextResponse.json({ ...check, anchored: false })
     }
 
     const result = await runAnchor()
     await logAdminAction(ctx, 'anchor.run', result.batchId || 'anchors', result, result.success)
-    return NextResponse.json({ success: result.success, anchored: result.success, ...result })
+    // Spread result first, then override — order matters
+    return NextResponse.json({ ...result, anchored: result.success })
   } catch (err: any) {
     if (err instanceof AdminAuthError) return NextResponse.json({ error: err.message }, { status: err.status })
     return NextResponse.json({ error: err.message }, { status: 500 })
