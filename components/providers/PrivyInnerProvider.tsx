@@ -16,42 +16,23 @@ const queryClient = new QueryClient({
   },
 })
 
-// ✅ Arc Testnet Configuration
-const arcTestnet = {
-  id: 5042002,
-  name: 'Arc Testnet',
+// ✅ Arc Mainnet Configuration
+const arcMainnet = {
+  id: 5042,
+  name: 'Arc Mainnet',
   nativeCurrency: { 
     name: 'USD Coin', 
     symbol: 'USDC',  // ✅ USDC is the gas token on Arc
     decimals: 18       // ✅ Arc USDC uses 18 decimals
   },
   rpcUrls: {
-    default: { http: ['https://rpc.testnet.arc.network'] },
-    public: { http: ['https://rpc.testnet.arc.network'] },
-  },
-  blockExplorers: {
-    default: { name: 'ArcScan', url: 'https://testnet.arcscan.app' },
-  },
-  testnet: true,
-}
-
-// ✅ Arc Mainnet Configuration (placeholder — update when launched)
-const arcMainnet = {
-  id: 5042001,  // Will be updated when Mainnet launches
-  name: 'Arc',
-  nativeCurrency: { 
-    name: 'USD Coin', 
-    symbol: 'USDC',
-    decimals: 18
-  },
-  rpcUrls: {
-    default: { http: ['https://rpc.testnet.arc.network'] },
-    public: { http: ['https://rpc.testnet.arc.network'] },
+    default: { http: [process.env.NEXT_PUBLIC_ARC_MAINNET_RPC_URL] },
+    public: { http: [process.env.NEXT_PUBLIC_ARC_MAINNET_RPC_URL] },
   },
   blockExplorers: {
     default: { name: 'ArcScan', url: 'https://arcscan.app' },
   },
-  testnet: false,
+  mainnet: true,
 }
 
 export default function PrivyInnerProvider({ children }: { children: React.ReactNode }) {
@@ -73,10 +54,10 @@ export default function PrivyInnerProvider({ children }: { children: React.React
           termsAndConditionsUrl: '/terms',
           privacyPolicyUrl: '/privacy',
         },
-        // ✅ DEFAULT TO ARC TESTNET
-        defaultChain: arcTestnet,
-        // ✅ SUPPORT BOTH ARC TESTNET AND MAINNET + LEGACY
-        supportedChains: [arcTestnet, arcMainnet, mainnet],
+        // ✅ DEFAULT TO ARC Mainnet
+        defaultChain: arcMainnet,
+        // ✅ SUPPORT BOTH ARC Mainnet AND MAINNET + LEGACY
+        supportedChains: [arcMainnet, mainnet],
         mfa: { noPromptOnMfaRequired: false },
       }}
     >

@@ -4,16 +4,16 @@ import { ethers } from 'ethers'
 const ARC_CONFIG = {
   rpcUrl:
     process.env.NEXT_PUBLIC_ARC_RPC_URL ||
-    'https://rpc.testnet.arc.network',
+    'https://rpc.drpc.mainnet.arc.io',
   rpcUrlFallback:
     process.env.NEXT_PUBLIC_ARC_RPC_URL_FALLBACK ||
-    'https://arc-testnet.drpc.org',
+    'https://rpc.drpc.mainnet.arc.io',
   explorerUrl:
     process.env.NEXT_PUBLIC_ARC_EXPLORER_URL ||
-    'https://testnet.arcscan.app',
-  chainId: 5042002,
-  chainIdHex: '0x4cef52',
-  chainName: 'Arc Testnet',
+    'https://rpc.drpc.mainnet.arc.io',
+  chainId: 5042,
+  chainIdHex: '0x13b2',
+  chainName: 'Arc Mainnet',
   registryAddress:
     process.env.NEXT_PUBLIC_ARC_REGISTRY_ADDRESS || '',
   treasuryAddress:
@@ -24,7 +24,6 @@ const ARC_CONFIG = {
   usdcDecimals: 6,
   nativeDecimals: 18,
 } as const
-
 
 // ═══════════════════════════════════════════════════════════
 // ABI — matches CackPassArcRegistry
@@ -92,7 +91,7 @@ function getProvider() {
   const rpcUrl =
     ARC_CONFIG?.rpcUrl ||
     process.env.NEXT_PUBLIC_ARC_RPC_URL ||
-    'https://rpc.testnet.arc.network'
+    'https://rpc.mainnet.arc.io'
   console.log('🔗 [client.ts] Using RPC:', rpcUrl)
   return new ethers.JsonRpcProvider(rpcUrl)
 }

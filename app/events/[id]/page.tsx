@@ -316,6 +316,14 @@ function EventPageContent() {
   const walletAddress = getWalletAddress(user)
   const isLoggedIn = authenticated && ready
 
+  // ✅ Ensure Privy is loaded on this page so that ArcPaymentButton
+  // can call usePrivy / useWallets without crashing.
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('load-auth'))
+    }
+  }, [])
+
   useEffect(() => {
   // Load Flutterwave script only once
   if (!document.querySelector('script[src*="checkout.flutterwave.com/v3.js"]')) {

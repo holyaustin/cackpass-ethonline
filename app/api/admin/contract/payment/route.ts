@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
 
     const provider = new ethers.JsonRpcProvider(
-      process.env.NEXT_PUBLIC_ARC_RPC_URL || 'https://rpc.testnet.arc.network'
+      process.env.NEXT_PUBLIC_ARC_RPC_URL || 'https://rpc.mainnet.arc.io'
     )
     const contract = new ethers.Contract(
       process.env.NEXT_PUBLIC_ARC_REGISTRY_ADDRESS!,

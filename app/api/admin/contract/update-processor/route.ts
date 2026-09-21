@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
     if (!key) throw new Error('No signer key configured')
 
     const provider = new ethers.JsonRpcProvider(
-      process.env.NEXT_PUBLIC_ARC_RPC_URL || 'https://rpc.testnet.arc.network'
+      process.env.NEXT_PUBLIC_ARC_RPC_URL || 'https://rpc.mainnet.arc.io'
     )
     const wallet = new ethers.Wallet(key, provider)
     const contract = new ethers.Contract(

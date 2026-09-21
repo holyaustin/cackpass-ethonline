@@ -1,111 +1,86 @@
 // lib/arc/app-kit.ts
 'use client'
 
-import { AppKit } from '@circle-fin/app-kit';
-import { createViemAdapterFromProvider } from '@circle-fin/adapter-viem-v2';
-import { createPublicClient, http } from 'viem';
-import { defineChain } from 'viem';
+import { createWalletClient, createPublicClient, http, custom, parseUnits } from 'viem'
+import { defineChain } from 'viem'
 
-// ✅ Define Arc Testnet chain for viem
-export const arcTestnet = defineChain({
-  id: 5042002,
-  name: 'Arc Testnet',
+// ✅ Define Arc Mainnet for Viem
+export const arcMainnet = defineChain({
+  id: 5042,
+  name: 'Arc',
   nativeCurrency: {
     name: 'USD Coin',
     symbol: 'USDC',
-    decimals: 6,
+    decimals: 18,  // ✅ Native USDC uses 18 decimals internally
   },
   rpcUrls: {
     default: {
-      http: ['https://rpc.testnet.arc.network'],
+      http: [process.env.NEXT_PUBLIC_ARC_MAINNET_RPC_URL],
     },
     public: {
-      http: ['https://arc-testnet.drpc.org'],  // ✅ dRPC fallback for browser
+      http: [process.env.NEXT_PUBLIC_ARC_MAINNET_RPC_URL],
     },
   },
   blockExplorers: {
-    default: { name: 'ArcScan', url: 'https://testnet.arcscan.app' },
+    default: { name: 'ArcScan', url: 'https://arcscan.app' },
   },
-  testnet: true,
-});
-
-export const ARC_CONFIG = {
-  rpcUrl: process.env.NEXT_PUBLIC_ARC_RPC_URL || 'https://rpc.testnet.arc.network',
-  rpcUrlFallback: process.env.NEXT_PUBLIC_ARC_RPC_URL_FALLBACK || 'https://arc-testnet.drpc.org',
-  chainId: 5042002,
-  chainIdHex: '0x4cef52',
-  usdcDecimals: 6,
-  contractAddress: process.env.NEXT_PUBLIC_ARC_CONTRACT_ADDRESS || '0x5eB4Ddc89F2FEEf5e43eFb636189953C99Ab048a',
-  usdcAddress: process.env.NEXT_PUBLIC_ARC_USDC_ADDRESS || '0x3600000000000000000000000000000000000000',
-  explorerUrl: 'https://testnet.arcscan.app',
-};
-
-const ARC_TESTNET_CHAIN = 'Arc_Testnet' as const;
+  testnet: false,
+})
 
 /**
- * Get a working public client for Arc Testnet.
- * Tries primary RPC first; falls back to dRPC if primary fails.
- */
-export function getArcPublicClient() {
-  // ✅ Use dRPC for browser (works reliably)
-  // Primary endpoint may not support CORS in all browsers
-  const rpcUrl = typeof window !== 'undefined'
-    ? ARC_CONFIG.rpcUrlFallback    // Browser: use dRPC
-    : ARC_CONFIG.rpcUrl;            // Server: use primary
-
-  return createPublicClient({
-    chain: arcTestnet,
-    transport: http(rpcUrl, {
-      timeout: 30000,
-      retryCount: 3,
-      retryDelay: 1000,
-    }),
-  });
-}
-
-/**
- * Send USDC via App Kits with a working RPC
+ * Send USDC from the user's Privy embedded wallet to the treasury.
+ *
+ * Uses a direct native transfer via Viem — no App Kit SDK required.
+ * On Arc, USDC is the native gas token, so we just send `value` directly.
+ *
+ * @param provider - The EIP-1193 provider from the user's Privy embedded wallet
+ * @param recipientAddress - The treasury wallet address (EOA)
+ * @param amount - The amount of USDC to send (human-readable, e.g., "0.50")
+ * @returns An object with txHash and explorerUrl
  */
 export async function sendUSDCWithAppKit(
   provider: any,
-  to: string,
+  recipientAddress: string,
   amount: string
 ) {
   if (!provider) {
-    throw new Error('Provider is required');
+    throw new Error('Provider is required')
   }
 
-  // ✅ Determine which RPC to use based on environment
-  const rpcUrl = typeof window !== 'undefined'
-    ? ARC_CONFIG.rpcUrlFallback    // Browser: dRPC (CORS-friendly)
-    : ARC_CONFIG.rpcUrl;            // Server: primary
+  // 1. Create a wallet client from the user's wallet provider
+  const walletClient = createWalletClient({
+    chain: arcMainnet,
+    transport: custom(provider),
+  })
 
-  console.log('🔗 Using RPC for App Kit:', rpcUrl);
+  // 2. Get the user's address from the wallet
+  const [account] = await walletClient.getAddresses()
 
-  // ✅ Create adapter with custom public client (uses working RPC)
-  const adapter = await createViemAdapterFromProvider({
-    provider,
-    getPublicClient: () => createPublicClient({
-      chain: arcTestnet,
-      transport: http(rpcUrl, {
-        timeout: 30000,
-        retryCount: 3,
-        retryDelay: 1000,
-      }),
-    }),
-  });
+  // 3. Convert the amount to wei (18 decimals for native USDC on Arc)
+  // This is critical — native USDC uses 18 decimals, not 6.
+  const amountWei = parseUnits(amount, 18)
 
-  const kit = new AppKit();
-
-  const result = await kit.send({
-    from: {
-      adapter,
-      chain: ARC_TESTNET_CHAIN,
-    },
-    to,
+  console.log('💸 Sending native USDC:', {
+    from: account,
+    to: recipientAddress,
     amount,
-    token: 'USDC',
-  });
+    amountWei: amountWei.toString(),
+  })
 
-  return result;
+  // 4. Send the native transfer
+  const txHash = await walletClient.sendTransaction({
+    account,
+    to: recipientAddress as `0x${string}`,
+    value: amountWei,
+  })
+
+  console.log('✅ Transaction sent:', txHash)
+
+  // 5. Return in the same shape App Kit would have returned
+  return {
+    name: 'transfer',
+    state: 'success' as const,
+    txHash,
+    explorerUrl: `https://arcscan.app/tx/${txHash}`,
+  }
 }

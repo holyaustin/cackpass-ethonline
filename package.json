@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@circle-fin/adapter-viem-v2": "^1.17.1",
-    "@circle-fin/app-kit": "^1.14.0",
+    "@circle-fin/app-kit": "^1.15.2",
     "@ducanh2912/next-pwa": "^10.2.9",
     "@hookform/resolvers": "^5.2.2",
     "@paystack/paystack-sdk": "^1.0.1",

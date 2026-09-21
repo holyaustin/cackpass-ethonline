@@ -503,7 +503,7 @@ function ContractPanel({
             </div>
             <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-xl">
               <div className="text-xs text-gray-500 mb-1">Network</div>
-              <div className="font-semibold">Arc Testnet</div>
+              <div className="font-semibold">Arc Mainnet</div>
             </div>
           </div>
 
@@ -522,7 +522,7 @@ function ContractPanel({
               </button>
             )}
             {status?.address && (
-              <a href={`https://testnet.arcscan.app/address/${status.address}`} target="_blank" rel="noreferrer"
+              <a href={`https://explorer.arc.io/address/${status.address}`} target="_blank" rel="noreferrer"
                 className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-sm hover:bg-gray-50 dark:hover:bg-gray-800">
                 View on ArcScan ↗
               </a>

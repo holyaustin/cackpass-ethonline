@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     await requireAdmin(request, PERMISSIONS.VIEW_ANCHORS)
 
     const address = process.env.NEXT_PUBLIC_ARC_REGISTRY_ADDRESS || ''
-    const rpcUrl = process.env.NEXT_PUBLIC_ARC_RPC_URL || 'https://rpc.testnet.arc.network'
+    const rpcUrl = process.env.NEXT_PUBLIC_ARC_RPC_URL || 'https://rpc.mainnet.arc.io'
 
     if (!address) {
       return NextResponse.json({

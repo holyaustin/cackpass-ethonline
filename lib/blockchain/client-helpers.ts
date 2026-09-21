@@ -70,9 +70,9 @@ export interface EventData {
 
 // ============ CONSTANTS ============
 const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CACKPASS_CORE_ADDRESS!
-const RPC_URL = process.env.NEXT_PUBLIC_ARC_RPC_URL || 'https://rpc.testnet.arc.network'
+const RPC_URL = process.env.NEXT_PUBLIC_ARC_RPC_URL || 'https://rpc.mainnet.arc.io'
 // Add payment receiver address
-const PAYMENT_RECEIVER_ADDRESS = process.env.NEXT_PUBLIC_PAYMENT_RECEIVER_ADDRESS || '0x2c3b2b2325610a6814f2f822d0bf4dab8cf16e16'
+const PAYMENT_RECEIVER_ADDRESS = process.env.NEXT_PUBLIC_TREASURY_WALLET || '0x2fDC2261285fAe92e8151e10F47075c80Ea43cB1'
 
 // ✅ ADDED: Module cache for ethers to avoid multiple dynamic imports
 let ethersModuleCache: any = null;
@@ -736,7 +736,7 @@ export function generateTicketQRData(
  * Get transaction explorer URL
  */
 export function getTransactionExplorerUrl(txHash: string): string {
-  const explorerBase = 'https://testnet.arcscan.app'
+  const explorerBase = 'https://explorer.arc.io/'
   return `${explorerBase}/tx/${txHash}`
 }
 
@@ -744,7 +744,7 @@ export function getTransactionExplorerUrl(txHash: string): string {
  * Get address explorer URL
  */
 export function getAddressExplorerUrl(address: string): string {
-  const explorerBase = 'https://testnet.arcscan.app'
+  const explorerBase = 'https://explorer.arc.io/'
   return `${explorerBase}/address/${address}`
 }
 

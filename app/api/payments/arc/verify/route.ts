@@ -36,8 +36,8 @@ const ERC20_TRANSFER_TOPIC =
 async function getArcProvider(): Promise<ethers.JsonRpcProvider> {
   const rpcUrls = [
     process.env.NEXT_PUBLIC_ARC_RPC_URL,
-    'https://rpc.testnet.arc.network',
-    'https://arc-testnet.drpc.org',
+    process.env.NEXT_PUBLIC_ARC_MAINNET_RPC_URL,
+    process.env.NEXT_PUBLIC_ARC_MAINNET_RPC_URL,
   ].filter(Boolean) as string[]
 
   for (const url of rpcUrls) {

@@ -371,7 +371,7 @@ async function handleGaslessMinting(
     // REAL GASLESS MINTING ON BLOCKCHAIN with payment to receiver
     try {
       // Setup blockchain connection
-      const rpcUrl = process.env.NEXT_PUBLIC_ARC_RPC_URL || 'https://rpc.testnet.arc.network'
+      const rpcUrl = process.env.NEXT_PUBLIC_ARC_RPC_URL || 'https://rpc.mainnet.arc.io'
       const provider = new ethers.JsonRpcProvider(rpcUrl)
       const wallet = new ethers.Wallet(process.env.GASLESS_PRIVATE_KEY, provider)
       
@@ -628,7 +628,7 @@ async function mintOnBlockchain(eventId: number, recipient: string, quantity: nu
     return
   }
 
-  const rpcUrl = process.env.NEXT_PUBLIC_ARC_RPC_URL || 'https://rpc.testnet.arc.network'
+  const rpcUrl = process.env.NEXT_PUBLIC_ARC_RPC_URL || 'https://rpc.mainnet.arc.io'
   const provider = new ethers.JsonRpcProvider(rpcUrl)
   const wallet = new ethers.Wallet(process.env.GASLESS_PRIVATE_KEY, provider)
   

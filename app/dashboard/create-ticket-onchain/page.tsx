@@ -35,12 +35,12 @@ const loadEthers = async () => {
   return ethersModule;
 };
 
-const ARC_TESTNET_CONFIG = {
-  CHAIN_ID: 5042002,
-  RPC_URL: 'https://rpc.testnet.arc.network',
-  EXPLORER_URL: 'https://testnet.arcscan.app',
+const ARC_MAINNET_CONFIG = {
+  CHAIN_ID: 5042,
+  RPC_URL: 'https://rpc.mainnet.arc.io',
+  EXPLORER_URL: 'https://explorer.arc.io/',
   NATIVE_CURRENCY: 'USDC',
-  CHAIN_NAME: 'Arc Testnet'
+  CHAIN_NAME: 'Arc Mainnet'
 }
 
 // Category options with icons

@@ -19,14 +19,14 @@ const LoadingSpinner = dynamic(() =>
 )
 
 // ============================================
-// ✅ ARC TESTNET CONFIGURATION
+// ✅ ARC MAINNET CONFIGURATION
 // ============================================
 const ARC_CONFIG = {
-  RPC_URL: 'https://rpc.testnet.arc.network',
-  RPC_URL_FALLBACK: 'https://arc-testnet.drpc.org',
-  EXPLORER_URL: 'https://testnet.arcscan.app',
-  CHAIN_ID: 5042002,
-  CHAIN_ID_HEX: '0x4cef52',
+  RPC_URL: process.env.NEXT_PUBLIC_ARC_MAINNET_RPC_URL,
+  RPC_URL_FALLBACK: 'https://rpc.mainnet.arc.io',
+  EXPLORER_URL: 'https://arcscan.app',
+  CHAIN_ID: 5042,
+  CHAIN_ID_HEX: '0x13b2',
   NATIVE_CURRENCY: {
     name: 'USD Coin',
     symbol: 'USDC',
@@ -34,7 +34,7 @@ const ARC_CONFIG = {
   }
 }
 
-// ✅ Arc Testnet USDC
+// ✅ Arc Mainnet USDC
 const USDC_CONTRACT_ADDRESS = '0x3600000000000000000000000000000000000000'
 const USDC_DECIMALS = 18
 
@@ -147,7 +147,7 @@ function getWalletAddressFromUser(user: any): string | null {
   return null
 }
 
-// Function to fetch native USDC balance from Arc Testnet
+// Function to fetch native USDC balance from Arc Mainnet
 // On Arc, USDC is the native gas token — read it via provider.getBalance()
 async function fetchUSDCBalance(walletAddress: string): Promise<{
   usdcBalance: string;
@@ -164,7 +164,7 @@ async function fetchUSDCBalance(walletAddress: string): Promise<{
       ARC_CONFIG.RPC_URL,
       {
         chainId: ARC_CONFIG.CHAIN_ID,
-        name: 'arc-testnet',
+        name: 'arc-mainnet',
       },
       {
         staticNetwork: true,
@@ -173,7 +173,7 @@ async function fetchUSDCBalance(walletAddress: string): Promise<{
       }
     )
 
-    // ✅ Native balance — USDC is the gas token on Arc Testnet
+    // ✅ Native balance — USDC is the gas token on Arc Mainnet
     // We use 18 decimals because the RPC encodes native balances in wei
     // (1 USDC = 1e18 wei on Arc's representation)
     const rawBalance = await provider.getBalance(walletAddress)
@@ -207,7 +207,7 @@ async function fetchUSDCBalance(walletAddress: string): Promise<{
         ARC_CONFIG.RPC_URL_FALLBACK,
         {
           chainId: ARC_CONFIG.CHAIN_ID,
-          name: 'arc-testnet',
+          name: 'arc-mainnet',
         },
         {
           staticNetwork: true,
@@ -234,7 +234,7 @@ async function fetchUSDCBalance(walletAddress: string): Promise<{
         usdcBalance: '0.000000',
         usdBalance: '0.000000',
         success: false,
-        error: 'Failed to connect to Arc Testnet',
+        error: 'Failed to connect to Arc Mainnet',
       }
     }
   }
@@ -530,7 +530,7 @@ export default function DashboardPage() {
       count: null,
     },
     {
-      title: 'Fund Wallet (Privy)',
+      title: 'Fund Wallet',
       description: 'Add funds and manage wallet',
       icon: <CreditCard className="h-5 w-5" />,
       href: '/dashboard/wallet',
@@ -670,7 +670,7 @@ export default function DashboardPage() {
                 className="flex-1 py-3 bg-white/20 text-white rounded-xl text-center hover:bg-white/30 transition-colors flex items-center justify-center gap-2"
               >
                 <CreditCard className="h-4 w-4" />
-                Fund Wallet (Privy)
+                Fund Wallet
               </Link>
             </div>
           </div>

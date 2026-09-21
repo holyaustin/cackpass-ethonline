@@ -1,5 +1,5 @@
 // app/dashboard/wallet/page.tsx
-// COMPLETE ARC TESTNET + BASE MAINNET PRIVY FIAT ONRAMP VERSION
+// COMPLETE ARC MAINNET
 
 'use client'
 
@@ -46,18 +46,18 @@ import QRCode from 'qrcode'
 const ARC_CONFIG = {
   RPC_URL:
     typeof window !== 'undefined'
-      ? 'https://arc-testnet.drpc.org'
-      : 'https://rpc.testnet.arc.network',
+      ? process.env.NEXT_PUBLIC_ARC_MAINNET_RPC_URL
+      : process.env.NEXT_PUBLIC_ARC_MAINNET_RPC_URL,
 
-  RPC_URL_FALLBACK: 'https://rpc.testnet.arc.network',
+  RPC_URL_FALLBACK: 'https://rpc.drpc.mainnet.arc.io',
 
-  EXPLORER_URL: 'https://testnet.arcscan.app',
+  EXPLORER_URL: 'https://arcscan.app',
 
-  BLOCKSCOUT_API: 'https://testnet.arcscan.app/api/v2',
+  BLOCKSCOUT_API: 'https://arcscan.app/api/v2',
 
-  CHAIN_ID: 5042002,
+  CHAIN_ID: 5042,
 
-  CAIP2_CHAIN_ID: 'eip155:5042002' as const,
+  CAIP2_CHAIN_ID: 'eip155:5042' as const,
 
   NATIVE_CURRENCY: {
     name: 'USD Coin',
@@ -66,7 +66,7 @@ const ARC_CONFIG = {
   },
 } as const
 
-// Arc Testnet USDC
+// Arc Mainnet USDC
 const ARC_USDC_CONTRACT_ADDRESS =
   '0x3600000000000000000000000000000000000000'
 
@@ -77,32 +77,18 @@ const USDC_DECIMALS = 6
 const USDC_CONTRACT_ADDRESS = ARC_USDC_CONTRACT_ADDRESS
 
 // ============================================================
-// BASE MAINNET — PRIVY FIAT ONRAMP ONLY
+// ARC MAINNET — PRIVY FIAT ONRAMP ONLY
 // ============================================================
 
-const BASE_ONRAMP_CONFIG = {
-  NAME: 'Base Mainnet',
-  CHAIN_ID: 8453,
+const ARC_ONRAMP_CONFIG = {
+  NAME: 'Arc Mainnet',
+  CHAIN_ID: 5042,
   CAIP2_CHAIN_ID: 'eip155:8453' as const,
-  RPC_URL: 'https://mainnet.base.org',
+  RPC_URL: process.env.NEXT_PUBLIC_ARC_MAINNET_RPC_URL,
   USDC_CONTRACT_ADDRESS:
-    '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+    '0x3600000000000000000000000000000000000000',
   USDC_DECIMALS: 6,
 } as const
-
-// ============================================================
-// PRIVY FIAT ONRAMP CONFIG
-// ============================================================
-
-const PRIVY_ONRAMP_CONFIG: {
-  DEFAULT_FIAT: 'usd' | 'eur' | 'gbp'
-  FIAT_ASSETS: ('usd' | 'eur' | 'gbp')[]
-  DEFAULT_AMOUNT: string
-} = {
-  DEFAULT_FIAT: 'usd',
-  FIAT_ASSETS: ['usd', 'eur', 'gbp'],
-  DEFAULT_AMOUNT: '20',
-}
 
 // ============================================================
 // EXTERNAL ONRAMP SERVICES
@@ -363,7 +349,7 @@ async function rateLimitedFetch(
 //
 // THIS FUNCTION ONLY READS ARC TESTNET.
 //
-// It must never use the Base USDC contract.
+// It must never use the ARC USDC contract.
 //
 
 async function fetchUSDCBalance(
@@ -443,14 +429,14 @@ async function fetchUSDCBalance(
 }
 
 // ============================================
-// FETCH BASE MAINNET USDC BALANCE
+// FETCH ARC MAINNET USDC BALANCE
 // ============================================
 //
 // This is deliberately separate from the Arc balance.
 //
 // If a user purchases USDC through Privy:
 //
-// Privy -> Base Mainnet -> Same wallet address
+// Privy -> ARC Mainnet -> Same wallet address
 //
 // It will appear here, NOT in the Arc balance.
 //
@@ -464,7 +450,7 @@ async function fetchBaseUSDCBalance(
 }> {
   try {
     console.log(
-      '💳 Fetching Base Mainnet USDC balance for:',
+      '💳 Fetching Arc Mainnet USDC balance for:',
       walletAddress
     )
 
@@ -472,10 +458,10 @@ async function fetchBaseUSDCBalance(
 
     const provider =
       new ethers.JsonRpcProvider(
-        BASE_ONRAMP_CONFIG.RPC_URL,
+        ARC_ONRAMP_CONFIG.RPC_URL,
         {
-          chainId: BASE_ONRAMP_CONFIG.CHAIN_ID,
-          name: 'base',
+          chainId: ARC_ONRAMP_CONFIG.CHAIN_ID,
+          name: 'Arc',
         },
         {
           staticNetwork: true,
@@ -486,7 +472,7 @@ async function fetchBaseUSDCBalance(
 
     const usdcContract =
       new ethers.Contract(
-        BASE_ONRAMP_CONFIG.USDC_CONTRACT_ADDRESS,
+        ARC_ONRAMP_CONFIG.USDC_CONTRACT_ADDRESS,
         USDC_ABI,
         provider
       )
@@ -497,14 +483,14 @@ async function fetchBaseUSDCBalance(
     const usdcBalance =
       ethers.formatUnits(
         rawBalance,
-        BASE_ONRAMP_CONFIG.USDC_DECIMALS
+        ARC_ONRAMP_CONFIG.USDC_DECIMALS
       )
 
     const formatted =
       parseFloat(usdcBalance).toFixed(6)
 
     console.log(
-      '✅ USDC balance on Base:',
+      '✅ USDC balance on Arc:',
       formatted
     )
 
@@ -514,7 +500,7 @@ async function fetchBaseUSDCBalance(
     }
   } catch (error: any) {
     console.error(
-      '❌ Error fetching Base USDC balance:',
+      '❌ Error fetching ARC USDC balance:',
       error.message
     )
 
@@ -523,7 +509,7 @@ async function fetchBaseUSDCBalance(
       success: false,
       error:
         error.message ||
-        'Failed to fetch Base USDC balance',
+        'Failed to fetch ARC USDC balance',
     }
   }
 }
@@ -964,7 +950,7 @@ export default function WalletPage() {
     )
 
   // ==========================================
-  // FETCH BASE BALANCE
+  // FETCH ARC BALANCE
   // ==========================================
 
   const fetchBaseBalance =
@@ -997,12 +983,12 @@ export default function WalletPage() {
               isLoading: false,
               error:
                 result.error ||
-                'Unable to fetch Base balance',
+                'Unable to fetch ARC balance',
             })
           }
         } catch (error: any) {
           console.error(
-            '❌ Failed to fetch Base balance:',
+            '❌ Failed to fetch ARC balance:',
             error
           )
 
@@ -1011,7 +997,7 @@ export default function WalletPage() {
             isLoading: false,
             error:
               error?.message ||
-              'Unable to fetch Base balance',
+              'Unable to fetch ARC balance',
           })
         }
       },
@@ -1249,16 +1235,16 @@ export default function WalletPage() {
   //
   // IMPORTANT:
   //
-  // The onramp destination is BASE MAINNET.
+  // The onramp destination is ARC MAINNET.
   //
   // It does NOT switch the application's
-  // default network to Base.
+  // default network to ARC.
   //
   // Arc remains the application's normal
   // wallet network.
   //
   // Privy sends the purchased USDC to the
-  // same wallet address on Base.
+  // same wallet address on ARC.
   //
 
 const handlePrivyFunding = async () => {
@@ -1281,23 +1267,23 @@ const handlePrivyFunding = async () => {
     // The application remains on Arc Testnet.
     //
     // Privy onramp is intentionally configured to purchase
-    // USDC on Base Mainnet.
+    // USDC on ARC Mainnet.
     //
-    // The resulting Base USDC is NOT automatically bridged
+    // The resulting ARC USDC is NOT automatically bridged
     // to Arc Testnet.
 
     console.log(
       '🌐 Onramp destination:',
-      BASE_ONRAMP_CONFIG.CAIP2_CHAIN_ID
+      ARC_ONRAMP_CONFIG.CAIP2_CHAIN_ID
     )
 
     console.log(
-      '🪙 Onramp asset: USDC on Base Mainnet'
+      '🪙 Onramp asset: USDC on ARC Mainnet'
     )
 
     console.log(
-      '📍 Base USDC contract:',
-      BASE_ONRAMP_CONFIG.USDC_CONTRACT_ADDRESS
+      '📍 ARC USDC contract:',
+      ARC_ONRAMP_CONFIG.USDC_CONTRACT_ADDRESS
     )
 
     const result = await fund({
@@ -1313,8 +1299,8 @@ const handlePrivyFunding = async () => {
         asset: 'usdc',
 
         // IMPORTANT:
-        // Fiat onramp goes to Base Mainnet.
-        chain: BASE_ONRAMP_CONFIG.CAIP2_CHAIN_ID,
+        // Fiat onramp goes to ARC Mainnet.
+        chain: ARC_ONRAMP_CONFIG.CAIP2_CHAIN_ID,
 
         // Same Privy embedded wallet address.
         address: walletAddress,
@@ -1330,8 +1316,8 @@ const handlePrivyFunding = async () => {
 
     // Do NOT refresh Arc balance here.
     //
-    // The purchase is on Base Mainnet, therefore it should
-    // not be represented as an Arc Testnet balance increase.
+    // The purchase is on ARC Mainnet, therefore it should
+    // not be represented as an Arc balance increase.
 
     const resultStatus =
       typeof result === 'object' &&
@@ -1348,7 +1334,7 @@ const handlePrivyFunding = async () => {
       resultStatus === 'completed'
     ) {
       toast.success(
-        'Purchase confirmed. USDC is being delivered to your wallet on Base Mainnet.'
+        'Purchase confirmed. USDC is being delivered to your wallet on ARC Mainnet.'
       )
 
       return
@@ -1360,14 +1346,14 @@ const handlePrivyFunding = async () => {
       resultStatus === 'processing'
     ) {
       toast.success(
-        'Purchase submitted. USDC will appear on Base Mainnet once the provider completes the purchase.'
+        'Purchase submitted. USDC will appear on ARC Mainnet once the provider completes the purchase.'
       )
 
       return
     }
 
     toast.success(
-      'Privy onramp opened. Complete the purchase to receive USDC on Base Mainnet.'
+      'Privy onramp opened. Complete the purchase to receive USDC on ARC Mainnet.'
     )
   } catch (error: any) {
     console.error('❌ Privy fiat onramp error:', error)
@@ -1471,7 +1457,7 @@ const handlePrivyFunding = async () => {
         )
 
         console.log(
-          '🌐 Target chain: Arc Testnet (Chain ID: 5042002)'
+          '🌐 Target chain: Arc Testnet (Chain ID: 5042)'
         )
 
         // ========================================
@@ -1915,7 +1901,7 @@ const handlePrivyFunding = async () => {
                   <div className="flex items-center gap-3 mb-2">
 
                     <p className="text-sm opacity-90">
-                      Arc Testnet Balance
+                      Arc Mainnet Balance
                     </p>
 
                     <button
@@ -2083,12 +2069,12 @@ const handlePrivyFunding = async () => {
                 </p>
 
                 <p className="text-xs text-text-light mt-2">
-                  Chain ID: 5042002
+                  Chain ID: 5042
                 </p>
 
               </div>
 
-              {/* BASE */}
+              {/* ARC */}
 
               <div className="card rounded-2xl p-5 border border-blue-500/20">
 
@@ -2100,7 +2086,7 @@ const handlePrivyFunding = async () => {
                     </p>
 
                     <h3 className="font-bold">
-                      Base Mainnet
+                      ARC Mainnet
                     </h3>
                   </div>
 
@@ -2140,11 +2126,11 @@ const handlePrivyFunding = async () => {
                 <div className="text-sm">
 
                   <p className="font-semibold text-blue-800 dark:text-blue-300">
-                    Arc and Base are separate networks
+                    Arc and ARC are separate networks
                   </p>
 
                   <p className="text-blue-700 dark:text-blue-400 mt-1">
-                    Your normal CACK-pass wallet activity uses Arc Testnet. Privy fiat purchases are delivered as USDC on Base Mainnet. USDC purchased on Base will not automatically appear in your Arc balance.
+                    Your normal CACK-pass wallet activity uses Arc Testnet. Privy fiat purchases are delivered as USDC on ARC Mainnet. USDC purchased on ARC will not automatically appear in your Arc balance.
                   </p>
 
                 </div>
@@ -2798,7 +2784,7 @@ function ReceiveTab({
                     </span>
 
                     <span className="font-mono">
-                      5042002
+                      5042
                     </span>
                   </div>
 
@@ -2819,7 +2805,7 @@ function ReceiveTab({
                     </span>
 
                     <a
-                      href={`https://testnet.arcscan.app/token/${ARC_USDC_CONTRACT_ADDRESS}`}
+                      href={`https://explorer.arc.io/token/${ARC_USDC_CONTRACT_ADDRESS}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-primary hover:underline text-xs truncate max-w-[150px]"
@@ -2864,7 +2850,7 @@ function ReceiveTab({
             </h3>
 
             <p className="text-text-light mb-6">
-              Fund your wallet with USDC. Arc Testnet remains the default network, while Privy fiat purchases are delivered on Base Mainnet.
+              Fund your wallet with USDC. Arc Testnet remains the default network, while Privy fiat purchases are delivered on ARC Mainnet.
             </p>
 
             <div className="space-y-4">
@@ -2892,13 +2878,13 @@ function ReceiveTab({
                       </h4>
 
                       <span className="text-[10px] uppercase tracking-wide px-2 py-1 rounded-full bg-primary/10 text-primary font-semibold">
-                        Base Mainnet
+                        ARC Mainnet
                       </span>
 
                     </div>
 
                     <p className="text-sm text-text-light mb-3">
-                      Buy USDC with your card or supported payment method through Privy. Purchased USDC is delivered directly to your embedded wallet on Base Mainnet.
+                      Buy USDC with your card or supported payment method through Privy. Purchased USDC is delivered directly to your embedded wallet on ARC Mainnet.
                     </p>
 
                     <div className="flex flex-wrap gap-2 mb-4">
@@ -2948,7 +2934,7 @@ function ReceiveTab({
                     </button>
 
                     <p className="text-[11px] text-text-light mt-3 text-center">
-                      Powered by Privy. USDC purchased through this option is delivered on Base Mainnet.
+                      Powered by Privy. USDC purchased through this option is delivered on ARC Mainnet.
                     </p>
 
                   </div>
@@ -2957,7 +2943,7 @@ function ReceiveTab({
 
               </div>
 
-              {/* BASE BALANCE */}
+              {/* ARC BALANCE */}
 
               <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800">
 
@@ -2970,7 +2956,7 @@ function ReceiveTab({
                     <div className="flex items-center justify-between">
 
                       <h4 className="font-semibold text-blue-800 dark:text-blue-300">
-                        Base Mainnet USDC
+                        ARC Mainnet USDC
                       </h4>
 
                       <span className="font-bold text-blue-800 dark:text-blue-300">
@@ -2997,7 +2983,7 @@ function ReceiveTab({
 
               {/* ================================= */}
               {/* CIRCLE FAUCET */}
-              {/* ================================= */}
+              {/* ================================= 
 
               <div className="card rounded-2xl p-5 hover:shadow-md transition-shadow">
 
@@ -3039,6 +3025,7 @@ function ReceiveTab({
                 </div>
 
               </div>
+                */}
 
               {/* ================================= */}
               {/* RAMP NOW */}
@@ -3098,27 +3085,11 @@ function ReceiveTab({
               <ul className="text-sm text-text-light space-y-1">
 
                 <li>
-                  • Arc Testnet is the default CACK-pass network
+                  • Arc Mainnet is the default CACK-pass network
                 </li>
 
                 <li>
                   • Arc Testnet gas is paid in USDC
-                </li>
-
-                <li>
-                  • Privy fiat onramp deposits USDC on Base Mainnet
-                </li>
-
-                <li>
-                  • Base Mainnet transactions require ETH for gas
-                </li>
-
-                <li>
-                  • Base USDC and Arc USDC are separate network balances
-                </li>
-
-                <li>
-                  • Use the Circle faucet for Arc Testnet USDC
                 </li>
 
                 <li>

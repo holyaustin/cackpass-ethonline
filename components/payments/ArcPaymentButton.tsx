@@ -9,7 +9,7 @@ import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { sendUSDCWithAppKit } from '@/lib/arc/app-kit';
 
 const NGN_PER_USDC = Number(process.env.NEXT_PUBLIC_NGN_PER_USDC) || 1350
-const PROCESSING_MARKUP_USDC = Number(process.env.NEXT_PUBLIC_PROCESSING_MARKUP_USDC) || 0.02
+const PROCESSING_MARKUP_USDC = Number(process.env.NEXT_PUBLIC_PROCESSING_MARKUP_USDC) || 0.04
 
 interface ArcPaymentButtonProps {
   eventId: string;

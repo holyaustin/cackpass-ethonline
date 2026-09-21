@@ -6,9 +6,9 @@ import { connectDB } from '@/lib/database/connection'
 import { TicketType, Event } from '@/lib/database/models'
 
 const ARC_TESTNET_CONFIG = {
-  CHAIN_ID: 5042002,
-  RPC_URL: 'https://rpc.testnet.arc.network',
-  EXPLORER_URL: 'https://testnet.arcscan.app',
+  CHAIN_ID: 5042,
+  RPC_URL: 'https://rpc.mainnet.arc.io',
+  EXPLORER_URL: 'https://explorer.arc.io/',
   GAS_LIMIT: 500000,
   NATIVE_CURRENCY: 'USDC'
 } as const
