@@ -5,3 +5,11 @@ Filesystem      Size  Used Avail Use% Mounted on
 $ df -h /
 Filesystem      Size  Used Avail Use% Mounted on
 /dev/sda6       259G  237G  8.8G  97% /
+
+df -h /
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sda6       259G  229G   17G  94% /
+
+ df -h /
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sda6       259G  183G   63G  75% /

@@ -7,25 +7,21 @@ import { usePrivy } from '@privy-io/react-auth'
 import {
   Shield, ArrowLeft, Loader2, Activity, ShieldOff, ShieldCheck,
   Users, FileText, Play, RefreshCw, Database, CheckCircle, XCircle,
-  LogIn, BarChart3, TrendingUp, DollarSign, Ticket, Save,
+  LogIn, BarChart3, TrendingUp, DollarSign, Ticket, Save, ChevronRight,
 } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 
-const PERMISSIONS = {
-  VIEW_ANCHORS: 'view:anchors',
-  RUN_ANCHOR: 'run:anchor',
-  VIEW_PAYMENTS: 'view:payments',
-  PAUSE_CONTRACT: 'contract:pause',
-  UNPAUSE_CONTRACT: 'contract:unpause',
-  UPDATE_OWNER: 'contract:update-owner',
-  UPDATE_PROCESSOR: 'contract:update-processor',
-  MANAGE_ADMINS: 'admins:manage',
-  VIEW_AUDIT_LOG: 'audit:view',
-  REINDEX_DB: 'db:reindex',
-  VIEW_ANALYTICS: 'view:analytics',
-} as const
+import {
+  PERMISSIONS,
+  PERMISSION_LABELS,
+  PERMISSION_GROUPS,
+  type Permission,
+} from '@/lib/admin/permissions'
 
+// ─────────────────────────────────────────────────────────────
+// Extract wallet address from Privy user
+// ─────────────────────────────────────────────────────────────
 function getWalletAddress(user: any): string | null {
   if (!user) return null
   if (user.wallet?.address) return user.wallet.address
@@ -36,6 +32,9 @@ function getWalletAddress(user: any): string | null {
   return null
 }
 
+// ─────────────────────────────────────────────────────────────
+// Main admin page
+// ─────────────────────────────────────────────────────────────
 export default function AdminPage() {
   const router = useRouter()
   const { user, authenticated, ready, login } = usePrivy()
@@ -43,7 +42,7 @@ export default function AdminPage() {
   const [admin, setAdmin] = useState<{
     email: string
     isSuperAdmin: boolean
-    permissions: string[]
+    permissions: Permission[]
   } | null>(null)
   const [walletAddress, setWalletAddress] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -55,7 +54,7 @@ export default function AdminPage() {
     }
   }, [authenticated, ready, user])
 
-  // Admin resolution with fail-safe timeout
+  // Resolve admin status
   useEffect(() => {
     if (!ready) return
 
@@ -65,7 +64,6 @@ export default function AdminPage() {
     }
 
     if (!walletAddress) {
-      // Wallet address hasn't been resolved yet — give it 3s, then fail safe
       const t = setTimeout(() => {
         if (!walletAddress) {
           toast.error('Could not resolve your wallet address')
@@ -79,24 +77,23 @@ export default function AdminPage() {
 
     const load = async () => {
       try {
-        const adminRes = await fetch(
+        const res = await fetch(
           `/api/admin/me?walletAddress=${encodeURIComponent(walletAddress)}`
         )
-        const adminData = await adminRes.json()
-
+        const data = await res.json()
         if (cancelled) return
 
-        if (!adminData.isAdmin) {
+        if (!data.isAdmin) {
           router.push('/dashboard')
           return
         }
 
         setAdmin({
-          email: adminData.email || '',
-          isSuperAdmin: !!adminData.isSuperAdmin,
-          permissions: adminData.permissions || [],
+          email: data.email || '',
+          isSuperAdmin: !!data.isSuperAdmin,
+          permissions: (data.permissions || []) as Permission[],
         })
-      } catch (e) {
+      } catch {
         if (!cancelled) router.push('/dashboard')
       } finally {
         if (!cancelled) setLoading(false)
@@ -107,7 +104,7 @@ export default function AdminPage() {
     return () => { cancelled = true }
   }, [ready, authenticated, walletAddress, router])
 
-  // Loading
+  // ── Loading ──
   if (!ready || (authenticated && loading)) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -116,7 +113,7 @@ export default function AdminPage() {
     )
   }
 
-  // Not signed in — prompt
+  // ── Not signed in ──
   if (!authenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
@@ -137,7 +134,7 @@ export default function AdminPage() {
     )
   }
 
-  // Signed in but not yet verified as admin → show a card, don't spin forever
+  // ── Signed in but not admin ──
   if (!admin) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
@@ -155,7 +152,7 @@ export default function AdminPage() {
     )
   }
 
-  const can = (p: string) => admin.permissions.includes(p)
+  const can = (p: Permission) => admin.permissions.includes(p)
   const authQS = `walletAddress=${encodeURIComponent(walletAddress || '')}`
 
   return (
@@ -190,8 +187,33 @@ export default function AdminPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* ✅ #1 — Event Attendees (first item) */}
+          {can(PERMISSIONS.VIEW_ATTENDEES) && (
+            <Link
+              href="/admin/attendees"
+              className="card rounded-2xl p-6 lg:col-span-2 block hover:scale-[1.01] transition-transform border-2 border-blue-500/30"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-blue-500/10 rounded-xl flex items-center justify-center">
+                    <Users className="h-6 w-6 text-blue-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold">Event Attendees</h3>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      View buyers, payment details, discount codes and email delivery status
+                    </p>
+                  </div>
+                </div>
+                <ChevronRight className="h-5 w-5 text-gray-400" />
+              </div>
+            </Link>
+          )}
+
+          {/* Analytics */}
           {can(PERMISSIONS.VIEW_ANALYTICS) && <AnalyticsPanel authQS={authQS} />}
 
+          {/* Contract */}
           {can(PERMISSIONS.VIEW_ANCHORS) && (
             <ContractPanel
               authQS={authQS}
@@ -200,14 +222,14 @@ export default function AdminPage() {
               canUpdateOwner={can(PERMISSIONS.UPDATE_OWNER)}
               canUpdateProcessor={can(PERMISSIONS.UPDATE_PROCESSOR)}
               canViewPayments={can(PERMISSIONS.VIEW_PAYMENTS)}
-              isSuperAdmin={admin.isSuperAdmin}
             />
           )}
 
-          {/* Anchor + Reindex side by side (each is a half card) */}
+          {/* Anchor + Reindex */}
           {can(PERMISSIONS.RUN_ANCHOR) && <AnchorPanel authQS={authQS} />}
           {can(PERMISSIONS.REINDEX_DB) && <ReindexPanel authQS={authQS} />}
 
+          {/* Admin Management + Audit Log */}
           {can(PERMISSIONS.MANAGE_ADMINS) && (
             <AdminsPanel authQS={authQS} isSuperAdmin={admin.isSuperAdmin} />
           )}
@@ -340,7 +362,6 @@ function ContractPanel({
   canUpdateOwner: boolean
   canUpdateProcessor: boolean
   canViewPayments: boolean
-  isSuperAdmin: boolean
 }) {
   const [status, setStatus] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -507,7 +528,6 @@ function ContractPanel({
             </div>
           </div>
 
-          {/* Pause / Unpause */}
           <div className="flex flex-wrap gap-2 mb-6">
             {status && !status.paused && canPause && (
               <button onClick={pause} disabled={busy}
@@ -529,7 +549,6 @@ function ContractPanel({
             )}
           </div>
 
-          {/* Update Owner */}
           {canUpdateOwner && (
             <div className="mb-4 p-4 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-xl">
               <label className="block text-xs font-semibold mb-2 text-amber-900 dark:text-amber-300">
@@ -550,7 +569,6 @@ function ContractPanel({
             </div>
           )}
 
-          {/* Update Processor */}
           {canUpdateProcessor && (
             <div className="mb-6 p-4 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-xl">
               <label className="block text-xs font-semibold mb-2 text-amber-900 dark:text-amber-300">
@@ -571,7 +589,6 @@ function ContractPanel({
             </div>
           )}
 
-          {/* Lookups */}
           {canViewPayments && (
             <div className="space-y-4 border-t border-gray-200 dark:border-gray-700 pt-6">
               <div>
@@ -661,12 +678,12 @@ function AnchorPanel({ authQS }: { authQS: string }) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Admins Panel
+// Admins Panel — grouped permissions with friendly labels
 // ─────────────────────────────────────────────────────────────
 function AdminsPanel({ authQS, isSuperAdmin }: { authQS: string; isSuperAdmin: boolean }) {
   const [admins, setAdmins] = useState<any[]>([])
   const [email, setEmail] = useState('')
-  const [permissions, setPermissions] = useState<string[]>([])
+  const [permissions, setPermissions] = useState<Permission[]>([])
   const [loading, setLoading] = useState(false)
 
   const load = async () => {
@@ -687,14 +704,30 @@ function AdminsPanel({ authQS, isSuperAdmin }: { authQS: string; isSuperAdmin: b
       })
       if (!res.ok) throw new Error((await res.json()).error)
       toast.success('Admin granted')
-      setEmail(''); setPermissions([]); load()
-    } catch (e: any) { toast.error(e.message) } finally { setLoading(false) }
+      setEmail('')
+      setPermissions([])
+      load()
+    } catch (e: any) {
+      toast.error(e.message)
+    } finally {
+      setLoading(false)
+    }
   }
 
   const remove = async (targetEmail: string) => {
     if (!confirm(`Revoke admin for ${targetEmail}?`)) return
-    const res = await fetch(`/api/admin/admins?email=${encodeURIComponent(targetEmail)}&${authQS}`, { method: 'DELETE' })
-    if (res.ok) { toast.success('Revoked'); load() } else toast.error('Failed to revoke')
+    const res = await fetch(
+      `/api/admin/admins?email=${encodeURIComponent(targetEmail)}&${authQS}`,
+      { method: 'DELETE' }
+    )
+    if (res.ok) { toast.success('Revoked'); load() }
+    else toast.error('Failed to revoke')
+  }
+
+  const toggle = (p: Permission) => {
+    setPermissions((prev) =>
+      prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]
+    )
   }
 
   if (!isSuperAdmin) return null
@@ -706,41 +739,86 @@ function AdminsPanel({ authQS, isSuperAdmin }: { authQS: string; isSuperAdmin: b
         <h2 className="text-lg font-bold">Admin Management</h2>
       </div>
 
-      <div className="space-y-3 mb-6 pb-6 border-b border-gray-200 dark:border-gray-700">
-        <input type="email" placeholder="admin@example.com" value={email}
-          onChange={(e) => setEmail(e.target.value)} className="input-field w-full" />
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-          {Object.values(PERMISSIONS).map((p) => (
-            <label key={p} className="flex items-center gap-2 text-xs">
-              <input type="checkbox" checked={permissions.includes(p)}
-                onChange={(e) => setPermissions((prev) => e.target.checked ? [...prev, p] : prev.filter((x) => x !== p))} />
-              {p}
-            </label>
+      <div className="space-y-4 mb-6 pb-6 border-b border-gray-200 dark:border-gray-700">
+        <input
+          type="email"
+          placeholder="admin@example.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className="input-field w-full"
+        />
+
+        {/* Grouped, labelled permissions */}
+        <div className="space-y-4">
+          {Object.entries(PERMISSION_GROUPS).map(([groupName, perms]) => (
+            <div key={groupName}>
+              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                {groupName}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                {perms.map((p) => (
+                  <label
+                    key={p}
+                    className="flex items-start gap-2 text-xs p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={permissions.includes(p)}
+                      onChange={() => toggle(p)}
+                      className="mt-0.5"
+                    />
+                    <div className="flex-1">
+                      <div className="font-medium">
+                        {PERMISSION_LABELS[p] || p}
+                      </div>
+                      <div className="text-gray-500 font-mono text-[10px]">{p}</div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
-        <button onClick={add} disabled={loading || !email} className="btn-primary px-4 py-2">
+
+        <button
+          onClick={add}
+          disabled={loading || !email}
+          className="btn-primary px-4 py-2"
+        >
           {loading ? 'Granting…' : 'Grant Admin'}
         </button>
       </div>
 
       <div className="space-y-2">
         {admins.map((a) => (
-          <div key={a.email} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+          <div
+            key={a.email}
+            className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
+          >
             <div>
               <div className="font-mono text-sm">{a.email}</div>
-              <div className="text-xs text-gray-500">{(a.permissions || []).length} permissions</div>
+              <div className="text-xs text-gray-500">
+                {(a.permissions || []).length} permissions
+              </div>
             </div>
-            <button onClick={() => remove(a.email)} className="text-red-600 hover:text-red-800 text-sm">Revoke</button>
+            <button
+              onClick={() => remove(a.email)}
+              className="text-red-600 hover:text-red-800 text-sm"
+            >
+              Revoke
+            </button>
           </div>
         ))}
-        {admins.length === 0 && <p className="text-sm text-gray-500">No admins yet.</p>}
+        {admins.length === 0 && (
+          <p className="text-sm text-gray-500">No admins yet.</p>
+        )}
       </div>
     </div>
   )
 }
 
 // ─────────────────────────────────────────────────────────────
-// Audit Log Panel
+// Audit Log
 // ─────────────────────────────────────────────────────────────
 function AuditLogPanel({ authQS }: { authQS: string }) {
   const [logs, setLogs] = useState<any[]>([])
@@ -760,22 +838,36 @@ function AuditLogPanel({ authQS }: { authQS: string }) {
       </div>
       <div className="space-y-2 max-h-96 overflow-y-auto">
         {logs.map((l) => (
-          <div key={l._id} className="flex items-start gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg text-sm">
-            {l.success ? <CheckCircle className="h-4 w-4 text-green-500 mt-0.5" /> : <XCircle className="h-4 w-4 text-red-500 mt-0.5" />}
+          <div
+            key={l._id}
+            className="flex items-start gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg text-sm"
+          >
+            {l.success ? (
+              <CheckCircle className="h-4 w-4 text-green-500 mt-0.5" />
+            ) : (
+              <XCircle className="h-4 w-4 text-red-500 mt-0.5" />
+            )}
             <div className="flex-1">
-              <div><span className="font-mono text-xs">{l.actorEmail}</span> → <strong>{l.action}</strong> {l.target && `on ${l.target}`}</div>
-              <div className="text-xs text-gray-500">{new Date(l.createdAt).toLocaleString()}</div>
+              <div>
+                <span className="font-mono text-xs">{l.actorEmail}</span> →{' '}
+                <strong>{l.action}</strong> {l.target && `on ${l.target}`}
+              </div>
+              <div className="text-xs text-gray-500">
+                {new Date(l.createdAt).toLocaleString()}
+              </div>
             </div>
           </div>
         ))}
-        {logs.length === 0 && <p className="text-sm text-gray-500">No actions yet.</p>}
+        {logs.length === 0 && (
+          <p className="text-sm text-gray-500">No actions yet.</p>
+        )}
       </div>
     </div>
   )
 }
 
 // ─────────────────────────────────────────────────────────────
-// Reindex Panel
+// Reindex
 // ─────────────────────────────────────────────────────────────
 function ReindexPanel({ authQS }: { authQS: string }) {
   const [busy, setBusy] = useState(false)
@@ -786,7 +878,11 @@ function ReindexPanel({ authQS }: { authQS: string }) {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
       toast.success(`Indexes checked: ${data.summary || 'done'}`)
-    } catch (e: any) { toast.error(e.message || 'Reindex failed') } finally { setBusy(false) }
+    } catch (e: any) {
+      toast.error(e.message || 'Reindex failed')
+    } finally {
+      setBusy(false)
+    }
   }
   return (
     <div className="card rounded-2xl p-6">
